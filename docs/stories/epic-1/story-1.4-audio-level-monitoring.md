@@ -2,7 +2,7 @@
 
 **Epic:** 1 - Foundation & Audio Capture  
 **Story ID:** 1.4  
-**Status:** Not Started  
+**Status:** Complete  
 **Complexity:** Small  
 
 ---
