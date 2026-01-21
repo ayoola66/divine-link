@@ -11,8 +11,8 @@ struct MainView: View {
     // Bible translation selection
     @AppStorage("selectedTranslation") private var selectedTranslation: String = "KJV"
     
-    // Available translations (will be populated from database)
-    private let availableTranslations = ["KJV", "ASV", "WEB", "YLT", "BBE"]
+    // Available translations (from database)
+    private let availableTranslations = ["KJV", "ASV", "WEB"]
     
     // Observe nested objects directly for proper SwiftUI updates
     @ObservedObject private var audioCapture: AudioCaptureService
