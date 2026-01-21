@@ -2,7 +2,7 @@
 
 **Epic:** 2 - Transcription & Scripture Detection  
 **Story ID:** 2.1  
-**Status:** Not Started  
+**Status:** Complete  
 **Complexity:** Medium  
 
 ---
