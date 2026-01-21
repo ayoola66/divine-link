@@ -81,9 +81,17 @@ struct MainView: View {
         VStack(spacing: 4) {
             // Main header row
             HStack {
-                Image(systemName: "book.fill")
-                    .font(.title3)
-                    .foregroundStyle(.blue)
+                // Use custom app icon
+                if let appIcon = NSApp.applicationIconImage {
+                    Image(nsImage: appIcon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                } else {
+                    Image(systemName: "book.fill")
+                        .font(.title3)
+                        .foregroundStyle(.blue)
+                }
                 
                 Text("Divine Link")
                     .font(.headline)
