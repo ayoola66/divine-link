@@ -11,10 +11,27 @@ struct PendingVerse: Identifiable, Equatable {
     let translation: String
     let timestamp: Date
     let confidence: Float
+    let rawTranscript: String  // What was actually heard (for learning)
     
     /// Formatted display reference
     var displayReference: String {
         reference.formatted
+    }
+    
+    init(
+        reference: ScriptureReference,
+        fullText: String,
+        translation: String,
+        timestamp: Date,
+        confidence: Float,
+        rawTranscript: String = ""
+    ) {
+        self.reference = reference
+        self.fullText = fullText
+        self.translation = translation
+        self.timestamp = timestamp
+        self.confidence = confidence
+        self.rawTranscript = rawTranscript
     }
     
     static func == (lhs: PendingVerse, rhs: PendingVerse) -> Bool {

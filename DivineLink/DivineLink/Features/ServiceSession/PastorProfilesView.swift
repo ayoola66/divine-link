@@ -9,6 +9,7 @@ struct PastorProfilesTab: View {
     @State private var editingPastor: PastorProfile?
     @State private var pastorToDelete: PastorProfile?
     @State private var showDeleteConfirmation = false
+    @State private var correctionsForPastor: PastorProfile?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -95,7 +96,16 @@ struct PastorProfilesTab: View {
             LazyVStack(spacing: 8) {
                 ForEach(sessionManager.pastorProfiles) { pastor in
                     PastorRowView(pastor: pastor)
+                        .onTapGesture {
+                            correctionsForPastor = pastor
+                        }
                         .contextMenu {
+                            Button {
+                                correctionsForPastor = pastor
+                            } label: {
+                                Label("Speech Corrections", systemImage: "waveform")
+                            }
+                            
                             Button {
                                 editingPastor = pastor
                             } label: {
@@ -114,6 +124,9 @@ struct PastorProfilesTab: View {
                 }
             }
             .padding()
+        }
+        .sheet(item: $correctionsForPastor) { pastor in
+            SpeechCorrectionsView(pastor: pastor)
         }
     }
     

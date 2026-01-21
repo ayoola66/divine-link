@@ -29,10 +29,12 @@ class DetectionPipeline: ObservableObject {
     let bible: BibleService
     let buffer: BufferManager
     let transcriptBuffer: TranscriptBuffer
+    let correctionService: SpeechCorrectionService
     
     // MARK: - Private Properties
     
     private var cancellables = Set<AnyCancellable>()
+    private let sessionManager = ServiceSessionManager.shared
     
     // MARK: - Initialisation
     
@@ -43,6 +45,7 @@ class DetectionPipeline: ObservableObject {
         self.bible = BibleService()
         self.buffer = BufferManager()
         self.transcriptBuffer = TranscriptBuffer()
+        self.correctionService = SpeechCorrectionService.shared
         
         setupPipeline()
     }
@@ -128,15 +131,23 @@ class DetectionPipeline: ObservableObject {
     private func processTranscript(_ transcript: String) {
         guard isActive else { return }
         
-        // Detect scripture references
-        let detections = detector.detect(in: transcript)
+        // Apply pastor-specific speech corrections if available
+        var correctedTranscript = transcript
+        let corrections = sessionManager.currentPastorCorrections()
+        
+        if !corrections.isEmpty {
+            correctedTranscript = correctionService.apply(corrections: corrections, to: transcript)
+        }
+        
+        // Detect scripture references in corrected text
+        let detections = detector.detect(in: correctedTranscript)
         
         for detection in detections {
-            processDetection(detection)
+            processDetection(detection, rawTranscript: transcript)
         }
     }
     
-    private func processDetection(_ detection: DetectionResult) {
+    private func processDetection(_ detection: DetectionResult, rawTranscript: String = "") {
         Logger.pipeline.info("Processing detection: \(detection.displayReference)")
         
         // Look up verse text from Bible database
@@ -161,11 +172,24 @@ class DetectionPipeline: ObservableObject {
             fullText: verseText,
             translation: "Berean Standard Bible",
             timestamp: detection.timestamp,
-            confidence: detection.confidence
+            confidence: detection.confidence,
+            rawTranscript: rawTranscript
         )
         
         // Add to buffer
         buffer.add(pendingVerse)
+        
+        // Add to current session if active
+        if sessionManager.currentSession != nil {
+            let detectedScripture = DetectedScripture(
+                reference: detection.displayReference,
+                verseText: verseText,
+                translation: "KJV",
+                rawTranscript: rawTranscript,
+                confidence: detection.confidence
+            )
+            sessionManager.addDetectedScripture(detectedScripture)
+        }
     }
 }
 
