@@ -238,9 +238,9 @@ class TranscriptionService: ObservableObject {
     private func scheduleRestart() {
         // Schedule restart after a brief delay
         restartTimer?.invalidate()
-        restartTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            // Would restart here if we had reference to audio capture
-            // For now, the caller is responsible for restarting if needed
+        restartTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+            // Placeholder for restart logic
+            // The caller (DetectionPipeline) handles restart if needed
         }
     }
     
