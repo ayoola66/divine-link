@@ -166,11 +166,14 @@ class DetectionPipeline: ObservableObject {
             verseText = "[Bible database not loaded - \(detection.displayReference)]"
         }
         
+        // Get current translation name
+        let translationName = bible.currentTranslation
+        
         // Create pending verse
         let pendingVerse = PendingVerse(
             reference: detection.reference,
             fullText: verseText,
-            translation: "Berean Standard Bible",
+            translation: translationName,
             timestamp: detection.timestamp,
             confidence: detection.confidence,
             rawTranscript: rawTranscript
@@ -184,7 +187,7 @@ class DetectionPipeline: ObservableObject {
             let detectedScripture = DetectedScripture(
                 reference: detection.displayReference,
                 verseText: verseText,
-                translation: "KJV",
+                translation: translationName,
                 rawTranscript: rawTranscript,
                 confidence: detection.confidence
             )
@@ -211,7 +214,7 @@ extension DetectionPipeline {
         let sampleVerse = PendingVerse(
             reference: sampleReference,
             fullText: "For God so loved the world that he gave his only begotten Son, that whoever believes in him should not perish but have everlasting life.",
-            translation: "Berean Standard Bible",
+            translation: "KJV",
             timestamp: Date(),
             confidence: 0.95
         )
