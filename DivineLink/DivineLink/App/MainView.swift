@@ -54,8 +54,9 @@ struct MainView: View {
                 statusPanel
             }
         }
-        .padding(12)
-        .frame(width: 340, height: showStatus ? 420 : 340)
+        .padding(16)
+        .frame(minWidth: 350, idealWidth: 400, maxWidth: 600, 
+               minHeight: 400, idealHeight: 500, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.2), value: showStatus)
         .saturation(pipeline.isActive ? 1.0 : 0.4)
         .animation(.easeInOut(duration: 0.3), value: pipeline.isActive)
