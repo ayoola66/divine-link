@@ -187,7 +187,7 @@ class BibleService: ObservableObject {
             SELECT v.id, v.text, b.name 
             FROM verses v 
             JOIN books b ON v.book_id = b.id 
-            WHERE v.book_id = ? AND v.chapter = ? AND v.verse = ? AND v.translation = ?
+            WHERE v.book_id = ? AND v.chapter = ? AND v.verse = ? AND v.translation_id = ?
             """
         
         var statement: OpaquePointer?
@@ -232,7 +232,7 @@ class BibleService: ObservableObject {
             SELECT v.id, v.verse, v.text, b.name 
             FROM verses v 
             JOIN books b ON v.book_id = b.id 
-            WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ? AND v.translation = ?
+            WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ? AND v.translation_id = ?
             ORDER BY v.verse
             """
         
