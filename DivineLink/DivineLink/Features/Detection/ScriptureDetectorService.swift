@@ -46,6 +46,7 @@ class ScriptureDetectorService: ObservableObject {
     
     private enum PatternType {
         case standard       // John 3:16 or John 3:16-18
+        case spoken         // John 316 or John 3 16 (speech recognition format)
         case verbal         // John chapter 3 verse 16
         case chapterOnly    // Romans 8
     }
@@ -63,6 +64,23 @@ class ScriptureDetectorService: ObservableObject {
             options: .caseInsensitive
         ) {
             patterns.append((regex, .standard))
+        }
+        
+        // Spoken format without colon: "John 316" (chapter+verse concatenated)
+        // Matches: John 316, Romans 828, Psalm 231 (interprets as chapter+verse)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d)(\d{1,2})(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .spoken))
+        }
+        
+        // Spoken format with space: "John 3 16" (space instead of colon)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+(\d{1,3})(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .spoken))
         }
         
         // Verbal format: "John chapter 3 verse 16" or "John chapter 3 verses 16 through 18"
@@ -181,6 +199,7 @@ class ScriptureDetectorService: ObservableObject {
         // Calculate confidence based on pattern type
         let confidence: Float = switch type {
         case .standard: 0.95
+        case .spoken: 0.85    // Lower confidence for speech-to-text formats
         case .verbal: 0.90
         case .chapterOnly: 0.80
         }
