@@ -16,6 +16,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBarIcon()
         setupPopover()
         setupEventMonitor()
+        
+        // Check for old sessions on launch
+        Task { @MainActor in
+            ArchiveCleanupService.shared.checkOnLaunch()
+        }
     }
     
     func applicationWillTerminate(_ notification: Notification) {

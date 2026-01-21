@@ -240,27 +240,18 @@ struct ProPresenterSettingsTab: View {
 // MARK: - About Tab
 
 struct AboutTab: View {
+    @StateObject private var cleanup = ArchiveCleanupService.shared
+    @State private var showCleanupConfirmation = false
+    
     var body: some View {
         VStack(spacing: 16) {
-            // Use the app icon from the asset catalog
-            if let appIcon = NSApp.applicationIconImage {
-                Image(nsImage: appIcon)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 80, height: 80)
-            }
+            // App info section
+            appInfoSection
             
-            Text("Divine Link")
-                .font(.title)
-                .fontWeight(.bold)
+            Divider()
             
-            Text("Version 1.0.0")
-                .foregroundStyle(.secondary)
-            
-            Text("Real-time scripture detection for live church services.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal)
+            // Storage section
+            storageSection
             
             Spacer()
             
@@ -270,6 +261,91 @@ struct AboutTab: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .alert("Clean Up Storage?", isPresented: $showCleanupConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete Old Sessions", role: .destructive) {
+                cleanup.performCleanup()
+            }
+        } message: {
+            Text("This will delete all services older than 90 days.")
+        }
+    }
+    
+    private var appInfoSection: some View {
+        VStack(spacing: 12) {
+            // Use the app icon from the asset catalog
+            if let appIcon = NSApp.applicationIconImage {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 64, height: 64)
+            }
+            
+            Text("Divine Link")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Version 1.0.0")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+    
+    private var storageSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Storage")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                GridRow {
+                    Text("Services:")
+                        .foregroundStyle(.secondary)
+                    Text("\(cleanup.totalSessionCount)")
+                }
+                
+                GridRow {
+                    Text("Scriptures:")
+                        .foregroundStyle(.secondary)
+                    Text("\(cleanup.totalScriptureCount)")
+                }
+                
+                GridRow {
+                    Text("Storage used:")
+                        .foregroundStyle(.secondary)
+                    Text(cleanup.formattedStorageSize)
+                }
+                
+                if cleanup.expiredSessionCount > 0 {
+                    GridRow {
+                        Text("Expired:")
+                            .foregroundStyle(.orange)
+                        Text("\(cleanup.expiredSessionCount) sessions")
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .font(.callout)
+            
+            HStack {
+                Text("Sessions kept for 90 days")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                
+                Spacer()
+                
+                Button {
+                    showCleanupConfirmation = true
+                } label: {
+                    Label("Clean Up", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(8)
     }
 }
 
