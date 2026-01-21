@@ -4,6 +4,7 @@ import SwiftUI
 struct MainView: View {
     @StateObject private var pipeline = DetectionPipeline()
     @State private var hasPermission = true
+    @State private var showStatus = false
     
     // Observe nested objects directly for proper SwiftUI updates
     @ObservedObject private var audioCapture: AudioCaptureService
@@ -20,6 +21,9 @@ struct MainView: View {
         VStack(spacing: 8) {
             // Header
             headerView
+            
+            // Status indicators row
+            statusIndicatorsRow
             
             Divider()
             
@@ -42,9 +46,15 @@ struct MainView: View {
             
             // Zone 4: Action buttons
             actionButtons
+            
+            // Expandable status panel
+            if showStatus {
+                statusPanel
+            }
         }
         .padding(12)
-        .frame(width: 340, height: 320)
+        .frame(width: 340, height: showStatus ? 420 : 340)
+        .animation(.easeInOut(duration: 0.2), value: showStatus)
         .saturation(pipeline.isActive ? 1.0 : 0.4)
         .animation(.easeInOut(duration: 0.3), value: pipeline.isActive)
         .task {
@@ -211,6 +221,137 @@ struct MainView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+        }
+    }
+    
+    // MARK: - Status Indicators Row
+    
+    private var statusIndicatorsRow: some View {
+        HStack(spacing: 12) {
+            StatusPill(
+                icon: "mic.fill",
+                label: "Audio",
+                isActive: audioCapture.isCapturing,
+                color: .green
+            )
+            
+            StatusPill(
+                icon: "text.bubble.fill",
+                label: "Speech",
+                isActive: pipeline.transcription.isTranscribing,
+                color: .blue
+            )
+            
+            StatusPill(
+                icon: "book.closed.fill",
+                label: "Bible",
+                isActive: pipeline.bible.isLoaded,
+                color: .purple
+            )
+            
+            StatusPill(
+                icon: "magnifyingglass",
+                label: "Detect",
+                isActive: pipeline.detector.lastDetection != nil,
+                color: .orange
+            )
+            
+            Spacer()
+            
+            // Toggle status panel
+            Button {
+                showStatus.toggle()
+            } label: {
+                Image(systemName: showStatus ? "chevron.up.circle.fill" : "info.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Show/hide status details")
+        }
+        .font(.caption2)
+    }
+    
+    // MARK: - Status Panel (Expandable)
+    
+    private var statusPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            
+            Text("System Status")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                StatusRow(label: "Audio Capture", 
+                         status: audioCapture.isCapturing ? "Running" : "Stopped",
+                         isOK: audioCapture.isCapturing)
+                
+                StatusRow(label: "Audio Level", 
+                         status: String(format: "%.0f%%", audioCapture.audioLevel * 100),
+                         isOK: audioCapture.audioLevel > 0.01)
+                
+                StatusRow(label: "Speech Recognition", 
+                         status: pipeline.transcription.isTranscribing ? "Active" : "Inactive",
+                         isOK: pipeline.transcription.isTranscribing)
+                
+                StatusRow(label: "Bible Database", 
+                         status: pipeline.bible.isLoaded ? "Loaded" : "Not Found",
+                         isOK: pipeline.bible.isLoaded)
+                
+                StatusRow(label: "Last Detection", 
+                         status: pipeline.lastDetectedReference ?? "None",
+                         isOK: pipeline.lastDetectedReference != nil)
+                
+                StatusRow(label: "Pending Verses", 
+                         status: "\(pipeline.buffer.pendingCount)",
+                         isOK: true)
+            }
+            .font(.caption2)
+        }
+        .padding(.top, 4)
+    }
+}
+
+// MARK: - Status Pill
+
+struct StatusPill: View {
+    let icon: String
+    let label: String
+    let isActive: Bool
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 8))
+            Text(label)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(isActive ? color.opacity(0.2) : Color.gray.opacity(0.1))
+        .foregroundStyle(isActive ? color : .gray)
+        .clipShape(Capsule())
+    }
+}
+
+// MARK: - Status Row
+
+struct StatusRow: View {
+    let label: String
+    let status: String
+    let isOK: Bool
+    
+    var body: some View {
+        HStack {
+            Circle()
+                .fill(isOK ? Color.green : Color.gray)
+                .frame(width: 6, height: 6)
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(status)
+                .foregroundStyle(isOK ? .primary : .tertiary)
         }
     }
 }
