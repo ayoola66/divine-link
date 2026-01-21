@@ -247,13 +247,6 @@ extension ServiceSessionManager {
         return pastor.speechCorrections
     }
     
-    /// Save pastor profiles (exposed for updates)
-    func savePastorProfiles() {
-        if let data = try? JSONEncoder().encode(pastorProfiles) {
-            UserDefaults.standard.set(data, forKey: "pastorProfiles")
-        }
-    }
-    
     /// Export corrections for a pastor to JSON file
     func exportCorrections(for pastorId: UUID) -> URL? {
         guard let pastor = pastorProfiles.first(where: { $0.id == pastorId }) else {

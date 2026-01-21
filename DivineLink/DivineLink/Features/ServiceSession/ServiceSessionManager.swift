@@ -233,7 +233,8 @@ class ServiceSessionManager: ObservableObject {
         UserDefaults.standard.set(recentServiceTypes, forKey: serviceTypesKey)
     }
     
-    private func savePastorProfiles() {
+    /// Save pastor profiles to UserDefaults (internal for extension access)
+    func savePastorProfiles() {
         if let data = try? JSONEncoder().encode(pastorProfiles) {
             UserDefaults.standard.set(data, forKey: pastorProfilesKey)
         }

@@ -240,7 +240,7 @@ struct ProPresenterSettingsTab: View {
 // MARK: - About Tab
 
 struct AboutTab: View {
-    @StateObject private var cleanup = ArchiveCleanupService.shared
+    @ObservedObject private var cleanup = ArchiveCleanupService.shared
     @State private var showCleanupConfirmation = false
     
     var body: some View {

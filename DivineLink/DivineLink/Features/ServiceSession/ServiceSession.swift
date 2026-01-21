@@ -114,7 +114,7 @@ struct PastorProfile: Identifiable, Codable {
 /// A learned speech correction for a pastor
 struct SpeechCorrection: Codable {
     let heard: String       // "Some"
-    let corrected: String   // "Psalms"
+    var corrected: String   // "Psalms" - var to allow updates
     var occurrences: Int    // How many times this correction was made
     var lastUsed: Date
 }
