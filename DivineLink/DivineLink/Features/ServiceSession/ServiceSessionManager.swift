@@ -75,10 +75,13 @@ class ServiceSessionManager: ObservableObject {
         
         session.endTime = Date()
         
-        // Add to recent sessions
+        // Save to SQLite archive for long-term storage
+        ServiceArchive.shared.save(session)
+        
+        // Add to recent sessions (in-memory cache)
         recentSessions.insert(session, at: 0)
         
-        // Limit recent sessions (keep last 100)
+        // Limit recent sessions (keep last 100 in memory)
         if recentSessions.count > 100 {
             recentSessions = Array(recentSessions.prefix(100))
         }
