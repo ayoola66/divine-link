@@ -15,6 +15,11 @@ struct SettingsView: View {
                     Label("ProPresenter", systemImage: "tv")
                 }
             
+            PastorProfilesTab()
+                .tabItem {
+                    Label("Pastors", systemImage: "person.2")
+                }
+            
             ServiceHistoryView()
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
