@@ -86,6 +86,12 @@ class BibleService: ObservableObject {
     private var db: OpaquePointer?
     @Published var isLoaded = false
     @Published var error: BibleError?
+    @Published var availableTranslations: [String] = []
+    
+    // Current translation (reads from UserDefaults)
+    var currentTranslation: String {
+        UserDefaults.standard.string(forKey: "selectedTranslation") ?? "KJV"
+    }
     
     // Cache for book lookups
     private var bookCache: [String: Int] = [:]
@@ -181,7 +187,7 @@ class BibleService: ObservableObject {
             SELECT v.id, v.text, b.name 
             FROM verses v 
             JOIN books b ON v.book_id = b.id 
-            WHERE v.book_id = ? AND v.chapter = ? AND v.verse = ?
+            WHERE v.book_id = ? AND v.chapter = ? AND v.verse = ? AND v.translation = ?
             """
         
         var statement: OpaquePointer?
@@ -194,6 +200,7 @@ class BibleService: ObservableObject {
         sqlite3_bind_int(statement, 1, Int32(bookId))
         sqlite3_bind_int(statement, 2, Int32(chapter))
         sqlite3_bind_int(statement, 3, Int32(verse))
+        sqlite3_bind_text(statement, 4, currentTranslation, -1, nil)
         
         guard sqlite3_step(statement) == SQLITE_ROW else {
             return nil
@@ -225,7 +232,7 @@ class BibleService: ObservableObject {
             SELECT v.id, v.verse, v.text, b.name 
             FROM verses v 
             JOIN books b ON v.book_id = b.id 
-            WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ?
+            WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ? AND v.translation = ?
             ORDER BY v.verse
             """
         
@@ -240,6 +247,7 @@ class BibleService: ObservableObject {
         sqlite3_bind_int(statement, 2, Int32(chapter))
         sqlite3_bind_int(statement, 3, Int32(startVerse))
         sqlite3_bind_int(statement, 4, Int32(endVerse))
+        sqlite3_bind_text(statement, 5, currentTranslation, -1, nil)
         
         var verses: [BibleVerse] = []
         

@@ -8,6 +8,12 @@ struct MainView: View {
     @State private var showStatus = false
     @State private var showNewServiceSheet = false
     
+    // Bible translation selection
+    @AppStorage("selectedTranslation") private var selectedTranslation: String = "KJV"
+    
+    // Available translations (will be populated from database)
+    private let availableTranslations = ["KJV", "ASV", "WEB", "YLT", "BBE"]
+    
     // Observe nested objects directly for proper SwiftUI updates
     @ObservedObject private var audioCapture: AudioCaptureService
     @ObservedObject private var transcriptBuffer: TranscriptBuffer
@@ -300,12 +306,34 @@ struct MainView: View {
                 color: .blue
             )
             
-            StatusPill(
-                icon: "book.closed.fill",
-                label: "Bible",
-                isActive: pipeline.bible.isLoaded,
-                color: .purple
-            )
+            // Bible pill - clickable to change translation
+            Menu {
+                ForEach(availableTranslations, id: \.self) { translation in
+                    Button {
+                        selectedTranslation = translation
+                    } label: {
+                        HStack {
+                            Text(translation)
+                            if translation == selectedTranslation {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 8))
+                    Text(selectedTranslation)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(pipeline.bible.isLoaded ? Color.purple.opacity(0.2) : Color.gray.opacity(0.1))
+                .foregroundStyle(pipeline.bible.isLoaded ? .purple : .gray)
+                .clipShape(Capsule())
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
             
             StatusPill(
                 icon: "magnifyingglass",
@@ -354,7 +382,7 @@ struct MainView: View {
                          isOK: pipeline.transcription.isTranscribing)
                 
                 StatusRow(label: "Bible Database", 
-                         status: pipeline.bible.isLoaded ? "Loaded" : "Not Found",
+                         status: pipeline.bible.isLoaded ? "Loaded (\(selectedTranslation))" : "Not Found",
                          isOK: pipeline.bible.isLoaded)
                 
                 StatusRow(label: "Last Detection", 
