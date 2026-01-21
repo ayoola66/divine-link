@@ -3,8 +3,10 @@ import SwiftUI
 /// Main content view displayed in the menu bar popover
 struct MainView: View {
     @StateObject private var pipeline = DetectionPipeline()
+    @StateObject private var sessionManager = ServiceSessionManager.shared
     @State private var hasPermission = true
     @State private var showStatus = false
+    @State private var showNewServiceSheet = false
     
     // Observe nested objects directly for proper SwiftUI updates
     @ObservedObject private var audioCapture: AudioCaptureService
@@ -75,35 +77,82 @@ struct MainView: View {
     // MARK: - Header
     
     private var headerView: some View {
-        HStack {
-            Image(systemName: "book.fill")
-                .font(.title3)
-                .foregroundStyle(.blue)
-            
-            Text("Divine Link")
-                .font(.headline)
-            
-            Spacer()
-            
-            // Status indicator
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(statusColour)
-                    .frame(width: 8, height: 8)
+        VStack(spacing: 4) {
+            // Main header row
+            HStack {
+                Image(systemName: "book.fill")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
                 
-                Text(statusText)
+                Text("Divine Link")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Status indicator
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(statusColour)
+                        .frame(width: 8, height: 8)
+                    
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Settings (⌘,)")
+            }
+            
+            // Session info row
+            if let session = sessionManager.currentSession {
+                HStack {
+                    Image(systemName: "calendar")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(session.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    Button {
+                        sessionManager.endCurrentSession()
+                    } label: {
+                        Text("End")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                .padding(.horizontal, 4)
+            } else {
+                Button {
+                    showNewServiceSheet = true
+                } label: {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("New Service")
+                    }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            
-            Spacer()
-            
-            SettingsLink {
-                Image(systemName: "gearshape")
-                    .foregroundStyle(.secondary)
+        }
+        .sheet(isPresented: $showNewServiceSheet) {
+            NewServiceSheet(sessionManager: sessionManager) { session in
+                // Session started - detection will begin
+                print("[MainView] Session started: \(session.name)")
             }
-            .buttonStyle(.plain)
-            .help("Settings (⌘,)")
         }
     }
     
