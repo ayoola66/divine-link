@@ -28,6 +28,8 @@ struct SettingsView: View {
 
 struct AudioSettingsTab: View {
     @StateObject private var audioManager = AudioDeviceManager()
+    @StateObject private var audioTest = AudioCaptureService()
+    @State private var isTesting = false
     
     var body: some View {
         Form {
@@ -43,6 +45,11 @@ struct AudioSettingsTab: View {
                     if let device = newValue {
                         Task {
                             await audioManager.selectDevice(device)
+                            // Restart test if active
+                            if isTesting {
+                                audioTest.stop()
+                                audioTest.start()
+                            }
                         }
                     }
                 }
@@ -60,6 +67,74 @@ struct AudioSettingsTab: View {
                     Text("No audio input devices found.")
                         .foregroundStyle(.secondary)
                 }
+            }
+            
+            // Audio Level Test Section
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Button(isTesting ? "Stop Test" : "Test Audio") {
+                            if isTesting {
+                                audioTest.stop()
+                            } else {
+                                audioTest.start()
+                            }
+                            isTesting.toggle()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(isTesting ? .red : .blue)
+                        
+                        Spacer()
+                        
+                        if isTesting {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(.green)
+                                    .frame(width: 8, height: 8)
+                                    .opacity(audioTest.audioLevel > 0.05 ? 1.0 : 0.3)
+                                Text("Listening")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    
+                    if isTesting {
+                        // Audio level bar
+                        VStack(alignment: .leading, spacing: 4) {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    // Background
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.gray.opacity(0.2))
+                                    
+                                    // Level bar
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(levelColor)
+                                        .frame(width: max(4, geo.size.width * CGFloat(audioTest.audioLevel)))
+                                        .animation(.easeOut(duration: 0.1), value: audioTest.audioLevel)
+                                }
+                            }
+                            .frame(height: 20)
+                            
+                            Text("Speak or make noise to test the microphone")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    if let error = audioTest.error {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                            Text(error.localizedDescription)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+            } header: {
+                Text("Audio Level Test")
             }
             
             Section {
@@ -104,6 +179,22 @@ struct AudioSettingsTab: View {
         }
         .formStyle(.grouped)
         .padding()
+        .onDisappear {
+            // Stop testing when leaving the tab
+            if isTesting {
+                audioTest.stop()
+            }
+        }
+    }
+    
+    private var levelColor: Color {
+        if audioTest.audioLevel < 0.6 {
+            return .green
+        } else if audioTest.audioLevel < 0.85 {
+            return .yellow
+        } else {
+            return .red
+        }
     }
 }
 
