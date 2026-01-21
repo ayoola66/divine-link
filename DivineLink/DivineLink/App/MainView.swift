@@ -5,6 +5,17 @@ struct MainView: View {
     @StateObject private var pipeline = DetectionPipeline()
     @State private var hasPermission = true
     
+    // Observe nested objects directly for proper SwiftUI updates
+    @ObservedObject private var audioCapture: AudioCaptureService
+    @ObservedObject private var transcriptBuffer: TranscriptBuffer
+    
+    init() {
+        let pipeline = DetectionPipeline()
+        _pipeline = StateObject(wrappedValue: pipeline)
+        _audioCapture = ObservedObject(wrappedValue: pipeline.audioCapture)
+        _transcriptBuffer = ObservedObject(wrappedValue: pipeline.transcriptBuffer)
+    }
+    
     var body: some View {
         VStack(spacing: 8) {
             // Header
@@ -14,7 +25,7 @@ struct MainView: View {
             
             // Zone 1: Listening Feed (transcript)
             ListeningFeedView(
-                transcript: pipeline.transcriptBuffer.text,
+                transcript: transcriptBuffer.text,
                 isListening: pipeline.isActive
             )
             .frame(height: 60)
@@ -110,9 +121,9 @@ struct MainView: View {
     
     private var audioLevelView: some View {
         AudioLevelIndicator(
-            level: pipeline.audioCapture.audioLevel,
-            isListening: pipeline.isActive,
-            peakLevel: pipeline.audioCapture.peakLevel
+            level: audioCapture.audioLevel,
+            isListening: audioCapture.isCapturing,
+            peakLevel: audioCapture.peakLevel
         )
         .padding(.horizontal, 4)
     }
