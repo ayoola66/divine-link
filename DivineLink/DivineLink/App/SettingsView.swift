@@ -15,12 +15,17 @@ struct SettingsView: View {
                     Label("ProPresenter", systemImage: "tv")
                 }
             
+            ServiceHistoryView()
+                .tabItem {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
+            
             AboutTab()
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 500, height: 380)
+        .frame(width: 500, height: 420)
     }
 }
 
