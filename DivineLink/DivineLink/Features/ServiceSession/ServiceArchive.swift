@@ -221,16 +221,18 @@ class ServiceArchive {
                 let name = String(cString: nameStr)
                 let serviceType = String(cString: typeStr)
                 let date = formatter.date(from: String(cString: dateStr)) ?? Date()
-                let startTime = formatter.date(from: String(cString: startStr)) ?? Date()
+                // Note: startTime/endTime are auto-set by ServiceSession init
+                // We parse but don't use them since the model auto-generates
+                _ = formatter.date(from: String(cString: startStr)) // startTime (unused)
                 
                 var pastorId: UUID?
                 if let pastorStr = sqlite3_column_text(stmt, 4) {
                     pastorId = UUID(uuidString: String(cString: pastorStr))
                 }
                 
-                var endTime: Date?
+                // Parse endTime but session model manages this
                 if let endStr = sqlite3_column_text(stmt, 6) {
-                    endTime = formatter.date(from: String(cString: endStr))
+                    _ = formatter.date(from: String(cString: endStr)) // endTime (unused)
                 }
                 
                 var snippets: [String] = []
@@ -241,14 +243,6 @@ class ServiceArchive {
                 }
                 
                 var session = ServiceSession(
-                    id: id,
-                    name: name,
-                    serviceType: serviceType,
-                    date: date,
-                    pastorId: pastorId
-                )
-                // Override the auto-set values
-                session = ServiceSession(
                     id: id,
                     name: name,
                     serviceType: serviceType,
@@ -293,7 +287,8 @@ class ServiceArchive {
                 let reference = String(cString: refStr)
                 let verseText = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
                 let translation = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? "KJV"
-                let timestamp = formatter.date(from: String(cString: timestampStr)) ?? Date()
+                // Note: timestamp parsed but not used - DetectedScripture auto-sets it
+                _ = formatter.date(from: String(cString: timestampStr)) // stored timestamp
                 let wasPushed = sqlite3_column_int(stmt, 5) == 1
                 let rawTranscript = sqlite3_column_text(stmt, 6).map { String(cString: $0) } ?? ""
                 let confidence = Float(sqlite3_column_double(stmt, 7))
