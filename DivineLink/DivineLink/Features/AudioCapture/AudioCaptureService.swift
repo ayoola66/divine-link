@@ -96,11 +96,13 @@ class AudioCaptureService: ObservableObject {
             
             // Install tap on input node
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-                // Send buffer to subscribers
-                self?.audioBufferPublisher.send(buffer)
+                guard let self = self else { return }
                 
-                // Calculate audio level
-                self?.processAudioBuffer(buffer)
+                // Send buffer to subscribers (can be called from any thread)
+                self.audioBufferPublisher.send(buffer)
+                
+                // Calculate audio level on background thread
+                self.processAudioBufferBackground(buffer)
             }
             
             // Start the engine
@@ -142,7 +144,8 @@ class AudioCaptureService: ObservableObject {
     
     // MARK: - Audio Level Processing
     
-    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+    /// Process audio buffer on background thread (called from audio tap)
+    nonisolated private func processAudioBufferBackground(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameLength = Int(buffer.frameLength)
         
@@ -165,13 +168,11 @@ class AudioCaptureService: ObservableObject {
         let normalizedLevel = min(rms * 10, 1.0)
         let normalizedPeak = min(peak * 5, 1.0)
         
-        // Update on background thread, will be smoothed by timer
-        currentLevel = normalizedLevel
-        
-        // Update peak immediately for responsiveness
-        let peakCopy = normalizedPeak
-        DispatchQueue.main.async {
-            self.peakLevel = max(self.peakLevel * 0.95, peakCopy)
+        // Update UI state on main thread
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.currentLevel = normalizedLevel
+            self.peakLevel = max(self.peakLevel * 0.95, normalizedPeak)
         }
     }
     
