@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 /// Manages caching and suggestions for service types
 class ServiceTypeCache: ObservableObject {
@@ -138,7 +139,7 @@ class ServiceTypeCache: ObservableObject {
 
 struct ServiceTypeField: View {
     @Binding var text: String
-    @StateObject private var cache = ServiceTypeCache.shared
+    @ObservedObject private var cache = ServiceTypeCache.shared
     @State private var showSuggestions = false
     @FocusState private var isFocused: Bool
     
