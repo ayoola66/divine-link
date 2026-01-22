@@ -526,25 +526,15 @@ struct MainView: View {
         // TODO: Push to ProPresenter (Epic 3)
         print("[Push] \(verse.displayReference)")
         
-        // Remove from pending
-        if let index = pipeline.buffer.pendingVerses.firstIndex(where: { $0.id == verse.id }) {
-            pipeline.buffer.pendingVerses.remove(at: index)
-            pipeline.buffer.history.insert(verse, at: 0)
-        }
-        
-        // Clear selection if it was the selected verse
-        if selectedVerseId == verse.id {
-            selectedVerseId = pipeline.buffer.pendingVerses.first?.id
-        }
+        // Mark as pushed (keeps it in list with visual indicator)
+        pipeline.buffer.markAsPushed(id: verse.id)
     }
     
     private func deleteVerse(_ verse: PendingVerse) {
         print("[Delete] \(verse.displayReference)")
         
-        // Remove from pending
-        if let index = pipeline.buffer.pendingVerses.firstIndex(where: { $0.id == verse.id }) {
-            pipeline.buffer.pendingVerses.remove(at: index)
-        }
+        // Remove from pending list
+        pipeline.buffer.remove(id: verse.id)
         
         // Clear selection if it was the selected verse
         if selectedVerseId == verse.id {
@@ -717,8 +707,30 @@ struct VerseRowView: View {
     
     @State private var isHovering = false
     
+    /// Background colour based on state
+    private var backgroundColor: Color {
+        if verse.isPushed {
+            // Pushed verses get a green-tinted background
+            return Color.green.opacity(isSelected ? 0.2 : 0.1)
+        } else if isSelected {
+            return Color.divineBlue.opacity(0.1)
+        } else if isHovering {
+            return Color.gray.opacity(0.05)
+        } else {
+            return Color.clear
+        }
+    }
+    
     var body: some View {
         HStack(spacing: 8) {
+            // Pushed indicator
+            if verse.isPushed {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .help("Pushed \(verse.pushCount) time\(verse.pushCount == 1 ? "" : "s")")
+            }
+            
             // Main content
             VStack(alignment: .leading, spacing: 4) {
                 // Reference and translation
@@ -726,7 +738,18 @@ struct VerseRowView: View {
                     Text(verse.displayReference)
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundStyle(isSelected ? Color.divineBlue : .primary)
+                        .foregroundStyle(verse.isPushed ? .green : (isSelected ? Color.divineBlue : .primary))
+                    
+                    // Push count badge
+                    if verse.pushCount > 1 {
+                        Text("×\(verse.pushCount)")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.green, in: Capsule())
+                    }
                     
                     Spacer()
                     
@@ -754,11 +777,11 @@ struct VerseRowView: View {
                     Button {
                         onPush()
                     } label: {
-                        Image(systemName: "arrow.up.circle.fill")
+                        Image(systemName: verse.isPushed ? "arrow.up.circle" : "arrow.up.circle.fill")
                             .foregroundStyle(Color.divineGold)
                     }
                     .buttonStyle(.plain)
-                    .help("Push to ProPresenter")
+                    .help(verse.isPushed ? "Push again" : "Push to ProPresenter")
                     
                     Button {
                         onDelete()
@@ -774,11 +797,11 @@ struct VerseRowView: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.divineBlue.opacity(0.1) : (isHovering ? Color.gray.opacity(0.05) : Color.clear))
+                .fill(backgroundColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.divineGold.opacity(0.5) : Color.clear, lineWidth: 1)
+                .stroke(isSelected ? Color.divineGold.opacity(0.5) : (verse.isPushed ? Color.green.opacity(0.3) : Color.clear), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {

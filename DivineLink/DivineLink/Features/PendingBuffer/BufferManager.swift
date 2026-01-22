@@ -12,6 +12,13 @@ struct PendingVerse: Identifiable, Equatable {
     let timestamp: Date
     let confidence: Float
     let rawTranscript: String  // What was actually heard (for learning)
+    var pushCount: Int = 0  // How many times this verse has been pushed
+    var lastPushedAt: Date? = nil  // When it was last pushed
+    
+    /// Whether this verse has been pushed at least once
+    var isPushed: Bool {
+        pushCount > 0
+    }
     
     /// Formatted display reference
     var displayReference: String {
@@ -137,5 +144,38 @@ class BufferManager: ObservableObject {
     /// Clear history
     func clearHistory() {
         history.removeAll()
+    }
+    
+    /// Mark a verse as pushed (keeps it in list but changes appearance)
+    func markAsPushed(id: UUID) {
+        if let index = pendingVerses.firstIndex(where: { $0.id == id }) {
+            pendingVerses[index].pushCount += 1
+            pendingVerses[index].lastPushedAt = Date()
+            print("[Buffer] Marked as pushed: \(pendingVerses[index].displayReference) (push count: \(pendingVerses[index].pushCount))")
+        }
+    }
+    
+    /// Remove a specific verse by ID (explicit delete)
+    @discardableResult
+    func remove(id: UUID) -> PendingVerse? {
+        if let index = pendingVerses.firstIndex(where: { $0.id == id }) {
+            let removed = pendingVerses.remove(at: index)
+            history.insert(removed, at: 0)
+            
+            // Trim history
+            if history.count > maxHistoryCount {
+                history.removeLast()
+            }
+            
+            currentVersePublisher.send(currentVerse)
+            print("[Buffer] Removed: \(removed.displayReference)")
+            return removed
+        }
+        return nil
+    }
+    
+    /// Get a verse by ID
+    func getVerse(id: UUID) -> PendingVerse? {
+        pendingVerses.first(where: { $0.id == id })
     }
 }
