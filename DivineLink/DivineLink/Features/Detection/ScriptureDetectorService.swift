@@ -85,9 +85,10 @@ class ScriptureDetectorService: ObservableObject {
         }
         
         // Spoken format without colon: "John 316" (chapter+verse concatenated)
-        // Matches: John 316, Romans 828, Psalm 231 (interprets as chapter+verse)
+        // ONLY matches 3+ digits to avoid "11" being split into "1:1"
+        // Examples: 316 → 3:16, 828 → 8:28, 2316 → 23:16
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d)(\d{1,2})(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,2})(\d{2})(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .spoken))
