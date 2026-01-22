@@ -1,0 +1,279 @@
+============================================================
+Bible Database Repair Tool
+Source: wldeh/bible-api via jsDelivr CDN (MIT, no limits)
+============================================================
+
+📊 Current Database Status:
+   ASV: 34465 verses
+   KJV: 57208 verses
+   WEB: 103967 verses
+
+============================================================
+
+🔧 Repairing KJV...
+  ✓ Genesis: 1533 verses (complete)
+  ✓ Exodus: 1213 verses (complete)
+  ✓ Leviticus: 859 verses (complete)
+  ✓ Numbers: 1288 verses (complete)
+  ✓ Deuteronomy: 959 verses (complete)
+  ✓ Joshua: 658 verses (complete)
+  ✓ Judges: 618 verses (complete)
+  ✓ Ruth: 85 verses (complete)
+  📖 1 Samuel: 250/810 verses...
+     ✅ Added 1620 verses
+  📖 2 Samuel: 110/695 verses...
+     ✅ Added 1390 verses
+  📖 1 Kings: 284/816 verses...
+     ✅ Added 1632 verses
+  📖 2 Kings: 194/719 verses...
+     ✅ Added 1438 verses
+  📖 1 Chronicles: 331/942 verses...
+     ✅ Added 1884 verses
+  📖 2 Chronicles: 35/822 verses...
+     ✅ Added 1644 verses
+  ✓ Ezra: 269 verses (complete)
+  ✓ Nehemiah: 406 verses (complete)
+  ✓ Esther: 167 verses (complete)
+  ✓ Job: 1070 verses (complete)
+  ✓ Psalms: 2461 verses (complete)
+  ✓ Proverbs: 915 verses (complete)
+  ✓ Ecclesiastes: 222 verses (complete)
+  📖 Song of Solomon: 0/117 verses...
+     ✅ Added 234 verses
+  ✓ Isaiah: 1292 verses (complete)
+  ✓ Jeremiah: 1364 verses (complete)
+  ✓ Lamentations: 154 verses (complete)
+  ✓ Ezekiel: 1273 verses (complete)
+  ✓ Daniel: 344 verses (complete)
+  ✓ Hosea: 197 verses (complete)
+  ✓ Joel: 73 verses (complete)
+  ✓ Amos: 146 verses (complete)
+  ✓ Obadiah: 21 verses (complete)
+  ✓ Jonah: 48 verses (complete)
+  ✓ Micah: 105 verses (complete)
+  ✓ Nahum: 47 verses (complete)
+  ✓ Habakkuk: 56 verses (complete)
+  ✓ Zephaniah: 53 verses (complete)
+  ✓ Haggai: 38 verses (complete)
+  ✓ Zechariah: 211 verses (complete)
+  ✓ Malachi: 55 verses (complete)
+  ✓ Matthew: 1071 verses (complete)
+  ✓ Mark: 678 verses (complete)
+  ✓ Luke: 1151 verses (complete)
+  ✓ John: 879 verses (complete)
+  ✓ Acts: 1007 verses (complete)
+  ✓ Romans: 433 verses (complete)
+  📖 1 Corinthians: 0/437 verses...
+     ✅ Added 874 verses
+  📖 2 Corinthians: 86/257 verses...
+     ✅ Added 514 verses
+  ✓ Galatians: 149 verses (complete)
+  ✓ Ephesians: 155 verses (complete)
+  ✓ Philippians: 104 verses (complete)
+  ✓ Colossians: 95 verses (complete)
+  📖 1 Thessalonians: 0/89 verses...
+     ✅ Added 178 verses
+  📖 2 Thessalonians: 0/47 verses...
+     ✅ Added 94 verses
+  📖 1 Timothy: 0/113 verses...
+     ✅ Added 226 verses
+  📖 2 Timothy: 0/83 verses...
+     ✅ Added 166 verses
+  ✓ Titus: 46 verses (complete)
+  ✓ Philemon: 25 verses (complete)
+  ✓ Hebrews: 303 verses (complete)
+  ✓ James: 108 verses (complete)
+  📖 1 Peter: 25/105 verses...
+     ✅ Added 210 verses
+  📖 2 Peter: 0/61 verses...
+     ✅ Added 122 verses
+  📖 1 John: 0/105 verses...
+     ✅ Added 210 verses
+  📖 2 John: 0/13 verses...
+     ✅ Added 26 verses
+  📖 3 John: 0/14 verses...
+     ✅ Added 28 verses
+  ✓ Jude: 25 verses (complete)
+  ✓ Revelation: 404 verses (complete)
+
+  📊 KJV: Added 12490 verses, ~0 still missing
+
+🔧 Repairing ASV...
+  ✓ Genesis: 1533 verses (complete)
+  ✓ Exodus: 1213 verses (complete)
+  ✓ Leviticus: 859 verses (complete)
+  ✓ Numbers: 1288 verses (complete)
+  ✓ Deuteronomy: 959 verses (complete)
+  ✓ Joshua: 658 verses (complete)
+  ✓ Judges: 618 verses (complete)
+  ✓ Ruth: 85 verses (complete)
+  📖 1 Samuel: 411/810 verses...
+     ✅ Added 810 verses
+  📖 2 Samuel: 25/695 verses...
+     ✅ Added 695 verses
+  📖 1 Kings: 532/816 verses...
+     ✅ Added 816 verses
+  📖 2 Kings: 0/719 verses...
+     ✅ Added 719 verses
+  📖 1 Chronicles: 529/942 verses...
+     ✅ Added 942 verses
+  📖 2 Chronicles: 360/822 verses...
+     ✅ Added 822 verses
+  ✓ Ezra: 280 verses (complete)
+  ✓ Nehemiah: 406 verses (complete)
+  ✓ Esther: 167 verses (complete)
+  ✓ Job: 1070 verses (complete)
+  ✓ Psalms: 2461 verses (complete)
+  ✓ Proverbs: 915 verses (complete)
+  ✓ Ecclesiastes: 222 verses (complete)
+  📖 Song of Solomon: 0/117 verses...
+     ✅ Added 117 verses
+  ✓ Isaiah: 1292 verses (complete)
+  ✓ Jeremiah: 1364 verses (complete)
+  ✓ Lamentations: 154 verses (complete)
+  ✓ Ezekiel: 1273 verses (complete)
+  ✓ Daniel: 357 verses (complete)
+  ✓ Hosea: 197 verses (complete)
+  ✓ Joel: 73 verses (complete)
+  ✓ Amos: 146 verses (complete)
+  ✓ Obadiah: 21 verses (complete)
+  ✓ Jonah: 48 verses (complete)
+  ✓ Micah: 105 verses (complete)
+  ✓ Nahum: 47 verses (complete)
+  ✓ Habakkuk: 56 verses (complete)
+  ✓ Zephaniah: 53 verses (complete)
+  ✓ Haggai: 38 verses (complete)
+  ✓ Zechariah: 211 verses (complete)
+  ✓ Malachi: 55 verses (complete)
+  ✓ Matthew: 1071 verses (complete)
+  ✓ Mark: 678 verses (complete)
+  ✓ Luke: 1151 verses (complete)
+  ✓ John: 879 verses (complete)
+  ✓ Acts: 1007 verses (complete)
+  ✓ Romans: 433 verses (complete)
+  📖 1 Corinthians: 166/437 verses...
+     ✅ Added 437 verses
+  📖 2 Corinthians: 189/257 verses...
+     ✅ Added 257 verses
+  ✓ Galatians: 149 verses (complete)
+  ✓ Ephesians: 155 verses (complete)
+  ✓ Philippians: 104 verses (complete)
+  ✓ Colossians: 95 verses (complete)
+  📖 1 Thessalonians: 0/89 verses...
+     ✅ Added 89 verses
+  📖 2 Thessalonians: 0/47 verses...
+     ✅ Added 47 verses
+  📖 1 Timothy: 62/113 verses...
+     ✅ Added 113 verses
+  ✓ 2 Timothy: 83 verses (complete)
+  ✓ Titus: 46 verses (complete)
+  ✓ Philemon: 25 verses (complete)
+  ✓ Hebrews: 303 verses (complete)
+  ✓ James: 108 verses (complete)
+  📖 1 Peter: 0/105 verses...
+     ✅ Added 105 verses
+  📖 2 Peter: 0/61 verses...
+     ✅ Added 61 verses
+  📖 1 John: 0/105 verses...
+     ✅ Added 105 verses
+  📖 2 John: 0/13 verses...
+     ✅ Added 13 verses
+  📖 3 John: 0/14 verses...
+     ✅ Added 14 verses
+  ✓ Jude: 25 verses (complete)
+  ✓ Revelation: 404 verses (complete)
+
+  📊 ASV: Added 6162 verses, ~0 still missing
+
+🔧 Repairing WEB...
+  ✓ Genesis: 1533 verses (complete)
+  ✓ Exodus: 1213 verses (complete)
+  ✓ Leviticus: 859 verses (complete)
+  ✓ Numbers: 1288 verses (complete)
+  ✓ Deuteronomy: 959 verses (complete)
+  ✓ Joshua: 658 verses (complete)
+  ✓ Judges: 618 verses (complete)
+  ✓ Ruth: 85 verses (complete)
+  📖 1 Samuel: 85/810 verses...
+     ✅ Added 3240 verses
+  📖 2 Samuel: 422/695 verses...
+     ✅ Added 2780 verses
+  📖 1 Kings: 0/816 verses...
+     ✅ Added 3264 verses
+  📖 2 Kings: 423/719 verses...
+     ✅ Added 2876 verses
+  📖 1 Chronicles: 0/942 verses...
+     ✅ Added 3768 verses
+  📖 2 Chronicles: 342/822 verses...
+     ✅ Added 3288 verses
+  ✓ Ezra: 280 verses (complete)
+  ✓ Nehemiah: 406 verses (complete)
+  ✓ Esther: 167 verses (complete)
+  ✓ Job: 1070 verses (complete)
+  ✓ Psalms: 2461 verses (complete)
+  ✓ Proverbs: 915 verses (complete)
+  ✓ Ecclesiastes: 222 verses (complete)
+  ✓ Song of Solomon: 117 verses (complete)
+  ✓ Isaiah: 1292 verses (complete)
+  ✓ Jeremiah: 1364 verses (complete)
+  ✓ Lamentations: 154 verses (complete)
+  ✓ Ezekiel: 1273 verses (complete)
+  ✓ Daniel: 357 verses (complete)
+  ✓ Hosea: 197 verses (complete)
+  ✓ Joel: 73 verses (complete)
+  ✓ Amos: 146 verses (complete)
+  ✓ Obadiah: 21 verses (complete)
+  ✓ Jonah: 48 verses (complete)
+  ✓ Micah: 105 verses (complete)
+  ✓ Nahum: 47 verses (complete)
+  ✓ Habakkuk: 56 verses (complete)
+  ✓ Zephaniah: 53 verses (complete)
+  ✓ Haggai: 38 verses (complete)
+  ✓ Zechariah: 211 verses (complete)
+  ✓ Malachi: 55 verses (complete)
+  ✓ Matthew: 1071 verses (complete)
+  ✓ Mark: 678 verses (complete)
+  ✓ Luke: 1151 verses (complete)
+  ✓ John: 879 verses (complete)
+  ✓ Acts: 1007 verses (complete)
+  ✓ Romans: 434 verses (complete)
+  📖 1 Corinthians: 413/437 verses...
+     ✅ Added 1748 verses
+  📖 2 Corinthians: 0/257 verses...
+     ✅ Added 1028 verses
+  ✓ Galatians: 149 verses (complete)
+  ✓ Ephesians: 155 verses (complete)
+  ✓ Philippians: 104 verses (complete)
+  ✓ Colossians: 95 verses (complete)
+  📖 1 Thessalonians: 79/89 verses...
+     ✅ Added 356 verses
+  ✓ 2 Thessalonians: 47 verses (complete)
+  ✓ 1 Timothy: 113 verses (complete)
+  📖 2 Timothy: 44/83 verses...
+     ✅ Added 332 verses
+  ✓ Titus: 46 verses (complete)
+  ✓ Philemon: 25 verses (complete)
+  ✓ Hebrews: 303 verses (complete)
+  ✓ James: 108 verses (complete)
+  📖 1 Peter: 0/105 verses...
+     ✅ Added 420 verses
+  📖 2 Peter: 0/61 verses...
+     ✅ Added 244 verses
+  📖 1 John: 21/105 verses...
+     ✅ Added 420 verses
+  📖 2 John: 1/13 verses...
+     ✅ Added 52 verses
+  📖 3 John: 1/14 verses...
+     ✅ Added 56 verses
+  ✓ Jude: 25 verses (complete)
+  ✓ Revelation: 404 verses (complete)
+
+  📊 WEB: Added 23872 verses, ~0 still missing
+
+============================================================
+📊 Final Database Status:
+   ASV: 40627 verses
+   KJV: 69698 verses
+   WEB: 127839 verses
+
+✅ Repair complete!
