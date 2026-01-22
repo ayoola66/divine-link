@@ -84,13 +84,13 @@ struct ImplicitMatch {
               let chapterRange = Range(match.range(at: 2), in: reference),
               let verseRange = Range(match.range(at: 3), in: reference),
               let chapter = Int(reference[chapterRange]),
-              let verse = Int(reference[verseRange]) else {
+              let verseStart = Int(reference[verseRange]) else {
             return nil
         }
         
         let book = String(reference[bookRange])
         
-        return ScriptureReference(book: book, chapter: chapter, verse: verse)
+        return ScriptureReference(book: book, chapter: chapter, verseStart: verseStart, verseEnd: nil)
     }
 }
 
