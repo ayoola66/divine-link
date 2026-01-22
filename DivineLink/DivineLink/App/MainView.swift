@@ -77,6 +77,8 @@ struct MainView: View {
             }
         }
         .onKeyPress(.space) {
+            // Only toggle if not editing transcript
+            guard !isEditingTranscript else { return .ignored }
             Task {
                 await pipeline.toggle()
             }

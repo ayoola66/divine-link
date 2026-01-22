@@ -387,7 +387,7 @@ class BookNameNormaliser {
         "some": "Psalms", "sum": "Psalms", "salm": "Psalms", "sums": "Psalms", "palms": "Psalms",  // Common speech-to-text misheard
         "proverbs": "Proverbs", "prov": "Proverbs", "pr": "Proverbs", "pro": "Proverbs",
         "ecclesiastes": "Ecclesiastes", "eccles": "Ecclesiastes", "eccl": "Ecclesiastes", "ec": "Ecclesiastes",
-        "song of solomon": "Song of Solomon", "song of songs": "Song of Solomon", "songs": "Song of Solomon", "sos": "Song of Solomon", "ss": "Song of Solomon",
+        "song of solomon": "Song of Solomon", "song of songs": "Song of Solomon", "songs of solomon": "Song of Solomon", "songs": "Song of Solomon", "sos": "Song of Solomon", "ss": "Song of Solomon", "canticles": "Song of Solomon", "song": "Song of Solomon",
         "isaiah": "Isaiah", "isa": "Isaiah", "is": "Isaiah",
         "jeremiah": "Jeremiah", "jer": "Jeremiah", "je": "Jeremiah",
         "lamentations": "Lamentations", "lam": "Lamentations", "la": "Lamentations",
