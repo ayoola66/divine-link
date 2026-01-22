@@ -101,9 +101,10 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .spoken))
         }
         
-        // Verbal format: "John chapter 3 verse 16" or "John chapter 3 verses 16 through 18"
+        // Verbal format: "John chapter 3 verse 16" or "Genesis chapter 1 verse one"
+        // Accepts both digits and number words for chapter and verse
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+chapter\s+(\d{1,3})\s+verse?s?\s+(\d{1,3})(?:\s+(?:to|through|-)\s+(\d{1,3}))?"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+verse?s?\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+))?"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbal))
