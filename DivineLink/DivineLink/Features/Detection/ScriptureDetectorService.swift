@@ -115,10 +115,11 @@ class ScriptureDetectorService: ObservableObject {
         // Verbal short format: "Genesis 1 verse 1" or "Genesis 1 verse one" (no "chapter" keyword)
         // Pattern: Book Number verse Number/Word
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbalShort))
+            print("✅ verbalShort pattern compiled")
         }
         
         // Verbal with word numbers: "Genesis one verse one", "Psalm twenty-three"
@@ -215,8 +216,11 @@ class ScriptureDetectorService: ObservableObject {
         
         // Normalise book name
         guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
+            print("⚠️ Book not recognized: '\(rawBook)' (pattern: \(type))")
             return nil // Not a valid book name
         }
+        
+        print("📖 Parsing match: book='\(rawBook)'→'\(canonicalBook)' (pattern: \(type))")
         
         var chapter: Int
         var verseStart = 1
