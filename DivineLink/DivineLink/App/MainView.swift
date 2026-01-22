@@ -360,7 +360,7 @@ struct MainView: View {
                 lastUsed: Date()
             )
             if var profile = sessionManager.pastorProfiles.first(where: { $0.id == pastorId }) {
-                profile.corrections.append(correction)
+                profile.speechCorrections.append(correction)
                 sessionManager.updatePastorProfile(profile)
             }
         }
