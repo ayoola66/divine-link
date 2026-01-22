@@ -1,23 +1,21 @@
 import Foundation
 import Speech
+import Combine
 import os
 
 /// Custom language model for Bible vocabulary
-/// Uses Apple's SFSpeechLanguageModel to bias recognition toward Bible book names
+/// Uses contextual strings to bias recognition toward Bible book names
+/// Note: Full SFCustomLanguageModelData requires macOS 15+, this provides fallback for macOS 14
 @MainActor
 class BibleLanguageModel: ObservableObject {
     
     // MARK: - Properties
     
-    private let modelIdentifier = "com.divinelink.bible-vocabulary"
-    private let modelVersion = "1.0"
     private let logger = Logger(subsystem: "com.divinelink", category: "BibleLanguageModel")
     
     @Published var isReady = false
     @Published var isLoading = false
     @Published var error: String?
-    
-    private var languageModelConfiguration: SFSpeechLanguageModelConfiguration?
     
     // MARK: - Bible Books (All 66)
     
@@ -67,138 +65,55 @@ class BibleLanguageModel: ObservableObject {
         "atonement", "covenant", "parable", "beatitudes", "sabbath"
     ]
     
+    // MARK: - Computed Properties
+    
+    /// All vocabulary phrases for use with speech recognition
+    var allPhrases: [String] {
+        var phrases: [String] = []
+        phrases.append(contentsOf: oldTestamentBooks)
+        phrases.append(contentsOf: newTestamentBooks)
+        phrases.append(contentsOf: numberedBookVariations)
+        phrases.append(contentsOf: difficultNames)
+        phrases.append(contentsOf: theologicalTerms)
+        return phrases
+    }
+    
+    /// Contextual strings for SFSpeechRecognitionRequest
+    var contextualStrings: [String] {
+        // Include book names with common patterns
+        var strings: [String] = []
+        
+        // Add base book names
+        strings.append(contentsOf: oldTestamentBooks)
+        strings.append(contentsOf: newTestamentBooks)
+        strings.append(contentsOf: numberedBookVariations)
+        
+        // Add common scripture citation patterns
+        for book in oldTestamentBooks + newTestamentBooks {
+            strings.append("\(book) chapter")
+            strings.append("\(book) verse")
+        }
+        
+        // Add theological terms
+        strings.append(contentsOf: theologicalTerms)
+        
+        return strings
+    }
+    
     // MARK: - Initialisation
     
     init() {
-        Task {
-            await prepareLanguageModel()
-        }
+        // Mark as ready immediately - we provide contextual strings, not a compiled model
+        isReady = true
+        logger.info("Bible vocabulary loaded: \(self.allPhrases.count) phrases")
     }
     
-    // MARK: - Model Preparation
+    // MARK: - Apply to Recognition Request
     
-    /// Prepare the custom language model for use with speech recognition
-    func prepareLanguageModel() async {
-        isLoading = true
-        error = nil
-        
-        do {
-            let modelData = createLanguageModelData()
-            
-            // Get Application Support directory
-            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let modelDir = appSupport.appendingPathComponent("DivineLink/LanguageModel")
-            
-            try FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
-            
-            let dataURL = modelDir.appendingPathComponent("bible-vocabulary.bin")
-            
-            // Export training data
-            try await modelData.export(to: dataURL)
-            logger.info("Language model data exported to: \(dataURL.path)")
-            
-            // Create configuration
-            let config = SFSpeechLanguageModelConfiguration(modelID: modelIdentifier)
-            
-            // Prepare compiled model
-            try await SFSpeechLanguageModel.prepareCustomLanguageModel(
-                for: dataURL,
-                clientIdentifier: "com.divinelink",
-                configuration: config
-            )
-            
-            languageModelConfiguration = config
-            isReady = true
-            logger.info("✅ Bible language model ready")
-            
-        } catch {
-            self.error = error.localizedDescription
-            logger.error("❌ Failed to prepare language model: \(error.localizedDescription)")
-        }
-        
-        isLoading = false
-    }
-    
-    /// Get the language model configuration for use with speech recognition
-    var configuration: SFSpeechLanguageModelConfiguration? {
-        return languageModelConfiguration
-    }
-    
-    // MARK: - Model Data Creation
-    
-    @SFCustomLanguageModelDataBuilder
-    private func createLanguageModelData() -> SFCustomLanguageModelData {
-        SFCustomLanguageModelData(
-            locale: Locale(identifier: "en-GB"),
-            identifier: modelIdentifier,
-            version: modelVersion
-        ) {
-            // Old Testament Books - High priority
-            for book in oldTestamentBooks {
-                SFCustomLanguageModelData.PhraseCount(phrase: book, count: 1000)
-            }
-            
-            // New Testament Books - High priority
-            for book in newTestamentBooks {
-                SFCustomLanguageModelData.PhraseCount(phrase: book, count: 1000)
-            }
-            
-            // Numbered book variations
-            for variation in numberedBookVariations {
-                SFCustomLanguageModelData.PhraseCount(phrase: variation, count: 800)
-            }
-            
-            // Difficult pronunciations - Highest priority
-            for name in difficultNames {
-                SFCustomLanguageModelData.PhraseCount(phrase: name, count: 1200)
-            }
-            
-            // Theological terms
-            for term in theologicalTerms {
-                SFCustomLanguageModelData.PhraseCount(phrase: term, count: 500)
-            }
-            
-            // Custom pronunciations for difficult names
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Habakkuk",
-                phonemes: ["h æ b ə k ʌ k"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Zephaniah",
-                phonemes: ["z ɛ f ə n aɪ ə"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Ecclesiastes",
-                phonemes: ["ɪ k l iː z i æ s t iː z"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Deuteronomy",
-                phonemes: ["d uː t ə r ɒ n ə m i"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Leviticus",
-                phonemes: ["l ɪ v ɪ t ɪ k ə s"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Philippians",
-                phonemes: ["f ɪ l ɪ p i ə n z"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Colossians",
-                phonemes: ["k ə l ɒ ʃ ə n z"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Thessalonians",
-                phonemes: ["θ ɛ s ə l oʊ n i ə n z"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Galatians",
-                phonemes: ["ɡ ə l eɪ ʃ ə n z"]
-            )
-            SFCustomLanguageModelData.CustomPronunciation(
-                grapheme: "Ephesians",
-                phonemes: ["ɪ f iː ʒ ə n z"]
-            )
-        }
+    /// Apply Bible vocabulary hints to a speech recognition request
+    func applyTo(request: SFSpeechAudioBufferRecognitionRequest) {
+        // Use contextual strings to bias recognition (available in macOS 14+)
+        request.contextualStrings = contextualStrings
+        logger.debug("Applied \(self.contextualStrings.count) contextual strings to recognition request")
     }
 }

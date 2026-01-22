@@ -254,9 +254,9 @@ class TranscriptionService: ObservableObject {
     
     private func configureCustomVocabulary(request: SFSpeechAudioBufferRecognitionRequest) {
         // Use Bible language model if available (macOS 14+)
-        if let config = bibleLanguageModel?.configuration, bibleLanguageModel?.isReady == true {
-            request.customizedLanguageModel = config
-            print("✅ Using Bible vocabulary language model")
+        if let model = bibleLanguageModel, model.isReady {
+            model.applyTo(request: request)
+            print("✅ Applied Bible vocabulary (\(model.contextualStrings.count) contextual strings)")
         } else {
             print("⚠️ Bible language model not ready, using standard recognition")
         }

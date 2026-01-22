@@ -181,30 +181,33 @@ class ProPresenterClient: ObservableObject {
     private func startReconnection() {
         reconnectTask?.cancel()
         
-        reconnectTask = Task {
-            for attempt in 1...maxReconnectAttempts {
+        reconnectTask = Task { [weak self] in
+            guard let self = self else { return }
+            let maxAttempts = self.maxReconnectAttempts
+            
+            for attempt in 1...maxAttempts {
                 guard !Task.isCancelled else { return }
                 
-                logger.info("Reconnection attempt \(attempt)/\(maxReconnectAttempts)")
-                connectionStatus = .testing
+                self.logger.info("Reconnection attempt \(attempt)/\(maxAttempts)")
+                await MainActor.run { self.connectionStatus = .testing }
                 
-                try? await Task.sleep(nanoseconds: UInt64(reconnectDelay * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: UInt64(self.reconnectDelay * 1_000_000_000))
                 
-                guard let baseURL = baseURL else { return }
+                guard let baseURL = self.baseURL else { return }
                 
                 do {
-                    let success = try await testConnection(to: baseURL)
+                    let success = try await self.testConnection(to: baseURL)
                     if success {
-                        logger.info("Reconnection successful")
+                        self.logger.info("Reconnection successful")
                         return
                     }
                 } catch {
-                    logger.warning("Reconnection attempt \(attempt) failed")
+                    self.logger.warning("Reconnection attempt \(attempt) failed")
                 }
             }
             
-            logger.error("All reconnection attempts failed")
-            connectionStatus = .disconnected
+            self.logger.error("All reconnection attempts failed")
+            await MainActor.run { self.connectionStatus = .disconnected }
         }
     }
     
