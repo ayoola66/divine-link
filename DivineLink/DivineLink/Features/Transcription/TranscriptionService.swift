@@ -67,6 +67,9 @@ class TranscriptionService: ObservableObject {
     private let locale: Locale
     private let requiresOnDevice: Bool
     
+    // Custom language model for Bible vocabulary
+    private var bibleLanguageModel: BibleLanguageModel?
+    
     // MARK: - Initialisation
     
     init(locale: Locale = Locale(identifier: "en-GB"), requiresOnDevice: Bool = true) {
@@ -76,6 +79,9 @@ class TranscriptionService: ObservableObject {
         
         // Check initial authorization status
         self.authorizationStatus = SFSpeechRecognizer.authorizationStatus()
+        
+        // Initialise Bible language model
+        self.bibleLanguageModel = BibleLanguageModel()
     }
     
     // MARK: - Permission Handling
@@ -247,10 +253,18 @@ class TranscriptionService: ObservableObject {
     // MARK: - Custom Vocabulary
     
     private func configureCustomVocabulary(request: SFSpeechAudioBufferRecognitionRequest) {
-        // In macOS 15+, we can use SFSpeechLanguageModel for custom vocabulary
-        // For now, we'll rely on the detection engine to handle variations
-        
-        // This would be enhanced in Story 2.3 with SFCustomLanguageModelData
+        // Use Bible language model if available (macOS 14+)
+        if let config = bibleLanguageModel?.configuration, bibleLanguageModel?.isReady == true {
+            request.customizedLanguageModel = config
+            print("✅ Using Bible vocabulary language model")
+        } else {
+            print("⚠️ Bible language model not ready, using standard recognition")
+        }
+    }
+    
+    /// Check if Bible language model is ready
+    var isBibleModelReady: Bool {
+        bibleLanguageModel?.isReady ?? false
     }
 }
 
