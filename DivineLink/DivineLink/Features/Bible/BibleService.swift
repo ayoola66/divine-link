@@ -117,16 +117,20 @@ class BibleService: ObservableObject {
         // Try to find the database in the bundle
         guard let dbPath = Bundle.main.path(forResource: "Bible", ofType: "db") else {
             // Database not yet bundled - this is expected during development
-            print("Bible database not found in bundle - will use placeholder data")
+            print("❌ Bible database not found in bundle - will use placeholder data")
+            print("   Bundle path: \(Bundle.main.bundlePath)")
             isLoaded = false
             return
         }
+        
+        print("✅ Bible database found at: \(dbPath)")
         
         var dbPointer: OpaquePointer?
         let result = sqlite3_open_v2(dbPath, &dbPointer, SQLITE_OPEN_READONLY, nil)
         
         if result != SQLITE_OK {
             let message = String(cString: sqlite3_errmsg(dbPointer))
+            print("❌ Failed to open Bible database: \(message)")
             error = .databaseOpenFailed(message)
             sqlite3_close(dbPointer)
             return
@@ -137,6 +141,7 @@ class BibleService: ObservableObject {
         // Load book cache
         await loadBookCache()
         
+        print("✅ Bible database loaded successfully. Books cached: \(bookCache.count)")
         isLoaded = true
     }
     
@@ -177,21 +182,30 @@ class BibleService: ObservableObject {
     
     /// Get a single verse by reference
     func getVerse(book: String, chapter: Int, verse: Int) -> BibleVerse? {
-        guard let db = db else { return nil }
+        guard let db = db else { 
+            print("❌ getVerse: Database not open")
+            return nil 
+        }
         
         guard let bookId = findBookId(name: book) else {
+            print("❌ getVerse: Book not found: \(book)")
             return nil
         }
         
+        let translation = currentTranslation
+        print("🔍 Looking up: \(book) \(chapter):\(verse) (\(translation)) bookId=\(bookId)")
+        
+        // Use parameterised query with translation embedded to avoid C string issues
         let query = """
             SELECT v.id, v.text, b.name 
             FROM verses v 
             JOIN books b ON v.book_id = b.id 
-            WHERE v.book_id = ? AND v.chapter = ? AND v.verse = ? AND v.translation_id = ?
+            WHERE v.book_id = ? AND v.chapter = ? AND v.verse = ? AND v.translation_id = '\(translation)'
             """
         
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            print("❌ getVerse: Failed to prepare statement")
             return nil
         }
         
@@ -200,15 +214,17 @@ class BibleService: ObservableObject {
         sqlite3_bind_int(statement, 1, Int32(bookId))
         sqlite3_bind_int(statement, 2, Int32(chapter))
         sqlite3_bind_int(statement, 3, Int32(verse))
-        sqlite3_bind_text(statement, 4, currentTranslation, -1, nil)
         
         guard sqlite3_step(statement) == SQLITE_ROW else {
+            print("❌ getVerse: No results for \(book) \(chapter):\(verse) in \(translation)")
             return nil
         }
         
         let id = Int(sqlite3_column_int(statement, 0))
         let text = String(cString: sqlite3_column_text(statement, 1))
         let bookName = String(cString: sqlite3_column_text(statement, 2))
+        
+        print("✅ Found verse: \(bookName) \(chapter):\(verse)")
         
         return BibleVerse(
             id: id,
@@ -228,11 +244,13 @@ class BibleService: ObservableObject {
             return []
         }
         
+        let translation = currentTranslation
+        
         let query = """
             SELECT v.id, v.verse, v.text, b.name 
             FROM verses v 
             JOIN books b ON v.book_id = b.id 
-            WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ? AND v.translation_id = ?
+            WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ? AND v.translation_id = '\(translation)'
             ORDER BY v.verse
             """
         
@@ -247,7 +265,6 @@ class BibleService: ObservableObject {
         sqlite3_bind_int(statement, 2, Int32(chapter))
         sqlite3_bind_int(statement, 3, Int32(startVerse))
         sqlite3_bind_int(statement, 4, Int32(endVerse))
-        sqlite3_bind_text(statement, 5, currentTranslation, -1, nil)
         
         var verses: [BibleVerse] = []
         
