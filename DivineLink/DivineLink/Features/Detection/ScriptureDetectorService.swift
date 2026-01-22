@@ -48,8 +48,26 @@ class ScriptureDetectorService: ObservableObject {
         case standard       // John 3:16 or John 3:16-18
         case spoken         // John 316 or John 3 16 (speech recognition format)
         case verbal         // John chapter 3 verse 16
+        case verbalShort    // Genesis 1 verse 1 (no "chapter" keyword)
         case chapterOnly    // Romans 8
     }
+    
+    // MARK: - Number Word Conversion
+    
+    private let numberWords: [String: Int] = [
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+        "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+        "twenty-one": 21, "twenty-two": 22, "twenty-three": 23, "twenty-four": 24, "twenty-five": 25,
+        "twenty-six": 26, "twenty-seven": 27, "twenty-eight": 28, "twenty-nine": 29, "thirty": 30,
+        "thirty-one": 31, "thirty-two": 32, "thirty-three": 33, "thirty-four": 34, "thirty-five": 35,
+        "thirty-six": 36, "thirty-seven": 37, "thirty-eight": 38, "thirty-nine": 39, "forty": 40,
+        "forty-one": 41, "forty-two": 42, "forty-three": 43, "forty-four": 44, "forty-five": 45,
+        "forty-six": 46, "forty-seven": 47, "forty-eight": 48, "forty-nine": 49, "fifty": 50,
+        "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+        "1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5,
+    ]
     
     // MARK: - Initialisation
     
@@ -89,6 +107,23 @@ class ScriptureDetectorService: ObservableObject {
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbal))
+        }
+        
+        // Verbal short format: "Genesis 1 verse 1" or "Genesis 1 verse one" (no "chapter" keyword)
+        // Pattern: Book Number verse Number/Word
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .verbalShort))
+        }
+        
+        // Verbal with word numbers: "Genesis one verse one", "Psalm twenty-three"
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-\w+|thirty|thirty-\w+|forty|forty-\w+|fifty)\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .verbalShort))
         }
         
         // Chapter only format: "Romans 8" (at end of sentence or followed by comma/period)
@@ -154,8 +189,9 @@ class ScriptureDetectorService: ObservableObject {
             return nil // Not a valid book name
         }
         
-        // Parse chapter
-        guard let chapter = Int(String(text[chapterRange])) else {
+        // Parse chapter - handle both numbers and words
+        let chapterStr = String(text[chapterRange]).trimmingCharacters(in: .whitespaces).lowercased()
+        guard let chapter = parseNumber(chapterStr) else {
             return nil
         }
         
@@ -164,19 +200,21 @@ class ScriptureDetectorService: ObservableObject {
         var verseEnd: Int? = nil
         
         if type != .chapterOnly {
-            // Get start verse
+            // Get start verse - handle both numbers and words
             if match.numberOfRanges >= 4,
-               let verseRange = Range(match.range(at: 3), in: text),
-               let verse = Int(String(text[verseRange])) {
-                verseStart = verse
+               let verseRange = Range(match.range(at: 3), in: text) {
+                let verseStr = String(text[verseRange]).trimmingCharacters(in: .whitespaces).lowercased()
+                if let verse = parseNumber(verseStr) {
+                    verseStart = verse
+                }
             }
             
-            // Get end verse (for ranges)
+            // Get end verse (for ranges) - handle both numbers and words
             if match.numberOfRanges >= 5,
                match.range(at: 4).location != NSNotFound,
-               let endRange = Range(match.range(at: 4), in: text),
-               let end = Int(String(text[endRange])) {
-                verseEnd = end
+               let endRange = Range(match.range(at: 4), in: text) {
+                let endStr = String(text[endRange]).trimmingCharacters(in: .whitespaces).lowercased()
+                verseEnd = parseNumber(endStr)
             }
         }
         
@@ -201,6 +239,7 @@ class ScriptureDetectorService: ObservableObject {
         case .standard: 0.95
         case .spoken: 0.85    // Lower confidence for speech-to-text formats
         case .verbal: 0.90
+        case .verbalShort: 0.88  // Natural speech without "chapter" keyword
         case .chapterOnly: 0.80
         }
         
@@ -210,6 +249,30 @@ class ScriptureDetectorService: ObservableObject {
             confidence: confidence,
             timestamp: Date()
         )
+    }
+    
+    // MARK: - Number Parsing
+    
+    /// Parse a number from either digits or word form
+    private func parseNumber(_ input: String) -> Int? {
+        // Try parsing as integer first
+        if let number = Int(input) {
+            return number
+        }
+        
+        // Try word lookup
+        let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
+        if let number = numberWords[lowercased] {
+            return number
+        }
+        
+        // Handle compound numbers with space: "twenty one" -> "twenty-one"
+        let hyphenated = lowercased.replacingOccurrences(of: " ", with: "-")
+        if let number = numberWords[hyphenated] {
+            return number
+        }
+        
+        return nil
     }
     
     // MARK: - Debouncing
@@ -235,7 +298,7 @@ class BookNameNormaliser {
     // Canonical book names mapped from various inputs
     private let bookMappings: [String: String] = [
         // Old Testament
-        "genesis": "Genesis", "gen": "Genesis", "ge": "Genesis",
+        "genesis": "Genesis", "gen": "Genesis", "ge": "Genesis", "genisis": "Genesis", "jenesis": "Genesis",
         "exodus": "Exodus", "exod": "Exodus", "ex": "Exodus",
         "leviticus": "Leviticus", "lev": "Leviticus", "le": "Leviticus",
         "numbers": "Numbers", "num": "Numbers", "nu": "Numbers",
@@ -254,6 +317,7 @@ class BookNameNormaliser {
         "esther": "Esther", "est": "Esther", "es": "Esther",
         "job": "Job", "jb": "Job",
         "psalms": "Psalms", "psalm": "Psalms", "ps": "Psalms", "psa": "Psalms",
+        "some": "Psalms", "sum": "Psalms", "salm": "Psalms", "sums": "Psalms", "palms": "Psalms",  // Common speech-to-text misheard
         "proverbs": "Proverbs", "prov": "Proverbs", "pr": "Proverbs", "pro": "Proverbs",
         "ecclesiastes": "Ecclesiastes", "eccles": "Ecclesiastes", "eccl": "Ecclesiastes", "ec": "Ecclesiastes",
         "song of solomon": "Song of Solomon", "song of songs": "Song of Solomon", "songs": "Song of Solomon", "sos": "Song of Solomon", "ss": "Song of Solomon",
@@ -303,6 +367,7 @@ class BookNameNormaliser {
         "3 john": "3 John", "3john": "3 John", "third john": "3 John", "iii john": "3 John", "3 jn": "3 John", "3jn": "3 John",
         "jude": "Jude", "jud": "Jude",
         "revelation": "Revelation", "revelations": "Revelation", "rev": "Revelation", "re": "Revelation", "the revelation": "Revelation",
+        "revelations of john": "Revelation", "the revelations": "Revelation", "book of revelation": "Revelation",
     ]
     
     /// Normalise a book name to its canonical form
