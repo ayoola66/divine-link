@@ -35,7 +35,7 @@ class ScriptureDetectorService: ObservableObject {
     
     // MARK: - Private Properties
     
-    private let bookNormaliser = BookNameNormaliser()
+    let bookNormaliser = BookNameNormaliser()
     private var recentDetections: [String: Date] = [:]
     private let debounceInterval: TimeInterval = 5.0
     
@@ -296,8 +296,8 @@ class ScriptureDetectorService: ObservableObject {
 /// Normalises various book name formats to canonical names
 class BookNameNormaliser {
     
-    // Canonical book names mapped from various inputs
-    private let bookMappings: [String: String] = [
+    // Canonical book names mapped from various inputs (mutable for learned corrections)
+    private var bookMappings: [String: String] = [
         // Old Testament
         "genesis": "Genesis", "gen": "Genesis", "ge": "Genesis", "genisis": "Genesis", "jenesis": "Genesis",
         "exodus": "Exodus", "exod": "Exodus", "ex": "Exodus",
@@ -387,7 +387,93 @@ class BookNameNormaliser {
             return canonical
         }
         
+        // Try fuzzy match if no exact match
+        if let fuzzyMatch = fuzzyMatch(lowercased, maxDistance: 2) {
+            return fuzzyMatch.canonical
+        }
+        
         return nil
+    }
+    
+    /// Fuzzy match a book name using Levenshtein distance
+    /// Returns the closest match if within maxDistance, along with the matched alias
+    func fuzzyMatch(_ input: String, maxDistance: Int = 2) -> (canonical: String, matchedAlias: String, distance: Int)? {
+        let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        var bestMatch: (canonical: String, matchedAlias: String, distance: Int)?
+        var minDistance = Int.max
+        
+        for (alias, canonical) in bookMappings {
+            let distance = levenshteinDistance(lowercased, alias)
+            
+            if distance < minDistance && distance <= maxDistance {
+                minDistance = distance
+                bestMatch = (canonical, alias, distance)
+            }
+        }
+        
+        return bestMatch
+    }
+    
+    /// Suggest a correction for a misheard book name
+    /// Returns (suggestedBook, confidence) where confidence is 0.0-1.0
+    func suggestCorrection(for input: String) -> (book: String, confidence: Float)? {
+        let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        // Try exact match first
+        if let canonical = bookMappings[lowercased] {
+            return (canonical, 1.0)
+        }
+        
+        // Try fuzzy match with different thresholds
+        if let match = fuzzyMatch(lowercased, maxDistance: 1) {
+            return (match.canonical, 0.9)
+        }
+        
+        if let match = fuzzyMatch(lowercased, maxDistance: 2) {
+            return (match.canonical, 0.7)
+        }
+        
+        if let match = fuzzyMatch(lowercased, maxDistance: 3) {
+            return (match.canonical, 0.5)
+        }
+        
+        return nil
+    }
+    
+    /// Calculate Levenshtein distance between two strings
+    private func levenshteinDistance(_ s1: String, _ s2: String) -> Int {
+        let s1Array = Array(s1)
+        let s2Array = Array(s2)
+        let m = s1Array.count
+        let n = s2Array.count
+        
+        if m == 0 { return n }
+        if n == 0 { return m }
+        
+        var matrix = [[Int]](repeating: [Int](repeating: 0, count: n + 1), count: m + 1)
+        
+        for i in 0...m { matrix[i][0] = i }
+        for j in 0...n { matrix[0][j] = j }
+        
+        for i in 1...m {
+            for j in 1...n {
+                let cost = s1Array[i - 1] == s2Array[j - 1] ? 0 : 1
+                matrix[i][j] = min(
+                    matrix[i - 1][j] + 1,      // deletion
+                    matrix[i][j - 1] + 1,      // insertion
+                    matrix[i - 1][j - 1] + cost // substitution
+                )
+            }
+        }
+        
+        return matrix[m][n]
+    }
+    
+    /// Add a custom mapping (for learned corrections)
+    func addMapping(_ alias: String, to canonical: String) {
+        bookMappings[alias.lowercased()] = canonical
+        print("📚 Added book mapping: '\(alias)' → '\(canonical)'")
     }
     
     /// Get all canonical book names

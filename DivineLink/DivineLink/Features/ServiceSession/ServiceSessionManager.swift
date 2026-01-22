@@ -170,6 +170,14 @@ class ServiceSessionManager: ObservableObject {
         savePastorProfiles()
     }
     
+    /// Update an existing pastor profile
+    func updatePastorProfile(_ profile: PastorProfile) {
+        if let index = pastorProfiles.firstIndex(where: { $0.id == profile.id }) {
+            pastorProfiles[index] = profile
+            savePastorProfiles()
+        }
+    }
+    
     /// Get pastor by ID
     func pastor(for id: UUID) -> PastorProfile? {
         pastorProfiles.first { $0.id == id }

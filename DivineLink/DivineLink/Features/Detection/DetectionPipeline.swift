@@ -147,6 +147,11 @@ class DetectionPipeline: ObservableObject {
         }
     }
     
+    /// Process a detection manually (from edited transcript)
+    func processDetectionManually(_ detection: DetectionResult) {
+        processDetection(detection, rawTranscript: "manual-edit")
+    }
+    
     private func processDetection(_ detection: DetectionResult, rawTranscript: String = "") {
         Logger.pipeline.info("Processing detection: \(detection.displayReference)")
         

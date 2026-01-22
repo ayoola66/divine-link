@@ -237,19 +237,135 @@ struct MainView: View {
     
     // MARK: - Transcript Section
     
+    @State private var isEditingTranscript = false
+    @State private var editedTranscript = ""
+    @State private var showCorrectionAlert = false
+    @State private var suggestedCorrection: (original: String, corrected: String, book: String)?
+    
     private var transcriptSection: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Live Transcript")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            HStack {
+                Text("Live Transcript")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                
+                Spacer()
+                
+                if !transcriptBuffer.text.isEmpty {
+                    Button {
+                        editedTranscript = transcriptBuffer.text
+                        isEditingTranscript = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Edit transcript to correct misheard words")
+                }
+            }
             
-            Text(transcriptBuffer.text.isEmpty ? "Listening..." : transcriptBuffer.text)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(height: 36)
+            if isEditingTranscript {
+                // Editable text field
+                HStack {
+                    TextField("Edit transcript...", text: $editedTranscript)
+                        .textFieldStyle(.plain)
+                        .font(.system(.caption, design: .monospaced))
+                        .onSubmit {
+                            processEditedTranscript()
+                        }
+                    
+                    Button("Detect") {
+                        processEditedTranscript()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Button("Cancel") {
+                        isEditingTranscript = false
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(6)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Text(transcriptBuffer.text.isEmpty ? "Listening..." : transcriptBuffer.text)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
+        .frame(height: isEditingTranscript ? 50 : 36)
+        .alert("Save Correction?", isPresented: $showCorrectionAlert) {
+            Button("Save") {
+                if let correction = suggestedCorrection {
+                    saveSpeechCorrection(original: correction.original, corrected: correction.book)
+                }
+            }
+            Button("Just This Time", role: .cancel) { }
+        } message: {
+            if let correction = suggestedCorrection {
+                Text("Add '\(correction.original)' → '\(correction.book)' to learned corrections?\n\nThis will automatically correct '\(correction.original)' in future.")
+            }
+        }
+    }
+    
+    private func processEditedTranscript() {
+        // Check if the edited transcript differs and might contain a correction
+        let original = transcriptBuffer.text
+        let edited = editedTranscript
+        
+        // Find what was changed (simple word-by-word comparison)
+        let originalWords = original.lowercased().split(separator: " ").map(String.init)
+        let editedWords = edited.lowercased().split(separator: " ").map(String.init)
+        
+        // Look for changed words that might be book names
+        for (index, editedWord) in editedWords.enumerated() {
+            if index < originalWords.count {
+                let originalWord = originalWords[index]
+                if originalWord != editedWord {
+                    // Check if the edited word is a valid book name
+                    if let book = pipeline.detector.bookNormaliser.normalise(editedWord) {
+                        // Offer to save the correction
+                        suggestedCorrection = (original: originalWord, corrected: editedWord, book: book)
+                        showCorrectionAlert = true
+                        break
+                    }
+                }
+            }
+        }
+        
+        // Detect from edited text
+        let detections = pipeline.detector.detect(in: edited)
+        for detection in detections {
+            pipeline.processDetectionManually(detection)
+        }
+        
+        isEditingTranscript = false
+    }
+    
+    private func saveSpeechCorrection(original: String, corrected: String) {
+        // Add to book mappings
+        pipeline.detector.bookNormaliser.addMapping(original, to: corrected)
+        
+        // Also save to current pastor's corrections if in a session
+        if let pastor = sessionManager.currentSession?.pastor {
+            let correction = SpeechCorrection(
+                misheard: original,
+                corrected: corrected,
+                context: "Book name",
+                frequency: 1
+            )
+            if var profile = sessionManager.pastorProfiles.first(where: { $0.id == pastor.id }) {
+                profile.corrections.append(correction)
+                sessionManager.updatePastorProfile(profile)
+            }
+        }
+        
+        print("✅ Saved correction: '\(original)' → '\(corrected)'")
     }
     
     private var statusColour: Color {
