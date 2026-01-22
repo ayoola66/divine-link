@@ -99,6 +99,9 @@ class BibleService: ObservableObject {
     private var bookCache: [String: Int] = [:]
     private var allBooks: [BibleBook] = []
     
+    // Cache for chapter counts per book (for validation)
+    private var bookChapterCounts: [Int: Int] = [:]
+    
     // MARK: - Initialisation
     
     init() {
@@ -213,6 +216,44 @@ class BibleService: ObservableObject {
                 }
             }
         }
+        
+        // Also load chapter counts for validation
+        await loadChapterCounts()
+    }
+    
+    private func loadChapterCounts() async {
+        guard let db = db else { return }
+        
+        // Get max chapter for each book
+        let query = "SELECT book_id, MAX(chapter) as max_chapter FROM verses GROUP BY book_id"
+        var statement: OpaquePointer?
+        
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            return
+        }
+        
+        defer { sqlite3_finalize(statement) }
+        
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let bookId = Int(sqlite3_column_int(statement, 0))
+            let maxChapter = Int(sqlite3_column_int(statement, 1))
+            bookChapterCounts[bookId] = maxChapter
+        }
+        
+        print("📖 Loaded chapter counts for \(bookChapterCounts.count) books")
+    }
+    
+    /// Validate if a chapter exists for a book
+    func isValidChapter(bookId: Int, chapter: Int) -> Bool {
+        guard let maxChapter = bookChapterCounts[bookId] else {
+            return true  // If we don't have data, allow it through
+        }
+        return chapter >= 1 && chapter <= maxChapter
+    }
+    
+    /// Get max chapter for a book
+    func getMaxChapter(for bookId: Int) -> Int? {
+        return bookChapterCounts[bookId]
     }
     
     // MARK: - Verse Lookup
@@ -226,6 +267,13 @@ class BibleService: ObservableObject {
         
         guard let bookId = findBookId(name: book) else {
             print("❌ getVerse: Book not found: \(book)")
+            return nil
+        }
+        
+        // Validate chapter exists for this book
+        if !isValidChapter(bookId: bookId, chapter: chapter) {
+            let maxChapter = bookChapterCounts[bookId] ?? 0
+            print("❌ getVerse: Invalid chapter \(chapter) for \(book) (max: \(maxChapter))")
             return nil
         }
         
