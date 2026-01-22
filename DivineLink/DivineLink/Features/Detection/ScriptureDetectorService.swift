@@ -49,6 +49,7 @@ class ScriptureDetectorService: ObservableObject {
         case spoken         // John 316 or John 3 16 (speech recognition format)
         case verbal         // John chapter 3 verse 16
         case verbalShort    // Genesis 1 verse 1 (no "chapter" keyword)
+        case spokenWords    // Genesis twenty one one → 21:1, John three sixteen → 3:16
         case chapterOnly    // Romans 8
     }
     
@@ -128,6 +129,32 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .verbalShort))
         }
         
+        // Spoken word numbers without "verse" keyword:
+        // Pattern: "Genesis twenty one one" → 21:1 (compound chapter + single verse)
+        // Pattern: "John three sixteen" → 3:16 (single chapter + compound verse)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(twenty|thirty|forty|fifty)[\s-]?(one|two|three|four|five|six|seven|eight|nine)\s+(one|two|three|four|five|six|seven|eight|nine|ten)(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .spokenWords))
+        }
+        
+        // Pattern: "John three sixteen" → 3:16 (single + teens/compound)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*)(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .spokenWords))
+        }
+        
+        // Pattern: "Revelation one one" → 1:1 (two single numbers)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*)(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .spokenWords))
+        }
+        
         // Chapter only format: "Romans 8" (at end of sentence or followed by comma/period)
         if let regex = try? NSRegularExpression(
             pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})(?:\s*[,.\s]|$)"#,
@@ -191,32 +218,69 @@ class ScriptureDetectorService: ObservableObject {
             return nil // Not a valid book name
         }
         
-        // Parse chapter - handle both numbers and words
-        let chapterStr = String(text[chapterRange]).trimmingCharacters(in: .whitespaces).lowercased()
-        guard let chapter = parseNumber(chapterStr) else {
-            return nil
-        }
-        
-        // Parse verse(s)
+        var chapter: Int
         var verseStart = 1
         var verseEnd: Int? = nil
         
-        if type != .chapterOnly {
-            // Get start verse - handle both numbers and words
-            if match.numberOfRanges >= 4,
-               let verseRange = Range(match.range(at: 3), in: text) {
-                let verseStr = String(text[verseRange]).trimmingCharacters(in: .whitespaces).lowercased()
-                if let verse = parseNumber(verseStr) {
-                    verseStart = verse
-                }
-            }
+        // Special handling for spokenWords pattern: "twenty one one" → 21:1
+        if type == .spokenWords {
+            // For compound chapter numbers, groups are: (book)(tens)(units)(verse)
+            // Or for simple: (book)(chapter)(verse)
+            let chapterPart1 = String(text[chapterRange]).trimmingCharacters(in: .whitespaces).lowercased()
             
-            // Get end verse (for ranges) - handle both numbers and words
-            if match.numberOfRanges >= 5,
-               match.range(at: 4).location != NSNotFound,
-               let endRange = Range(match.range(at: 4), in: text) {
-                let endStr = String(text[endRange]).trimmingCharacters(in: .whitespaces).lowercased()
-                verseEnd = parseNumber(endStr)
+            if match.numberOfRanges >= 4, let part2Range = Range(match.range(at: 3), in: text) {
+                let chapterPart2 = String(text[part2Range]).trimmingCharacters(in: .whitespaces).lowercased()
+                
+                // Check if this is a compound number (twenty + one = 21)
+                if let tens = parseNumber(chapterPart1), tens >= 20 && tens % 10 == 0,
+                   let units = parseNumber(chapterPart2), units >= 1 && units <= 9 {
+                    // Compound: "twenty" (20) + "one" (1) = 21
+                    chapter = tens + units
+                    
+                    // Verse is in group 4
+                    if match.numberOfRanges >= 5, let verseRange = Range(match.range(at: 4), in: text) {
+                        let verseStr = String(text[verseRange]).trimmingCharacters(in: .whitespaces).lowercased()
+                        if let verse = parseNumber(verseStr) {
+                            verseStart = verse
+                        }
+                    }
+                } else {
+                    // Not compound, just two separate numbers: chapter and verse
+                    guard let ch = parseNumber(chapterPart1) else { return nil }
+                    chapter = ch
+                    if let verse = parseNumber(chapterPart2) {
+                        verseStart = verse
+                    }
+                }
+            } else {
+                guard let ch = parseNumber(chapterPart1) else { return nil }
+                chapter = ch
+            }
+        } else {
+            // Standard parsing for other pattern types
+            let chapterStr = String(text[chapterRange]).trimmingCharacters(in: .whitespaces).lowercased()
+            guard let ch = parseNumber(chapterStr) else {
+                return nil
+            }
+            chapter = ch
+            
+            if type != .chapterOnly {
+                // Get start verse - handle both numbers and words
+                if match.numberOfRanges >= 4,
+                   let verseRange = Range(match.range(at: 3), in: text) {
+                    let verseStr = String(text[verseRange]).trimmingCharacters(in: .whitespaces).lowercased()
+                    if let verse = parseNumber(verseStr) {
+                        verseStart = verse
+                    }
+                }
+                
+                // Get end verse (for ranges) - handle both numbers and words
+                if match.numberOfRanges >= 5,
+                   match.range(at: 4).location != NSNotFound,
+                   let endRange = Range(match.range(at: 4), in: text) {
+                    let endStr = String(text[endRange]).trimmingCharacters(in: .whitespaces).lowercased()
+                    verseEnd = parseNumber(endStr)
+                }
             }
         }
         
@@ -242,6 +306,7 @@ class ScriptureDetectorService: ObservableObject {
         case .spoken: 0.85    // Lower confidence for speech-to-text formats
         case .verbal: 0.90
         case .verbalShort: 0.88  // Natural speech without "chapter" keyword
+        case .spokenWords: 0.87  // Word numbers like "twenty one one"
         case .chapterOnly: 0.80
         }
         
