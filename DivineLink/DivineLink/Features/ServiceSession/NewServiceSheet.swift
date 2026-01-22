@@ -237,6 +237,9 @@ struct NewServiceSheet: View {
     // MARK: - Actions
     
     private func startService() {
+        // Cache the service type for future suggestions
+        ServiceTypeCache.shared.addType(serviceType)
+        
         let session = sessionManager.startSession(
             name: sessionName,
             serviceType: serviceType,

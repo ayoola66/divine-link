@@ -96,6 +96,8 @@ swift test
 
 ## Documentation
 
+- [Changelog](CHANGELOG.md) - Version history and release notes
+- [Development Log](docs/development-log.md) - Issues, fixes, and technical decisions
 - [Project Brief](docs/brief.md)
 - [Product Requirements](docs/prd.md)
 - [Architecture](docs/architecture.md)

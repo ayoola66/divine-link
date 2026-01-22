@@ -420,6 +420,36 @@ class ServiceArchive {
         }
     }
     
+    // MARK: - Delete
+    
+    /// Delete a specific session
+    func delete(_ session: ServiceSession) {
+        deleteSession(id: session.id)
+    }
+    
+    /// Delete a session by ID
+    func deleteSession(id: UUID) {
+        // Delete scriptures first
+        let deleteScripturesSQL = "DELETE FROM detected_scriptures WHERE session_id = ?;"
+        var scriptureStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, deleteScripturesSQL, -1, &scriptureStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(scriptureStmt, 1, id.uuidString, -1, nil)
+            sqlite3_step(scriptureStmt)
+        }
+        sqlite3_finalize(scriptureStmt)
+        
+        // Delete session
+        let deleteSessionSQL = "DELETE FROM service_sessions WHERE id = ?;"
+        var sessionStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, deleteSessionSQL, -1, &sessionStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(sessionStmt, 1, id.uuidString, -1, nil)
+            sqlite3_step(sessionStmt)
+        }
+        sqlite3_finalize(sessionStmt)
+        
+        print("[ServiceArchive] Deleted session: \(id)")
+    }
+    
     // MARK: - Statistics
     
     /// Get storage usage info

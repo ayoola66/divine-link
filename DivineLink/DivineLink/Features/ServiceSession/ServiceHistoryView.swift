@@ -139,8 +139,9 @@ struct ServiceHistoryView: View {
     }
     
     private func deleteSession(_ session: ServiceSession) {
-        // Note: ServiceArchive doesn't have delete yet, would need to add
-        // For now, just remove from local list
+        // Delete from archive
+        ServiceArchive.shared.delete(session)
+        // Remove from local list
         sessions.removeAll { $0.id == session.id }
     }
     

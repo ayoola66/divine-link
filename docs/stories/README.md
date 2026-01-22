@@ -1,8 +1,8 @@
 # Divine Link - Development Stories
 
-**Total Stories:** 20  
-**Total Epics:** 3  
-**Status:** Ready for Development
+**Total Stories:** 28 (across 4 Epics)  
+**Completed:** 11 stories (39%)  
+**Status:** Epic 2 Complete - Ready for Epic 3
 
 ---
 
@@ -52,6 +52,22 @@
 | 3.9 | [Settings Panel Polish](epic-3/story-3.9-settings-panel-polish.md) | Small | 1.2, 3.5 |
 
 **Epic 3 Deliverable:** Complete MVP with operator workflow and ProPresenter integration.
+
+---
+
+### Epic 4: Service Sessions & Pastor Profiles (7 Stories)
+
+| # | Story | Complexity | Dependencies | Status |
+|---|-------|------------|--------------|--------|
+| 4.1 | [Service Session Creation](epic-4/story-4.1-service-session-creation.md) | Medium | 2.6 | Not Started |
+| 4.2 | [Service Type Suggestions](epic-4/story-4.2-service-type-suggestions.md) | Small | 4.1 | Not Started |
+| 4.3 | [Service History Archive](epic-4/story-4.3-service-history-archive.md) | Medium | 4.1 | Not Started |
+| 4.4 | [Service History UI](epic-4/story-4.4-service-history-ui.md) | Small | 4.3 | Not Started |
+| 4.5 | [Pastor Profile Management](epic-4/story-4.5-pastor-profile-management.md) | Medium | 4.1 | Not Started |
+| 4.6 | [Pastor Speech Learning](epic-4/story-4.6-pastor-speech-learning.md) | Large | 4.5, 2.3 | Not Started |
+| 4.7 | [Archive Auto-Cleanup](epic-4/story-4.7-archive-auto-cleanup.md) | Small | 4.3 | Not Started |
+
+**Epic 4 Deliverable:** Service session management with pastor-specific speech learning.
 
 ---
 
