@@ -416,11 +416,13 @@ class BookNameNormaliser {
         "romance": "Romans", "roman": "Romans",  // Common speech-to-text misheard
         "1 corinthians": "1 Corinthians", "1corinthians": "1 Corinthians", "first corinthians": "1 Corinthians", "i corinthians": "1 Corinthians", "1 cor": "1 Corinthians", "1cor": "1 Corinthians",
         "2 corinthians": "2 Corinthians", "2corinthians": "2 Corinthians", "second corinthians": "2 Corinthians", "ii corinthians": "2 Corinthians", "2 cor": "2 Corinthians", "2cor": "2 Corinthians",
-        "galatians": "Galatians", "gal": "Galatians", "ga": "Galatians",
-        "ephesians": "Ephesians", "eph": "Ephesians", "ep": "Ephesians",
+        "galatians": "Galatians", "gal": "Galatians", "ga": "Galatians", "glacians": "Galatians", "galatia": "Galatians",
+        "ephesians": "Ephesians", "eph": "Ephesians", "ep": "Ephesians", "ephesian": "Ephesians", "fusions": "Ephesians", "a fusions": "Ephesians",
         "philippians": "Philippians", "phil": "Philippians", "php": "Philippians",
-        "colossians": "Colossians", "col": "Colossians",
+        "filipinos": "Philippians", "filipino": "Philippians", "philipians": "Philippians", "phillipians": "Philippians",  // Common STT errors
+        "colossians": "Colossians", "col": "Colossians", "cautions": "Colossians", "closions": "Colossians", "collision": "Colossians",
         "1 thessalonians": "1 Thessalonians", "1thessalonians": "1 Thessalonians", "first thessalonians": "1 Thessalonians", "i thessalonians": "1 Thessalonians", "1 thess": "1 Thessalonians", "1thess": "1 Thessalonians",
+        "thessalonians": "1 Thessalonians", "thessalonian": "1 Thessalonians", "the saloni": "1 Thessalonians", "the salonika": "1 Thessalonians",
         "2 thessalonians": "2 Thessalonians", "2thessalonians": "2 Thessalonians", "second thessalonians": "2 Thessalonians", "ii thessalonians": "2 Thessalonians", "2 thess": "2 Thessalonians", "2thess": "2 Thessalonians",
         "1 timothy": "1 Timothy", "1timothy": "1 Timothy", "first timothy": "1 Timothy", "i timothy": "1 Timothy", "1 tim": "1 Timothy", "1tim": "1 Timothy",
         "2 timothy": "2 Timothy", "2timothy": "2 Timothy", "second timothy": "2 Timothy", "ii timothy": "2 Timothy", "2 tim": "2 Timothy", "2tim": "2 Timothy",
