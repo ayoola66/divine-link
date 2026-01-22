@@ -352,14 +352,14 @@ struct MainView: View {
         pipeline.detector.bookNormaliser.addMapping(original, to: corrected)
         
         // Also save to current pastor's corrections if in a session
-        if let pastor = sessionManager.currentSession?.pastor {
+        if let pastorId = sessionManager.currentSession?.pastorId {
             let correction = SpeechCorrection(
-                misheard: original,
+                heard: original,
                 corrected: corrected,
-                context: "Book name",
-                frequency: 1
+                occurrences: 1,
+                lastUsed: Date()
             )
-            if var profile = sessionManager.pastorProfiles.first(where: { $0.id == pastor.id }) {
+            if var profile = sessionManager.pastorProfiles.first(where: { $0.id == pastorId }) {
                 profile.corrections.append(correction)
                 sessionManager.updatePastorProfile(profile)
             }
