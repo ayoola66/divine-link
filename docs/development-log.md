@@ -51,52 +51,288 @@ The Bible database has incomplete data for ASV and WEB translations:
 
 ---
 
-### [2026-01-22] - ProPresenter Push Not Implemented
-**Type:** Issue  
-**Status:** Open (Expected)  
-**Severity:** High  
-**Related:** Epic 3 (Stories 3.1-3.9), `MainView.swift:485`
-
-**Problem:**  
-Push to ProPresenter functionality is a placeholder:
-```swift
-// TODO: Push to ProPresenter (Epic 3)
-print("[Push] \(verse.displayReference)")
-```
-
-**Cause:**  
-Epic 3 not yet implemented - this is planned work.
-
-**Solution:** Complete Epic 3 stories
-
----
-
-### [2026-01-22] - Connection Test Not Implemented
-**Type:** Issue  
-**Status:** Open (Expected)  
-**Severity:** Low  
-**Related:** `SettingsView.swift:231`
-
-**Problem:**  
-ProPresenter connection test button is a placeholder:
-```swift
-// TODO: Implement connection test in Story 2.x
-```
-
-**Cause:**  
-Part of Epic 3 ProPresenter integration
-
-**Solution:** Implement in Story 3.5 or 3.6
-
----
-
 ## Resolved Issues
+
+### [2026-01-22] - "Philippines" Country Not Mapping to Philippians
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Medium  
+**Related:** `ScriptureDetectorService.swift`, `BibleVocabularyData.swift`
+
+**Problem:**  
+When pastor says "Philippians", speech recognition sometimes outputs "Philippines" (the country), which was not being detected as a valid book name.
+
+**Cause:**  
+Book name mappings did not include country name variations.
+
+**Solution:**  
+Added to `bookMappings`:
+```swift
+"philippines": "Philippians",
+"philippine": "Philippians",
+```
+
+---
+
+### [2026-01-22] - Leading Prepositions Captured in Book Name
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** High  
+**Related:** `ScriptureDetectorService.swift:parseMatch()`
+
+**Problem:**  
+When pastor says "open our Bible to Exodus 12 verse 6", the detector was capturing "to Exodus" instead of just "Exodus", causing lookup failure.
+
+**Cause:**  
+Regex pattern was capturing words before the book name as part of the match.
+
+**Solution:**  
+Added preposition stripping in `parseMatch()`:
+```swift
+let prepositions = ["to", "in", "from", "the", "of", "at", "on", "for", "by", "into", "unto", "about", "through"]
+for prep in prepositions {
+    let prefix = prep + " "
+    if rawBook.lowercased().hasPrefix(prefix) {
+        rawBook = String(rawBook.dropFirst(prefix.count))
+        break
+    }
+}
+```
+
+---
+
+### [2026-01-22] - Invalid Chapter Detection (Philippians 6:7)
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** High  
+**Related:** `BibleService.swift`, `DetectionPipeline.swift`
+
+**Problem:**  
+When speech produced "Philippians 6:7" (Philippians only has 4 chapters), the app was showing "[Verse text not available]" instead of rejecting the invalid reference.
+
+**Cause:**  
+No validation that the chapter number exists for the given book.
+
+**Solution:**  
+1. Added `bookChapterCounts` cache in `BibleService.swift`
+2. Added `isValidChapter()` validation function
+3. Modified `DetectionPipeline.processDetection()` to reject invalid detections:
+```swift
+guard let verseText = bible.getVerseText(from: detection.reference) else {
+    Logger.pipeline.warning("Rejected invalid detection: \(detection.displayReference)")
+    return // REJECT instead of showing placeholder
+}
+```
+
+---
+
+### [2026-01-22] - Pushed Verses Being Removed from List
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Medium  
+**Related:** `MainView.swift`, `BufferManager.swift`
+
+**Problem:**  
+When a verse was pushed to ProPresenter, it was removed from the pending list, making it impossible to push again if needed.
+
+**Cause:**  
+Original design removed verses on push. User feedback indicated this was undesirable.
+
+**Solution:**  
+1. Added `pushCount` and `isPushed` properties to `PendingVerse`
+2. Changed `pushVerse()` to call `markAsPushed()` instead of `remove()`
+3. Added visual indicators:
+   - Green background for pushed verses
+   - Checkmark icon
+   - Push count badge (×2, ×3, etc.)
+4. Added explicit delete button for manual removal
+
+---
+
+### [2026-01-22] - Nonsensical Correction Suggestions
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Medium  
+**Related:** `MainView.swift:processEditedTranscript()`
+
+**Problem:**  
+Correction dialog was suggesting nonsensical replacements like "let's" → "Philippians".
+
+**Cause:**  
+All changed words were being considered as potential book name corrections, including common words.
+
+**Solution:**  
+Added ignore list for common words:
+```swift
+let ignoreWords = Set(["let's", "lets", "the", "to", "our", "a", "an", "in", "on", "of", 
+    "for", "and", "or", "is", "it", "we", "i", "you", "he", "she", "they", 
+    "this", "that", "be", "at", "as", "by", "from", "with", "open", "bible", 
+    "chapter", "verse", "turn", "read", "go"])
+```
+Also added Cancel button to the dialog.
+
+---
+
+### [2026-01-22] - Bible Database Loading Indicator Missing
+**Type:** Enhancement  
+**Status:** Resolved  
+**Severity:** Low  
+**Related:** `BibleService.swift`, `MainView.swift`
+
+**Problem:**  
+Users didn't know if the app was loading the Bible database, leading to confusion when detection didn't work immediately.
+
+**Solution:**  
+1. Added `isLoading` and `loadingProgress` properties to `BibleService`
+2. Added loading overlay in `MainView`:
+```swift
+.overlay {
+    if pipeline.bible.isLoading {
+        ZStack {
+            Color.black.opacity(0.6)
+            VStack(spacing: 16) {
+                ProgressView().scaleEffect(1.5).tint(.white)
+                Text("Loading Bible Database")
+                Text(pipeline.bible.loadingProgress)
+            }
+        }
+    }
+}
+```
+
+---
+
+### [2026-01-22] - "Filipinos" Mishearing for Philippians
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Medium  
+**Related:** `ScriptureDetectorService.swift`
+
+**Problem:**  
+Speech recognition was outputting "Filipinos" when pastor said "Philippians".
+
+**Cause:**  
+Common speech-to-text error not in book mappings.
+
+**Solution:**  
+Added mappings:
+```swift
+"filipinos": "Philippians",
+"filipino": "Philippians",
+"philipians": "Philippians",
+"phillipians": "Philippians",
+```
+
+---
+
+### [2026-01-21] - Space Key Toggling Listening During Edit
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Medium  
+**Related:** `MainView.swift`
+
+**Problem:**  
+When editing the transcript, pressing space to type words would toggle listening on/off.
+
+**Cause:**  
+Keyboard shortcut handler wasn't checking if text field was focused.
+
+**Solution:**  
+Added check for editing state:
+```swift
+.onKeyPress(.space) {
+    guard !isEditingTranscript else { return .ignored }
+    toggleListening()
+    return .handled
+}
+```
+
+---
+
+### [2026-01-21] - Verbal Pattern Not Matching Number Words
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** High  
+**Related:** `ScriptureDetectorService.swift`
+
+**Problem:**  
+"Philippians three seven" was being parsed as 6:7 instead of 3:7.
+
+**Cause:**  
+Number word conversion was incorrect - "three seven" was being treated as a single number.
+
+**Solution:**  
+1. Added `spokenWords` pattern for natural number speech
+2. Improved number word parsing to handle separate chapter and verse words
+3. Added comprehensive number word dictionary (1-50 + ordinals)
+
+---
+
+### [2026-01-21] - Song of Solomon Not Detected
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Low  
+**Related:** `ScriptureDetectorService.swift`
+
+**Problem:**  
+"Song of Solomon" variations not being detected.
+
+**Solution:**  
+Added aliases:
+```swift
+"song of solomon": "Song of Solomon",
+"song of songs": "Song of Solomon",
+"songs of solomon": "Song of Solomon",
+"songs": "Song of Solomon",
+"sos": "Song of Solomon",
+"canticles": "Song of Solomon",
+```
+
+---
+
+### [2026-01-20] - 2-Digit Numbers Split Incorrectly
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** High  
+**Related:** `ScriptureDetectorService.swift`
+
+**Problem:**  
+"John 11" was being incorrectly parsed as "John 1:1".
+
+**Cause:**  
+Spoken pattern was splitting any 2-digit number into chapter:verse.
+
+**Solution:**  
+Changed spoken pattern to only split 3+ digit numbers:
+```swift
+// Before: (\d{1,2})(\d{1,2}) - "11" → "1:1"
+// After:  (\d{1,2})(\d{2})   - "11" stays as chapter 11, "316" → "3:16"
+```
+
+---
+
+### [2026-01-20] - Fuzzy Matching Too Aggressive
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Medium  
+**Related:** `BookNameNormaliser.swift`
+
+**Problem:**  
+Random words were being matched to book names with low confidence.
+
+**Solution:**  
+Reduced maximum Levenshtein distance from 3 to 2 for initial matches, with confidence scoring:
+- Distance 1: 90% confidence
+- Distance 2: 70% confidence
+- Distance 3: 50% confidence (only used for suggestions, not auto-match)
+
+---
 
 ### [2026-01-20] - Speech Recognition Bible Bias
 **Type:** Enhancement  
 **Status:** Resolved  
 **Severity:** Medium  
-**Related:** Story 2.3, `TranscriptionService.swift`
+**Related:** Story 2.3, `BibleLanguageModel.swift`, `TranscriptionService.swift`
 
 **Problem:**  
 Speech recognition was mishearing Bible book names (e.g., "Habakkuk" → "have a cook")
@@ -109,9 +345,49 @@ Implemented `SFCustomLanguageModelData` with:
 - All 66 Bible book names
 - Common theological terms
 - Chapter/verse number patterns
+- Custom pronunciations for difficult names
 
 **Notes:**  
 Users can now also manually correct transcripts and save corrections per pastor
+
+---
+
+### [2026-01-19] - Wrong Translation Column Name
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Critical  
+**Related:** `BibleService.swift`
+
+**Problem:**  
+Query failing with "no such column: translation_id"
+
+**Cause:**  
+Database uses `translation` column, not `translation_id`
+
+**Solution:**  
+Changed query from:
+```sql
+WHERE translation_id = 'KJV'
+-- to
+WHERE translation = 'KJV'
+```
+
+---
+
+### [2026-01-19] - Hardcoded BSB Translation
+**Type:** Bug  
+**Status:** Resolved  
+**Severity:** Medium  
+**Related:** `BibleService.swift`
+
+**Problem:**  
+All queries were using hardcoded "BSB" translation which doesn't exist in database.
+
+**Cause:**  
+Copy-paste error from reference code
+
+**Solution:**  
+Changed to use `selectedTranslation` from `@AppStorage`
 
 ---
 
@@ -180,6 +456,52 @@ Added to `Info.plist`:
 
 ## Technical Decisions Log
 
+### [2026-01-22] - Implicit Reference Detection for Famous Verses
+**Decision:** Detect well-known verses from content without explicit reference
+
+**Rationale:**  
+- Pastors often quote famous verses without citing the reference
+- Congregation knows "For God so loved the world" is John 3:16
+- Adding these automatically helps operators
+
+**Implementation:**  
+- `ImplicitReferenceDetector` checks for phrase matches
+- Only triggers with ≥60% confidence
+- Limited to ~20 most famous verses to avoid false positives
+
+---
+
+### [2026-01-22] - Keep Pushed Verses Visible
+**Decision:** Don't remove verses from list when pushed; mark them visually instead
+
+**Rationale:**  
+- Pastors often return to previously mentioned verses
+- Operators may need to push the same verse multiple times
+- Visual history of what was pushed is useful
+
+**Implementation:**  
+- Green background for pushed verses
+- Checkmark icon
+- Push count badge (×2, ×3)
+- Explicit delete button for removal
+
+---
+
+### [2026-01-22] - Reject Invalid Detections Silently
+**Decision:** Don't show "[Verse text not available]" for invalid references
+
+**Rationale:**  
+- Invalid references (e.g., Philippians 6:7) are speech recognition errors
+- Showing them clutters the UI and confuses operators
+- Better to silently reject and let correct detections through
+
+**Implementation:**  
+- Validate chapter exists for book before adding to pending list
+- Validate verse text can be retrieved from database
+- Log rejections for debugging but don't show to user
+
+---
+
 ### [2026-01-22] - Transcript Editing for Speech Corrections
 **Decision:** Allow users to edit live transcripts to correct misheard words
 
@@ -192,7 +514,7 @@ Added to `Info.plist`:
 - Added edit button on transcript section
 - Text field replaces display when editing
 - Detects if correction is a book name → offers to save
-- Corrections stored in pastor profile (Epic 4 feature brought forward)
+- Corrections stored in pastor profile
 
 ---
 
@@ -237,7 +559,7 @@ Added to `Info.plist`:
 
 **Implementation:**  
 - `Bible.db` bundled in Resources/
-- `BibleService` uses SQLite.swift (if available) or raw SQLite3
+- `BibleService` uses raw SQLite3 C API
 - Verses table: id, book, chapter, verse, text, translation
 
 ---
@@ -254,11 +576,19 @@ Added to `Info.plist`:
 - Uses on-device model (no network required)
 - Latency: ~200-500ms for phrase completion
 - Memory: ~50MB for speech framework
+- Custom language model adds ~2MB
 
 ### Bible Database
 - Database size: ~15MB
 - Query time: <5ms for single verse lookup
 - Index on (book, chapter, verse, translation)
+- Chapter count cache loaded on startup
+
+### Detection Pipeline
+- Debounce: 300ms between detection runs
+- Deduplication: 5-second window for same reference
+- Pattern matching: 6 regex patterns checked in order
+- Implicit detection: Only if no explicit matches found
 
 ---
 
@@ -283,9 +613,23 @@ let results = detector.detect(in: "Let's turn to John chapter 3 verse 16")
 print(results) // Should find "John 3:16"
 ```
 
+### Test Implicit Detection
+```swift
+let implicit = ImplicitReferenceDetector()
+let match = implicit.bestMatch(in: "For God so loved the world")
+print(match?.reference) // Should print "John 3:16"
+```
+
 ### Check Database Integrity
 ```bash
 sqlite3 DivineLink/DivineLink/Resources/Bible.db "SELECT translation, COUNT(*) FROM verses GROUP BY translation;"
+```
+
+### Test Book Name Normalisation
+```swift
+let normaliser = BookNameNormaliser()
+print(normaliser.normalise("filipinos")) // Should print "Philippians"
+print(normaliser.normalise("glacians"))  // Should print "Galatians"
 ```
 
 ---
