@@ -156,19 +156,15 @@ class DetectionPipeline: ObservableObject {
         Logger.pipeline.info("Processing detection: \(detection.displayReference)")
         
         // Look up verse text from Bible database
-        let verseText: String
+        guard bible.isLoaded else {
+            Logger.pipeline.warning("Bible database not loaded - skipping detection: \(detection.displayReference)")
+            return
+        }
         
-        if bible.isLoaded {
-            if let text = bible.getVerseText(from: detection.reference) {
-                verseText = text
-            } else {
-                // Verse not found in database
-                Logger.pipeline.warning("Verse not found in database: \(detection.displayReference)")
-                verseText = "[Verse text not available]"
-            }
-        } else {
-            // Database not loaded - use placeholder
-            verseText = "[Bible database not loaded - \(detection.displayReference)]"
+        guard let verseText = bible.getVerseText(from: detection.reference) else {
+            // Verse not found - REJECT this detection (invalid chapter/verse)
+            Logger.pipeline.warning("Rejected invalid detection: \(detection.displayReference) - verse not found")
+            return
         }
         
         // Get current translation name
