@@ -69,6 +69,30 @@ struct MainView: View {
         .animation(.easeInOut(duration: 0.2), value: showStatus)
         .saturation(pipeline.isActive ? 1.0 : 0.4)
         .animation(.easeInOut(duration: 0.3), value: pipeline.isActive)
+        .overlay {
+            // Loading overlay when Bible database is loading
+            if pipeline.bible.isLoading {
+                ZStack {
+                    Color.black.opacity(0.6)
+                    
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(.white)
+                        
+                        Text("Loading Bible Database")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        
+                        Text(pipeline.bible.loadingProgress)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                    .padding(30)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
         .task {
             // Check permissions and auto-start
             hasPermission = await AudioCaptureService.checkPermission()
@@ -308,6 +332,9 @@ struct MainView: View {
                 }
             }
             Button("Just This Time", role: .cancel) { }
+            Button("Cancel", role: .destructive) {
+                suggestedCorrection = nil
+            }
         } message: {
             if let correction = suggestedCorrection {
                 Text("Add '\(correction.original)' → '\(correction.book)' to learned corrections?\n\nThis will automatically correct '\(correction.original)' in future.")
@@ -316,26 +343,38 @@ struct MainView: View {
     }
     
     private func processEditedTranscript() {
+        // Common words that should never be suggested as corrections
+        let ignoreWords = Set(["let's", "lets", "the", "to", "our", "a", "an", "in", "on", "of", "for", "and", "or", "is", "it", "we", "i", "you", "he", "she", "they", "this", "that", "be", "at", "as", "by", "from", "with", "open", "bible", "chapter", "verse", "turn", "read", "go"])
+        
         // Check if the edited transcript differs and might contain a correction
         let original = transcriptBuffer.text
         let edited = editedTranscript
         
-        // Find what was changed (simple word-by-word comparison)
-        let originalWords = original.lowercased().split(separator: " ").map(String.init)
+        // Find what was changed - look for NEW words in edited that weren't in original
+        let originalWords = Set(original.lowercased().split(separator: " ").map(String.init))
         let editedWords = edited.lowercased().split(separator: " ").map(String.init)
         
-        // Look for changed words that might be book names
-        for (index, editedWord) in editedWords.enumerated() {
-            if index < originalWords.count {
-                let originalWord = originalWords[index]
-                if originalWord != editedWord {
-                    // Check if the edited word is a valid book name
-                    if let book = pipeline.detector.bookNormaliser.normalise(editedWord) {
-                        // Offer to save the correction
-                        suggestedCorrection = (original: originalWord, corrected: editedWord, book: book)
-                        showCorrectionAlert = true
-                        break
-                    }
+        // Look for words in edited that are valid book names but weren't in original
+        for editedWord in editedWords {
+            // Skip if word was already in original or is a common word
+            if originalWords.contains(editedWord) || ignoreWords.contains(editedWord) {
+                continue
+            }
+            
+            // Check if the edited word is a valid book name
+            if let book = pipeline.detector.bookNormaliser.normalise(editedWord) {
+                // Find the most likely misheard word from original (similar length, not a book name)
+                let possibleMisheard = originalWords.filter { word in
+                    !ignoreWords.contains(word) &&
+                    pipeline.detector.bookNormaliser.normalise(word) == nil &&
+                    abs(word.count - editedWord.count) <= 3  // Similar length
+                }
+                
+                if let misheardWord = possibleMisheard.first {
+                    // Offer to save the correction
+                    suggestedCorrection = (original: misheardWord, corrected: editedWord, book: book)
+                    showCorrectionAlert = true
+                    break
                 }
             }
         }

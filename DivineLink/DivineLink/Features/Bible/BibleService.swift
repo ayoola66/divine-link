@@ -85,6 +85,8 @@ class BibleService: ObservableObject {
     
     private var db: OpaquePointer?
     @Published var isLoaded = false
+    @Published var isLoading = true  // Shows loading state
+    @Published var loadingProgress: String = "Initialising..."
     @Published var error: BibleError?
     @Published var availableTranslations: [String] = []
     
@@ -114,15 +116,21 @@ class BibleService: ObservableObject {
     // MARK: - Database Loading
     
     private func loadDatabase() async {
+        isLoading = true
+        loadingProgress = "Looking for Bible database..."
+        
         // Try to find the database in the bundle
         guard let dbPath = Bundle.main.path(forResource: "Bible", ofType: "db") else {
             // Database not yet bundled - this is expected during development
             print("❌ Bible database not found in bundle - will use placeholder data")
             print("   Bundle path: \(Bundle.main.bundlePath)")
+            loadingProgress = "Database not found"
             isLoaded = false
+            isLoading = false
             return
         }
         
+        loadingProgress = "Opening database..."
         print("✅ Bible database found at: \(dbPath)")
         
         var dbPointer: OpaquePointer?
@@ -132,6 +140,8 @@ class BibleService: ObservableObject {
             let message = String(cString: sqlite3_errmsg(dbPointer))
             print("❌ Failed to open Bible database: \(message)")
             error = .databaseOpenFailed(message)
+            loadingProgress = "Failed to open database"
+            isLoading = false
             sqlite3_close(dbPointer)
             return
         }
@@ -139,10 +149,37 @@ class BibleService: ObservableObject {
         db = dbPointer
         
         // Load book cache
+        loadingProgress = "Loading book index..."
         await loadBookCache()
         
-        print("✅ Bible database loaded successfully. Books cached: \(bookCache.count)")
-        isLoaded = true
+        // Verify data exists
+        loadingProgress = "Verifying verses..."
+        let verseCount = countVerses()
+        
+        print("✅ Bible database loaded successfully. Books cached: \(bookCache.count), Verses: \(verseCount)")
+        loadingProgress = "Ready - \(verseCount) verses"
+        isLoaded = verseCount > 0
+        isLoading = false
+    }
+    
+    /// Count total verses in database
+    private func countVerses() -> Int {
+        guard let db = db else { return 0 }
+        
+        let translation = currentTranslation
+        let query = "SELECT COUNT(*) FROM verses WHERE translation_id = '\(translation)'"
+        var statement: OpaquePointer?
+        
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            return 0
+        }
+        
+        defer { sqlite3_finalize(statement) }
+        
+        if sqlite3_step(statement) == SQLITE_ROW {
+            return Int(sqlite3_column_int(statement, 0))
+        }
+        return 0
     }
     
     private func loadBookCache() async {
