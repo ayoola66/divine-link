@@ -212,7 +212,18 @@ class ScriptureDetectorService: ObservableObject {
             return nil
         }
         
-        let rawBook = String(text[bookRange]).trimmingCharacters(in: .whitespaces)
+        var rawBook = String(text[bookRange]).trimmingCharacters(in: .whitespaces)
+        
+        // Strip common leading prepositions that get captured before book names
+        // e.g., "to Exodus" → "Exodus", "in Genesis" → "Genesis"
+        let prepositions = ["to", "in", "from", "the", "of", "at", "on", "for", "by", "into", "unto", "about", "through"]
+        for prep in prepositions {
+            let prefix = prep + " "
+            if rawBook.lowercased().hasPrefix(prefix) {
+                rawBook = String(rawBook.dropFirst(prefix.count))
+                break
+            }
+        }
         
         // Normalise book name
         guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
