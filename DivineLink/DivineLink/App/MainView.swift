@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Main content view displayed in the menu bar popover
+/// Main content view displayed in the application window
 struct MainView: View {
     @StateObject private var pipeline = DetectionPipeline()
     @StateObject private var sessionManager = ServiceSessionManager.shared
     @State private var hasPermission = true
     @State private var showStatus = false
     @State private var showNewServiceSheet = false
+    @State private var selectedVerseId: UUID? = nil
     
     // Bible translation selection
     @AppStorage("selectedTranslation") private var selectedTranslation: String = "KJV"
@@ -25,35 +26,37 @@ struct MainView: View {
         _transcriptBuffer = ObservedObject(wrappedValue: pipeline.transcriptBuffer)
     }
     
+    /// Currently selected verse from the list
+    private var selectedVerse: PendingVerse? {
+        if let id = selectedVerseId {
+            return pipeline.buffer.pendingVerses.first { $0.id == id }
+        }
+        return pipeline.buffer.pendingVerses.first
+    }
+    
     var body: some View {
         VStack(spacing: 8) {
-            // Header
+            // Header row: Logo + Title + Listening status + Gear
             headerView
+            
+            // Action buttons row (below header)
+            actionButtonsRow
+            
+            Divider()
             
             // Status indicators row
             statusIndicatorsRow
             
-            Divider()
+            // Zone 1: Transcript Feed (compact)
+            transcriptSection
             
-            // Zone 1: Listening Feed (transcript)
-            ListeningFeedView(
-                transcript: transcriptBuffer.text,
-                isListening: pipeline.isActive
-            )
-            .frame(height: 60)
-            
-            // Zone 2: Audio level indicator
+            // Audio level indicator
             audioLevelView
             
             Divider()
             
-            // Zone 3: Pending Scripture (or placeholder)
-            pendingScriptureView
-            
-            Divider()
-            
-            // Zone 4: Action buttons
-            actionButtons
+            // Zone 2: Scrollable list of detected verses (main area)
+            detectedVersesList
             
             // Expandable status panel
             if showStatus {
@@ -61,8 +64,8 @@ struct MainView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 350, idealWidth: 400, maxWidth: 600, 
-               minHeight: 400, idealHeight: 500, maxHeight: .infinity)
+        .frame(minWidth: 380, idealWidth: 450, maxWidth: 700, 
+               minHeight: 450, idealHeight: 550, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.2), value: showStatus)
         .saturation(pipeline.isActive ? 1.0 : 0.4)
         .animation(.easeInOut(duration: 0.3), value: pipeline.isActive)
@@ -79,77 +82,87 @@ struct MainView: View {
             }
             return .handled
         }
+        .onKeyPress(.return) {
+            pushSelectedVerse()
+            return .handled
+        }
+        .onKeyPress(.delete) {
+            deleteSelectedVerse()
+            return .handled
+        }
     }
     
     // MARK: - Header
     
     private var headerView: some View {
-        VStack(spacing: 4) {
-            // Main header row
-            HStack {
-                // Use custom app icon
-                if let appIcon = NSApp.applicationIconImage {
-                    Image(nsImage: appIcon)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 28, height: 28)
-                } else {
-                    Image(systemName: "book.fill")
-                        .font(.title3)
-                        .foregroundStyle(.blue)
-                }
-                
-                Text("Divine Link")
-                    .font(.headline)
-                
-                Spacer()
-                
-                // Status indicator
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(statusColour)
-                        .frame(width: 8, height: 8)
-                    
-                    Text(statusText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                SettingsLink {
-                    Image(systemName: "gearshape")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Settings (⌘,)")
+        HStack {
+            // App icon and title
+            if let appIcon = NSApp.applicationIconImage {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+            } else {
+                Image(systemName: "book.fill")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
             }
             
-            // Session info row
+            Text("Divine Link")
+                .font(.headline)
+            
+            // Session info
             if let session = sessionManager.currentSession {
-                HStack {
-                    Image(systemName: "calendar")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    Text(session.name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    
-                    Spacer()
-                    
-                    Button {
-                        sessionManager.endCurrentSession()
-                    } label: {
-                        Text("End")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
+                Text("•")
+                    .foregroundStyle(.secondary)
+                Text(session.name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                
+                Button {
+                    sessionManager.endCurrentSession()
+                } label: {
+                    Text("End")
+                        .font(.caption2)
                 }
-                .padding(.horizontal, 4)
-            } else {
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+            
+            Spacer()
+            
+            // Listening status indicator
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(statusColour)
+                    .frame(width: 8, height: 8)
+                
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            SettingsLink {
+                Image(systemName: "gearshape")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Settings (⌘,)")
+        }
+        .sheet(isPresented: $showNewServiceSheet) {
+            NewServiceSheet(sessionManager: sessionManager) { session in
+                print("[MainView] Session started: \(session.name)")
+            }
+        }
+    }
+    
+    // MARK: - Action Buttons Row (below header)
+    
+    private var actionButtonsRow: some View {
+        HStack(spacing: 10) {
+            // New Service button (if no session)
+            if sessionManager.currentSession == nil {
                 Button {
                     showNewServiceSheet = true
                 } label: {
@@ -157,17 +170,85 @@ struct MainView: View {
                         Image(systemName: "plus.circle.fill")
                         Text("New Service")
                     }
-                    .font(.caption)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
-        }
-        .sheet(isPresented: $showNewServiceSheet) {
-            NewServiceSheet(sessionManager: sessionManager) { session in
-                // Session started - detection will begin
-                print("[MainView] Session started: \(session.name)")
+            
+            // Start/Pause toggle
+            Button {
+                Task {
+                    await pipeline.toggle()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: pipeline.isActive ? "pause.fill" : "play.fill")
+                    Text(pipeline.isActive ? "Pause" : "Start")
+                }
             }
+            .buttonStyle(.borderedProminent)
+            .tint(pipeline.isActive ? Color.divineMuted : Color.divineBlue)
+            .controlSize(.small)
+            .disabled(!hasPermission)
+            .help("Space to toggle")
+            
+            Spacer()
+            
+            // Push selected (if verse selected)
+            if selectedVerse != nil {
+                Button {
+                    pushSelectedVerse()
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.up.circle.fill")
+                        Text("Push")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.divineGold)
+                .controlSize(.small)
+                .help("Enter to push")
+                
+                Button {
+                    deleteSelectedVerse()
+                } label: {
+                    HStack {
+                        Image(systemName: "trash")
+                        Text("Delete")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Delete to remove")
+            }
+            
+            // Close window button
+            Button {
+                // Close the window (app stays running in menu bar)
+                NSApp.keyWindow?.close()
+            } label: {
+                Text("Close")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("Close window (app stays in menu bar)")
+        }
+    }
+    
+    // MARK: - Transcript Section
+    
+    private var transcriptSection: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Live Transcript")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            
+            Text(transcriptBuffer.text.isEmpty ? "Listening..." : transcriptBuffer.text)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 36)
         }
     }
     
@@ -202,89 +283,115 @@ struct MainView: View {
         .padding(.horizontal, 4)
     }
     
-    // MARK: - Pending Scripture
+    // MARK: - Detected Verses List (Scrollable)
     
-    private var pendingScriptureView: some View {
-        Group {
-            if let verse = pipeline.buffer.currentVerse {
-                // Show pending scripture card
-                PendingScriptureCard(verse: verse)
-            } else {
+    private var detectedVersesList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Header
+            HStack {
+                Text("Detected Scriptures")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                Text("\(pipeline.buffer.pendingCount) pending")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            
+            // Scrollable list
+            if pipeline.buffer.pendingVerses.isEmpty {
                 // Empty state
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
+                    Spacer()
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.largeTitle)
+                        .foregroundStyle(.tertiary)
+                    
                     if pipeline.isActive {
-                        if let lastRef = pipeline.lastDetectedReference {
-                            Text("Last detected: \(lastRef)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("Listening for scripture references...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text("Listening for scripture references...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     } else {
-                        Text("Press Start or Space to begin")
+                        Text("Press Start to begin listening")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
+                    Spacer()
                 }
+                .frame(maxWidth: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        // Show verses with newest at top
+                        ForEach(pipeline.buffer.pendingVerses.reversed()) { verse in
+                            VerseRowView(
+                                verse: verse,
+                                isSelected: selectedVerseId == verse.id,
+                                onSelect: {
+                                    selectedVerseId = verse.id
+                                },
+                                onPush: {
+                                    pushVerse(verse)
+                                },
+                                onDelete: {
+                                    deleteVerse(verse)
+                                }
+                            )
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
-        .frame(height: 80)
+        .frame(minHeight: 150)
     }
     
-    // MARK: - Actions
+    // MARK: - Verse Actions
     
-    private var actionButtons: some View {
-        HStack(spacing: 10) {
-            // Push button (if verse pending)
-            if pipeline.buffer.hasPendingVerses {
-                Button {
-                    // TODO: Push to ProPresenter (Epic 3)
-                    pipeline.buffer.removeCurrent()
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.up.circle.fill")
-                        Text("Push")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.divineGold)
-                
-                Button {
-                    pipeline.buffer.ignoreCurrent()
-                } label: {
-                    Text("Ignore")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-            } else {
-                // Start/Pause button
-                Button {
-                    Task {
-                        await pipeline.toggle()
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: pipeline.isActive ? "pause.fill" : "play.fill")
-                        Text(pipeline.isActive ? "Pause" : "Start")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(pipeline.isActive ? Color.divineMuted : Color.divineBlue)
-                .disabled(!hasPermission)
-                .help("Space to toggle")
-            }
-            
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Text("Quit")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
+    private func pushSelectedVerse() {
+        if let verse = selectedVerse {
+            pushVerse(verse)
+        }
+    }
+    
+    private func deleteSelectedVerse() {
+        if let verse = selectedVerse {
+            deleteVerse(verse)
+        }
+    }
+    
+    private func pushVerse(_ verse: PendingVerse) {
+        // TODO: Push to ProPresenter (Epic 3)
+        print("[Push] \(verse.displayReference)")
+        
+        // Remove from pending
+        if let index = pipeline.buffer.pendingVerses.firstIndex(where: { $0.id == verse.id }) {
+            pipeline.buffer.pendingVerses.remove(at: index)
+            pipeline.buffer.history.insert(verse, at: 0)
+        }
+        
+        // Clear selection if it was the selected verse
+        if selectedVerseId == verse.id {
+            selectedVerseId = pipeline.buffer.pendingVerses.first?.id
+        }
+    }
+    
+    private func deleteVerse(_ verse: PendingVerse) {
+        print("[Delete] \(verse.displayReference)")
+        
+        // Remove from pending
+        if let index = pipeline.buffer.pendingVerses.firstIndex(where: { $0.id == verse.id }) {
+            pipeline.buffer.pendingVerses.remove(at: index)
+        }
+        
+        // Clear selection if it was the selected verse
+        if selectedVerseId == verse.id {
+            selectedVerseId = pipeline.buffer.pendingVerses.first?.id
         }
     }
     
@@ -442,7 +549,91 @@ struct StatusRow: View {
     }
 }
 
-// MARK: - Pending Scripture Card
+// MARK: - Verse Row View (for scrollable list)
+
+struct VerseRowView: View {
+    let verse: PendingVerse
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onPush: () -> Void
+    let onDelete: () -> Void
+    
+    @State private var isHovering = false
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            // Main content
+            VStack(alignment: .leading, spacing: 4) {
+                // Reference and translation
+                HStack {
+                    Text(verse.displayReference)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(isSelected ? Color.divineBlue : .primary)
+                    
+                    Spacer()
+                    
+                    Text(verse.translation)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    
+                    // Timestamp
+                    Text(verse.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                
+                // Verse text
+                Text(verse.fullText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            // Action buttons (show on hover or selection)
+            if isHovering || isSelected {
+                HStack(spacing: 4) {
+                    Button {
+                        onPush()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .foregroundStyle(Color.divineGold)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Push to ProPresenter")
+                    
+                    Button {
+                        onDelete()
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete")
+                }
+            }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.divineBlue.opacity(0.1) : (isHovering ? Color.gray.opacity(0.05) : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isSelected ? Color.divineGold.opacity(0.5) : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelect()
+        }
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+}
+
+// MARK: - Pending Scripture Card (legacy, kept for reference)
 
 struct PendingScriptureCard: View {
     let verse: PendingVerse
