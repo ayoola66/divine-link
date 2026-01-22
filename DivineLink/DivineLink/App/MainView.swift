@@ -4,10 +4,13 @@ import SwiftUI
 struct MainView: View {
     @StateObject private var pipeline = DetectionPipeline()
     @StateObject private var sessionManager = ServiceSessionManager.shared
+    @StateObject private var ppSettings = ProPresenterSettings()
+    @StateObject private var ppClient = ProPresenterClient()
     @State private var hasPermission = true
     @State private var showStatus = false
     @State private var showNewServiceSheet = false
     @State private var selectedVerseId: UUID? = nil
+    @State private var pushCoordinator: PushActionCoordinator?
     
     // Bible translation selection
     @AppStorage("selectedTranslation") private var selectedTranslation: String = "KJV"
@@ -99,6 +102,11 @@ struct MainView: View {
             if hasPermission {
                 await pipeline.start()
             }
+            
+            // Configure ProPresenter client with saved settings
+            if let url = ppSettings.connectionURL {
+                ppClient.configure(baseURL: url)
+            }
         }
         .onKeyPress(.space) {
             // Only toggle if not editing transcript
@@ -157,6 +165,13 @@ struct MainView: View {
             }
             
             Spacer()
+            
+            // ProPresenter connection status
+            ConnectionStatusIndicator(
+                status: ppClient.connectionStatus,
+                ipAddress: ppSettings.ipAddress,
+                port: ppSettings.port
+            )
             
             // Listening status indicator
             HStack(spacing: 4) {
@@ -523,8 +538,19 @@ struct MainView: View {
     }
     
     private func pushVerse(_ verse: PendingVerse) {
-        // TODO: Push to ProPresenter (Epic 3)
         print("[Push] \(verse.displayReference)")
+        
+        // Push to ProPresenter
+        Task {
+            do {
+                let message = ppClient.formatStageMessage(from: verse)
+                try await ppClient.sendStageMessage(message)
+                print("✅ Pushed to ProPresenter: \(verse.displayReference)")
+            } catch {
+                print("❌ Failed to push to ProPresenter: \(error.localizedDescription)")
+                // Still mark as pushed locally even if PP fails
+            }
+        }
         
         // Mark as pushed (keeps it in list with visual indicator)
         pipeline.buffer.markAsPushed(id: verse.id)

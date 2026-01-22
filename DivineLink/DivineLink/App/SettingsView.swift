@@ -208,32 +208,34 @@ struct AudioSettingsTab: View {
     }
 }
 
-// MARK: - ProPresenter Settings Tab (Placeholder)
+// MARK: - ProPresenter Settings Tab
 
 struct ProPresenterSettingsTab: View {
-    @AppStorage("proPresenterHost") private var host: String = "localhost"
-    @AppStorage("proPresenterPort") private var port: String = "1025"
+    @StateObject private var settings = ProPresenterSettings()
+    @StateObject private var client = ProPresenterClient()
     
     var body: some View {
-        Form {
-            Section {
-                TextField("Host", text: $host)
-                TextField("Port", text: $port)
-            } header: {
-                Text("Connection")
-            } footer: {
-                Text("ProPresenter must have Network enabled in Preferences → Network.")
-                    .foregroundStyle(.secondary)
-            }
+        VStack(spacing: 0) {
+            ProPresenterSettingsView(settings: settings, client: client)
             
-            Section {
-                Button("Test Connection") {
-                    // TODO: Implement connection test in Story 2.x
-                }
+            Divider()
+            
+            // Help section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Setup Instructions")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                
+                Text("1. Open ProPresenter and go to Preferences → Network")
+                Text("2. Enable \"Network\" and note the IP address")
+                Text("3. Default port is 1025 unless changed")
+                Text("4. Click \"Test Connection\" to verify")
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
         }
-        .formStyle(.grouped)
-        .padding()
     }
 }
 
