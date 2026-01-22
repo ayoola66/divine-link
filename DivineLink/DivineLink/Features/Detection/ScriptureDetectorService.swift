@@ -306,7 +306,7 @@ class BookNameNormaliser {
         "deuteronomy": "Deuteronomy", "deut": "Deuteronomy", "de": "Deuteronomy",
         "joshua": "Joshua", "josh": "Joshua", "jos": "Joshua",
         "judges": "Judges", "judg": "Judges", "jdg": "Judges",
-        "ruth": "Ruth", "ru": "Ruth",
+        "ruth": "Ruth", "ru": "Ruth", "roof": "Ruth", "rooth": "Ruth", "route": "Ruth",  // Common STT misheard
         "1 samuel": "1 Samuel", "1samuel": "1 Samuel", "first samuel": "1 Samuel", "i samuel": "1 Samuel", "1 sam": "1 Samuel", "1sam": "1 Samuel",
         "2 samuel": "2 Samuel", "2samuel": "2 Samuel", "second samuel": "2 Samuel", "ii samuel": "2 Samuel", "2 sam": "2 Samuel", "2sam": "2 Samuel",
         "1 kings": "1 Kings", "1kings": "1 Kings", "first kings": "1 Kings", "i kings": "1 Kings", "1 kgs": "1 Kings",
@@ -316,7 +316,7 @@ class BookNameNormaliser {
         "ezra": "Ezra", "ezr": "Ezra",
         "nehemiah": "Nehemiah", "neh": "Nehemiah", "ne": "Nehemiah",
         "esther": "Esther", "est": "Esther", "es": "Esther",
-        "job": "Job", "jb": "Job",
+        "job": "Job", "jb": "Job", "jobe": "Job",
         "psalms": "Psalms", "psalm": "Psalms", "ps": "Psalms", "psa": "Psalms",
         "some": "Psalms", "sum": "Psalms", "salm": "Psalms", "sums": "Psalms", "palms": "Psalms",  // Common speech-to-text misheard
         "proverbs": "Proverbs", "prov": "Proverbs", "pr": "Proverbs", "pro": "Proverbs",
