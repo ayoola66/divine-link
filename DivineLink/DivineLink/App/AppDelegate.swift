@@ -26,11 +26,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Reopen main window when clicking Dock icon
+        // Reopen main window when clicking Dock icon (if app shows in Dock)
         if !flag {
-            for window in sender.windows {
-                window.makeKeyAndOrderFront(self)
-            }
+            bringMainWindowToFront()
         }
         return true
     }
@@ -64,18 +62,61 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func bringMainWindowToFront() {
         NSApp.activate(ignoringOtherApps: true)
         
-        // Find and focus the main window
+        // Find the main content window (not settings, about, etc.)
+        var mainWindow: NSWindow?
+        
         for window in NSApp.windows {
-            if window.title == "Divine Link" || window.isMainWindow {
-                window.makeKeyAndOrderFront(nil)
-                return
+            // Skip special windows (settings, sheets, panels, etc.)
+            if window.title.isEmpty { continue }
+            if window.title == "Settings" { continue }
+            if window.className.contains("About") { continue }
+            
+            // Found a content window
+            mainWindow = window
+            
+            // Prefer window with "Divine Link" title
+            if window.title == "Divine Link" {
+                break
             }
         }
         
-        // If no window found, open a new one
-        if let firstWindow = NSApp.windows.first {
-            firstWindow.makeKeyAndOrderFront(nil)
+        if let window = mainWindow {
+            // Show the window if it was closed/hidden
+            if !window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+            } else if window.isMiniaturized {
+                window.deminiaturize(nil)
+            } else {
+                window.makeKeyAndOrderFront(nil)
+            }
+            return
         }
+        
+        // No window found - need to create a new one
+        // For SwiftUI WindowGroup apps, we can use this approach
+        if let firstWindow = NSApp.windows.first(where: { !$0.title.isEmpty && $0.title != "Settings" }) {
+            firstWindow.makeKeyAndOrderFront(nil)
+        } else {
+            // Create a new window with MainView
+            createNewMainWindow()
+        }
+    }
+    
+    private func createNewMainWindow() {
+        // Create a new window hosting the MainView
+        let contentView = MainView()
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 500),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.title = "Divine Link"
+        window.contentView = NSHostingView(rootView: contentView)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
     }
     
     private func showContextMenu() {
