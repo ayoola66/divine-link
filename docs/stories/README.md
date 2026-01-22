@@ -73,11 +73,12 @@
 
 ## Complexity Summary
 
-| Complexity | Count |
-|------------|-------|
-| Small | 12 |
-| Medium | 8 |
-| **Total** | **20** |
+| Complexity | Count | Complete |
+|------------|-------|----------|
+| Small | 15 | 4 |
+| Medium | 11 | 6 |
+| Large | 2 | 1 |
+| **Total** | **28** | **11 (39%)** |
 
 ---
 
@@ -86,34 +87,44 @@
 Stories should be completed in the order listed, respecting dependencies:
 
 ```
-Epic 1 (Foundation)
-├── 1.1 Project Scaffolding ──────────────────────────┐
-├── 1.2 Audio Input Selection ◄───────────────────────┤
-├── 1.3 Audio Capture Engine ◄────────────────────────┤
-├── 1.4 Audio Level Monitoring ◄──────────────────────┤
-└── 1.5 Listening State Management ◄──────────────────┘
+Epic 1 (Foundation) ✅ COMPLETE
+├── ✅ 1.1 Project Scaffolding
+├── ✅ 1.2 Audio Input Selection
+├── ✅ 1.3 Audio Capture Engine
+├── ✅ 1.4 Audio Level Monitoring
+└── ✅ 1.5 Listening State Management
                                                       │
-Epic 2 (Detection)                                    │
-├── 2.1 Bible Database ◄──────────────────────────────┤
-├── 2.2 Speech Recognition ◄──────────────────────────┤
-├── 2.3 Custom Language Model ◄───────────────────────┤
-├── 2.4 Listening Feed UI ◄───────────────────────────┤
-├── 2.5 Detection Engine ◄────────────────────────────┤
-└── 2.6 Pipeline Integration ◄────────────────────────┘
+Epic 2 (Detection) ✅ COMPLETE                        │
+├── ✅ 2.1 Bible Database                             │
+├── ✅ 2.2 Speech Recognition                         │
+├── ✅ 2.3 Custom Language Model                      │
+├── ✅ 2.4 Listening Feed UI                          │
+├── ✅ 2.5 Detection Engine                           │
+├── ✅ 2.6 Pipeline Integration                       │
+└── ⏳ 2.7 Database Validation (deferred)             │
                                                       │
-Epic 3 (Integration)                                  │
-├── 3.1 Buffer Data Model ◄───────────────────────────┤
-├── 3.2 Scripture Card UI ◄───────────────────────────┤
-├── 3.3 Action Buttons ◄──────────────────────────────┤
-├── 3.4 Keyboard Shortcuts ◄──────────────────────────┤
-├── 3.5 PP Connection Settings ◄──────────────────────┤
-├── 3.6 PP API Client ◄───────────────────────────────┤
-├── 3.7 Push Action ◄─────────────────────────────────┤
-├── 3.8 Status Header ◄───────────────────────────────┤
-└── 3.9 Settings Polish ◄─────────────────────────────┘
+Epic 3 (Integration) 🔜 IN PROGRESS                   │
+├── ⬜ 3.1 Buffer Data Model ◄────────────────────────┤
+├── ⬜ 3.2 Scripture Card UI                          │
+├── ⬜ 3.3 Action Buttons                             │
+├── ⬜ 3.4 Keyboard Shortcuts                         │
+├── ⬜ 3.5 PP Connection Settings                     │
+├── ⬜ 3.6 PP API Client                              │
+├── ⬜ 3.7 Push Action                                │
+├── ⬜ 3.8 Status Header                              │
+└── ⬜ 3.9 Settings Polish                            │
                                                       │
                                                       ▼
                                               🎉 MVP COMPLETE
+
+Epic 4 (Enhanced) 📋 PLANNED
+├── ⬜ 4.1 Service Session Creation
+├── ⬜ 4.2 Service Type Suggestions
+├── ⬜ 4.3 Service History Archive
+├── ⬜ 4.4 Service History UI
+├── ⬜ 4.5 Pastor Profile Management
+├── ⬜ 4.6 Pastor Speech Learning
+└── ⬜ 4.7 Archive Auto-Cleanup
 ```
 
 ---
@@ -132,8 +143,10 @@ Each story file contains:
 
 ## Next Steps
 
-1. **Wireframes** - Create visual designs before development
-2. **Architecture Document** - Detailed technical architecture
-3. **Development** - Implement stories in order
-4. **Testing** - Verify each story's acceptance criteria
-5. **Release** - Package and distribute MVP
+1. ~~**Wireframes** - Create visual designs before development~~ ✅ Complete
+2. ~~**Architecture Document** - Detailed technical architecture~~ ✅ Complete
+3. ~~**Epic 1** - Foundation & Audio Capture~~ ✅ Complete
+4. ~~**Epic 2** - Transcription & Scripture Detection~~ ✅ Complete
+5. **Epic 3** - ProPresenter Integration 🔜 **IN PROGRESS**
+6. **Testing** - Verify each story's acceptance criteria
+7. **Release** - Package and distribute MVP

@@ -26,6 +26,7 @@ class DetectionPipeline: ObservableObject {
     let audioCapture: AudioCaptureService
     let transcription: TranscriptionService
     let detector: ScriptureDetectorService
+    let implicitDetector: ImplicitReferenceDetector
     let bible: BibleService
     let buffer: BufferManager
     let transcriptBuffer: TranscriptBuffer
@@ -42,6 +43,7 @@ class DetectionPipeline: ObservableObject {
         self.audioCapture = AudioCaptureService()
         self.transcription = TranscriptionService()
         self.detector = ScriptureDetectorService()
+        self.implicitDetector = ImplicitReferenceDetector()
         self.bible = BibleService()
         self.buffer = BufferManager()
         self.transcriptBuffer = TranscriptBuffer()
@@ -139,11 +141,26 @@ class DetectionPipeline: ObservableObject {
             correctedTranscript = correctionService.apply(corrections: corrections, to: transcript)
         }
         
-        // Detect scripture references in corrected text
+        // Detect explicit scripture references in corrected text
         let detections = detector.detect(in: correctedTranscript)
         
         for detection in detections {
             processDetection(detection, rawTranscript: transcript)
+        }
+        
+        // Also check for implicit famous verse references
+        if let implicitMatch = implicitDetector.bestMatch(in: correctedTranscript),
+           let scriptureRef = implicitMatch.scriptureReference,
+           implicitMatch.confidence >= 0.6 {
+            // Create a detection result for the implicit match
+            let implicitDetection = DetectionResult(
+                reference: scriptureRef,
+                rawMatch: implicitMatch.matchedPhrase,
+                confidence: implicitMatch.confidence,
+                timestamp: Date()
+            )
+            processDetection(implicitDetection, rawTranscript: transcript)
+            Logger.detection.info("Implicit match: \(implicitMatch.reference) from '\(implicitMatch.matchedPhrase)'")
         }
     }
     

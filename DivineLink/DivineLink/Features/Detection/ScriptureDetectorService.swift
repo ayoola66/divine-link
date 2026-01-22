@@ -460,8 +460,18 @@ class BookNameNormaliser {
     func normalise(_ input: String) -> String? {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
         
-        // Direct lookup
+        // Direct lookup in primary mappings
         if let canonical = bookMappings[lowercased] {
+            return canonical
+        }
+        
+        // Try BibleVocabularyData STT mishearings
+        if let canonical = BibleVocabularyData.sttMishearings[lowercased] {
+            return canonical
+        }
+        
+        // Try abbreviations
+        if let canonical = BibleVocabularyData.abbreviations[lowercased] {
             return canonical
         }
         
