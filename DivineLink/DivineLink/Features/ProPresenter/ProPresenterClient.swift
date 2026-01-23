@@ -84,7 +84,8 @@ class ProPresenterClient: ObservableObject {
         connectionStatus = .testing
         
         // Try to get ProPresenter version as health check
-        let testURL = url.appendingPathComponent("v1/version")
+        // Note: The version endpoint is /version, NOT /v1/version
+        let testURL = url.appendingPathComponent("version")
         
         var request = URLRequest(url: testURL)
         request.httpMethod = "GET"

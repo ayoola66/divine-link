@@ -228,17 +228,11 @@ struct ProPresenterSettingsTab: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("1. Open ProPresenter → Preferences → Network")
-                    Text("2. Enable **TCP/IP** and set a port (e.g. 1025)")
-                    Text("3. Note the IP Address shown at the top")
-                    Text("4. Enter the IP and TCP/IP port above")
+                    Text("2. Enable \"Enable Network\" toggle")
+                    Text("3. Note the Port (default is 50233)")
+                    Text("4. Use 127.0.0.1 if on the same Mac")
                     Text("5. Click \"Test Connection\" to verify")
                 }
-                
-                Divider()
-                    .padding(.vertical, 4)
-                
-                Text("Note: The port 50233 is for Network sync, not the API. You must enable TCP/IP for Divine Link to communicate with ProPresenter.")
-                    .foregroundStyle(.orange)
             }
             .font(.caption)
             .foregroundStyle(.secondary)

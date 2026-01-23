@@ -84,9 +84,9 @@ class ProPresenterSettings: ObservableObject {
     // MARK: - Initialisation
     
     init() {
-        self.ipAddress = defaults.string(forKey: Keys.ipAddress) ?? "192.168.1.100"
+        self.ipAddress = defaults.string(forKey: Keys.ipAddress) ?? "127.0.0.1"
         self.port = defaults.integer(forKey: Keys.port)
-        if self.port == 0 { self.port = 1025 }
+        if self.port == 0 { self.port = 50233 }  // ProPresenter 7 default API port
     }
     
     // MARK: - Persistence

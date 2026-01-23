@@ -26,7 +26,7 @@ struct ProPresenterSettingsView: View {
                     Text("Port")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    TextField("1025", text: $portString)
+                    TextField("50233", text: $portString)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 100)
                         .onAppear { portString = String(settings.port) }
@@ -46,7 +46,7 @@ struct ProPresenterSettingsView: View {
             } header: {
                 Text("ProPresenter Connection")
             } footer: {
-                Text("Enter the IP address and port from ProPresenter → Preferences → Network → TCP/IP.")
+                Text("Enter the IP address and port from ProPresenter → Preferences → Network. Default port is 50233.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
