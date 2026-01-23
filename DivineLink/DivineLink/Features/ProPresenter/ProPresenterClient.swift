@@ -165,7 +165,32 @@ class ProPresenterClient: ObservableObject {
     
     /// Clear the stage message
     func clearStageMessage() async throws {
-        try await sendStageMessage("")
+        guard let baseURL = baseURL else {
+            throw ProPresenterError.notConfigured
+        }
+        
+        let url = baseURL.appendingPathComponent("v1/stage/message")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        
+        do {
+            let (_, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ProPresenterError.invalidResponse
+            }
+            
+            if !(200...299).contains(httpResponse.statusCode) {
+                throw ProPresenterError.httpError(httpResponse.statusCode)
+            }
+            
+            logger.info("Stage message cleared successfully")
+            
+        } catch {
+            logger.error("Failed to clear stage message: \(error.localizedDescription)")
+            throw error
+        }
     }
     
     /// Format a PendingVerse for ProPresenter stage display

@@ -7,6 +7,13 @@ struct ProPresenterSettingsView: View {
     
     @State private var portString: String = ""
     @State private var isTesting = false
+    @State private var isPushing = false
+    @State private var pushResult: PushResult?
+    
+    enum PushResult {
+        case success
+        case failure(String)
+    }
     
     var body: some View {
         Form {
@@ -16,7 +23,7 @@ struct ProPresenterSettingsView: View {
                     Text("IP Address")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    TextField("192.168.1.100", text: $settings.ipAddress)
+                    TextField("127.0.0.1", text: $settings.ipAddress)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: .infinity)
                 }
@@ -83,6 +90,71 @@ struct ProPresenterSettingsView: View {
             } header: {
                 Text("Status")
             }
+            
+            // Test Push Section
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        // Send test message button
+                        Button {
+                            Task {
+                                await sendTestMessage()
+                            }
+                        } label: {
+                            HStack {
+                                if isPushing {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                } else {
+                                    Image(systemName: "paperplane.fill")
+                                }
+                                Text("Send Test Message")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(settings.connectionStatus != .connected || isPushing)
+                        
+                        // Clear message button
+                        Button {
+                            Task {
+                                await clearMessage()
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "xmark.circle")
+                                Text("Clear")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(settings.connectionStatus != .connected || isPushing)
+                    }
+                    
+                    // Result feedback
+                    if let result = pushResult {
+                        HStack(spacing: 6) {
+                            switch result {
+                            case .success:
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Message sent! Check your ProPresenter Stage Display.")
+                                    .foregroundStyle(.green)
+                            case .failure(let error):
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                                Text(error)
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .font(.caption)
+                    }
+                }
+            } header: {
+                Text("Test Stage Message")
+            } footer: {
+                Text("Send a test message to verify ProPresenter displays it on the Stage Screen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
@@ -102,6 +174,39 @@ struct ProPresenterSettingsView: View {
         }
         
         isTesting = false
+    }
+    
+    private func sendTestMessage() async {
+        isPushing = true
+        pushResult = nil
+        
+        do {
+            try await client.sendStageMessage("""
+            📖 Divine Link Test
+            
+            John 3:16
+            For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.
+            """)
+            pushResult = .success
+        } catch {
+            pushResult = .failure(error.localizedDescription)
+        }
+        
+        isPushing = false
+    }
+    
+    private func clearMessage() async {
+        isPushing = true
+        pushResult = nil
+        
+        do {
+            try await client.clearStageMessage()
+            pushResult = .success
+        } catch {
+            pushResult = .failure(error.localizedDescription)
+        }
+        
+        isPushing = false
     }
 }
 
