@@ -12,17 +12,23 @@ struct ProPresenterSettingsView: View {
         Form {
             Section {
                 // IP Address
-                LabeledContent("IP Address") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("IP Address")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     TextField("192.168.1.100", text: $settings.ipAddress)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 150)
+                        .frame(maxWidth: .infinity)
                 }
                 
                 // Port
-                LabeledContent("Port") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Port")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     TextField("1025", text: $portString)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
+                        .frame(width: 100)
                         .onAppear { portString = String(settings.port) }
                         .onChange(of: portString) { _, newValue in
                             if let port = Int(newValue) {
@@ -40,7 +46,7 @@ struct ProPresenterSettingsView: View {
             } header: {
                 Text("ProPresenter Connection")
             } footer: {
-                Text("Enter the IP address and port of your ProPresenter instance. Default port is 1025.")
+                Text("Enter the IP address and port from ProPresenter → Preferences → Network → TCP/IP.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

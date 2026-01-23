@@ -30,7 +30,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 500, height: 420)
+        .frame(width: 520, height: 480)
     }
 }
 
@@ -226,10 +226,19 @@ struct ProPresenterSettingsTab: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 
-                Text("1. Open ProPresenter and go to Preferences → Network")
-                Text("2. Enable \"Network\" and note the IP address")
-                Text("3. Default port is 1025 unless changed")
-                Text("4. Click \"Test Connection\" to verify")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("1. Open ProPresenter → Preferences → Network")
+                    Text("2. Enable **TCP/IP** and set a port (e.g. 1025)")
+                    Text("3. Note the IP Address shown at the top")
+                    Text("4. Enter the IP and TCP/IP port above")
+                    Text("5. Click \"Test Connection\" to verify")
+                }
+                
+                Divider()
+                    .padding(.vertical, 4)
+                
+                Text("Note: The port 50233 is for Network sync, not the API. You must enable TCP/IP for Divine Link to communicate with ProPresenter.")
+                    .foregroundStyle(.orange)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
