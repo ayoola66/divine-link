@@ -128,11 +128,10 @@ class ProPresenterClient: ObservableObject {
         request.httpMethod = "PUT"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // ProPresenter expects the message in a specific format
-        let payload = ["message": message]
-        
+        // ProPresenter expects just a JSON string (not an object)
+        // e.g. "Your message here" not {"message": "..."}
         do {
-            request.httpBody = try JSONEncoder().encode(payload)
+            request.httpBody = try JSONEncoder().encode(message)
         } catch {
             throw ProPresenterError.encodingFailed
         }
