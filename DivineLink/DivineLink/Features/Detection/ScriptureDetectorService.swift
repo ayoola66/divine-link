@@ -47,6 +47,7 @@ class ScriptureDetectorService: ObservableObject {
     private enum PatternType {
         case standard       // John 3:16 or John 3:16-18
         case spoken         // John 316 or John 3 16 (speech recognition format)
+        case spokenRange    // John 316 to 18 or John 3 16 to 18 (spoken with range)
         case verbal         // John chapter 3 verse 16
         case verbalShort    // Genesis 1 verse 1 (no "chapter" keyword)
         case spokenWords    // Genesis twenty one one → 21:1, John three sixteen → 3:16
@@ -108,7 +109,27 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .standard))
         }
         
-        // 4. SPOKEN FORMAT without colon: "John 316" (chapter+verse concatenated)
+        // 4. SPOKEN RANGE FORMAT: "John 316 to 18" → John 3:16-18 (concatenated with range)
+        // Groups: (1)book (2)chapter (3)verse_start (4)verse_end
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,2})(\d{2})\s+(?:to|through|-)\s+(\d{1,3})(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .spokenRange))
+            print("✅ spokenRange (concatenated) pattern compiled")
+        }
+        
+        // 5. SPOKEN RANGE FORMAT with spaces: "John 3 16 to 18" → John 3:16-18
+        // Groups: (1)book (2)chapter (3)verse_start (4)verse_end
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+(\d{1,3})\s+(?:to|through|-)\s+(\d{1,3})(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .spokenRange))
+            print("✅ spokenRange (spaced) pattern compiled")
+        }
+        
+        // 6. SPOKEN FORMAT without colon: "John 316" (chapter+verse concatenated) - NO RANGE
         // ONLY matches 3+ digits to avoid "11" being split into "1:1"
         if let regex = try? NSRegularExpression(
             pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,2})(\d{2})(?:\s|$|[,.])"#,
@@ -117,7 +138,7 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .spoken))
         }
         
-        // 5. SPOKEN FORMAT with space: "John 3 16" (space instead of colon)
+        // 7. SPOKEN FORMAT with space: "John 3 16" (space instead of colon) - NO RANGE
         if let regex = try? NSRegularExpression(
             pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+(\d{1,3})(?:\s|$|[,.])"#,
             options: .caseInsensitive
@@ -313,10 +334,11 @@ class ScriptureDetectorService: ObservableObject {
         // Calculate confidence based on pattern type
         let confidence: Float = switch type {
         case .standard: 0.95
-        case .spoken: 0.85    // Lower confidence for speech-to-text formats
+        case .spoken: 0.85        // Lower confidence for speech-to-text formats
+        case .spokenRange: 0.86   // Spoken format with verse range
         case .verbal: 0.90
-        case .verbalShort: 0.88  // Natural speech without "chapter" keyword
-        case .spokenWords: 0.87  // Word numbers like "twenty one one"
+        case .verbalShort: 0.88   // Natural speech without "chapter" keyword
+        case .spokenWords: 0.87   // Word numbers like "twenty one one"
         case .chapterOnly: 0.80
         }
         
