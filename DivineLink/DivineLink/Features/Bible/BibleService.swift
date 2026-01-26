@@ -330,12 +330,15 @@ class BibleService: ObservableObject {
         }
         
         let translation = currentTranslation
+        print("📖 getVerseRange: \(book) \(chapter):\(startVerse)-\(endVerse) (\(translation)) bookId=\(bookId)")
         
+        // Use GROUP BY to ensure unique verses (in case of duplicates in database)
         let query = """
             SELECT v.id, v.verse, v.text, b.name 
             FROM verses v 
             JOIN books b ON v.book_id = b.id 
             WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ? AND v.translation_id = '\(translation)'
+            GROUP BY v.book_id, v.chapter, v.verse
             ORDER BY v.verse
             """
         
@@ -352,23 +355,32 @@ class BibleService: ObservableObject {
         sqlite3_bind_int(statement, 4, Int32(endVerse))
         
         var verses: [BibleVerse] = []
+        var seenVerseNumbers = Set<Int>()  // Track to avoid duplicates
         
         while sqlite3_step(statement) == SQLITE_ROW {
             let id = Int(sqlite3_column_int(statement, 0))
-            let verse = Int(sqlite3_column_int(statement, 1))
+            let verseNum = Int(sqlite3_column_int(statement, 1))
             let text = String(cString: sqlite3_column_text(statement, 2))
             let bookName = String(cString: sqlite3_column_text(statement, 3))
+            
+            // Skip if we've already seen this verse number (duplicate protection)
+            guard !seenVerseNumbers.contains(verseNum) else {
+                print("⚠️ Skipping duplicate verse \(verseNum) in \(bookName) \(chapter)")
+                continue
+            }
+            seenVerseNumbers.insert(verseNum)
             
             verses.append(BibleVerse(
                 id: id,
                 bookId: bookId,
                 bookName: bookName,
                 chapter: chapter,
-                verse: verse,
+                verse: verseNum,
                 text: text
             ))
         }
         
+        print("📖 getVerseRange returned \(verses.count) unique verses")
         return verses
     }
     
