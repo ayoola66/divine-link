@@ -84,8 +84,9 @@ class ScriptureDetectorService: ObservableObject {
         // 1. VERBAL FORMAT (most specific - has "chapter" and "verse" keywords)
         // "John chapter 3 verse 16" or "Genesis chapter 1 verses 1 to 5"
         // Accepts both digits and number words for chapter and verse
+        // Also accepts "versus" as speech recognition often mishears "verse"
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+verse?s?\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z-]+))?"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+(?:verse?s?|versus)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z-]+))?"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbal))
@@ -93,12 +94,23 @@ class ScriptureDetectorService: ObservableObject {
         }
         
         // 2. VERBAL SHORT: "Genesis 1 verse 1" or "John 3 verse 16 to 20" (no "chapter" keyword)
+        // Limit chapter to 1-2 digits (max 99) to avoid matching "316" as chapter
+        // Also accept "versus" as speech recognition often mishears "verse"
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(\d{1,3})\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(\d{1,2})\s+(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbalShort))
             print("✅ verbalShort pattern compiled (priority 2)")
+        }
+        
+        // 2b. VERBAL SHORT with word chapter: "John three verse 16" or "Genesis one verse 1"
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .verbalShort))
+            print("✅ verbalShort (word chapter) pattern compiled")
         }
         
         // 3. STANDARD FORMAT: "John 3:16" or "John 3:16-18" or "1 John 3:16"
@@ -293,6 +305,14 @@ class ScriptureDetectorService: ObservableObject {
             guard let ch = parseNumber(chapterStr) else {
                 return nil
             }
+            
+            // Validate chapter is reasonable (Psalms has max 150 chapters)
+            // This prevents "316" being parsed as chapter 316
+            if ch > 150 {
+                print("⚠️ Rejected invalid chapter number: \(ch) (max allowed: 150)")
+                return nil
+            }
+            
             chapter = ch
             
             if type != .chapterOnly {
