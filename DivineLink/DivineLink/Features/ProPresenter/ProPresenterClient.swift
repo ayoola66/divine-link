@@ -201,6 +201,53 @@ class ProPresenterClient: ObservableObject {
         """
     }
     
+    // MARK: - Audience Display (via Keyboard Automation)
+    
+    /// Push a scripture reference to ProPresenter's Audience screen
+    /// Uses keyboard automation to trigger PP's native Bible feature (⌘B)
+    @MainActor
+    func pushToAudience(reference: ScriptureReference) async -> Bool {
+        let keyboard = KeyboardAutomationService.shared
+        
+        // Format reference for PP's Bible search
+        // PP expects format like "John 3:16" or "John 3:16-18"
+        let searchText = reference.formatted
+        
+        logger.info("Pushing to audience via keyboard automation: \(searchText)")
+        
+        return await keyboard.pushToProPresenterBible(reference: searchText)
+    }
+    
+    /// Push a single verse to ProPresenter's Audience screen
+    @MainActor
+    func pushVerseToAudience(book: String, chapter: Int, verse: Int) async -> Bool {
+        let keyboard = KeyboardAutomationService.shared
+        let searchText = "\(book) \(chapter):\(verse)"
+        
+        logger.info("Pushing single verse to audience: \(searchText)")
+        
+        return await keyboard.pushToProPresenterBible(reference: searchText)
+    }
+    
+    /// Clear the audience Bible display
+    @MainActor
+    func clearAudienceDisplay() async -> Bool {
+        let keyboard = KeyboardAutomationService.shared
+        return await keyboard.clearProPresenterBible()
+    }
+    
+    /// Check if keyboard automation is available
+    @MainActor
+    func hasKeyboardPermission() -> Bool {
+        return KeyboardAutomationService.shared.checkAccessibilityPermission()
+    }
+    
+    /// Request keyboard automation permission
+    @MainActor
+    func requestKeyboardPermission() {
+        KeyboardAutomationService.shared.requestAccessibilityPermission()
+    }
+    
     // MARK: - Reconnection
     
     private func startReconnection() {

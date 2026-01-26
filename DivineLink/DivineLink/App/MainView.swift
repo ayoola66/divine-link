@@ -511,6 +511,9 @@ struct MainView: View {
                                 onPushOne: {
                                     pushVerseOne(verse)
                                 },
+                                onPushAudience: {
+                                    pushToAudience(verse)
+                                },
                                 onDelete: {
                                     deleteVerse(verse)
                                 },
@@ -599,6 +602,27 @@ struct MainView: View {
         
         // Mark as pushed
         pipeline.buffer.markAsPushed(id: verse.id)
+    }
+    
+    /// Push to Audience screen via ProPresenter's native Bible feature (⌘B automation)
+    private func pushToAudience(_ verse: PendingVerse) {
+        print("[Push Audience] \(verse.displayReference)")
+        
+        Task {
+            let success = await ppClient.pushToAudience(reference: verse.reference)
+            
+            if success {
+                print("✅ Pushed to Audience via PP Bible: \(verse.displayReference)")
+                // Mark as pushed
+                pipeline.buffer.markAsPushed(id: verse.id)
+            } else {
+                print("❌ Failed to push to Audience - check Accessibility permissions")
+                // Check if we need to request permission
+                if !ppClient.hasKeyboardPermission() {
+                    ppClient.requestKeyboardPermission()
+                }
+            }
+        }
     }
     
     private func deleteVerse(_ verse: PendingVerse) {
@@ -773,8 +797,9 @@ struct VerseRowView: View {
     let verse: PendingVerse
     let isSelected: Bool
     let onSelect: () -> Void
-    let onPushAll: () -> Void       // Push all verses
-    let onPushOne: () -> Void       // Push current verse only
+    let onPushAll: () -> Void       // Push all verses to Stage
+    let onPushOne: () -> Void       // Push current verse to Stage
+    let onPushAudience: () -> Void  // Push to Audience screen via PP Bible
     let onDelete: () -> Void
     let onNextVerse: () -> Void     // Navigate to next verse
     let onPreviousVerse: () -> Void // Navigate to previous verse
@@ -958,7 +983,7 @@ struct VerseRowView: View {
                         Divider()
                             .frame(height: 14)
                         
-                        // Push one (current verse)
+                        // Push one (current verse) to Stage
                         Button {
                             onPushOne()
                         } label: {
@@ -966,9 +991,9 @@ struct VerseRowView: View {
                                 .foregroundStyle(Color.divineGold)
                         }
                         .buttonStyle(.plain)
-                        .help("Push verse \(verse.currentVerse?.verseNumber ?? 0) only")
+                        .help("Push verse \(verse.currentVerse?.verseNumber ?? 0) to Stage")
                         
-                        // Push all verses
+                        // Push all verses to Stage
                         Button {
                             onPushAll()
                         } label: {
@@ -976,7 +1001,20 @@ struct VerseRowView: View {
                                 .foregroundStyle(Color.divineGold)
                         }
                         .buttonStyle(.plain)
-                        .help("Push all \(verse.verses.count) verses")
+                        .help("Push all \(verse.verses.count) verses to Stage")
+                        
+                        Divider()
+                            .frame(height: 14)
+                        
+                        // Push to Audience screen (via PP Bible)
+                        Button {
+                            onPushAudience()
+                        } label: {
+                            Image(systemName: "person.3.fill")
+                                .foregroundStyle(Color.divineBlue)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Push to Audience (PP Bible)")
                         
                         Button {
                             onDelete()
@@ -988,8 +1026,9 @@ struct VerseRowView: View {
                         .help("Delete")
                     }
                 } else {
-                    // Single verse: simple push
+                    // Single verse: Stage + Audience push
                     HStack(spacing: 4) {
+                        // Stage push
                         Button {
                             onPushAll()
                         } label: {
@@ -997,7 +1036,17 @@ struct VerseRowView: View {
                                 .foregroundStyle(Color.divineGold)
                         }
                         .buttonStyle(.plain)
-                        .help(verse.isPushed ? "Push again" : "Push to ProPresenter")
+                        .help(verse.isPushed ? "Push to Stage again" : "Push to Stage")
+                        
+                        // Audience push
+                        Button {
+                            onPushAudience()
+                        } label: {
+                            Image(systemName: "person.3.fill")
+                                .foregroundStyle(Color.divineBlue)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Push to Audience (PP Bible)")
                         
                         Button {
                             onDelete()

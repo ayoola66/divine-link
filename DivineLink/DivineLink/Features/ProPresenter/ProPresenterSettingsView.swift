@@ -155,6 +155,42 @@ struct ProPresenterSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            
+            // Audience Screen Section (Keyboard Automation)
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Permission status
+                    HStack(spacing: 8) {
+                        let hasPermission = KeyboardAutomationService.shared.hasAccessibilityPermission
+                        
+                        Circle()
+                            .fill(hasPermission ? Color.green : Color.orange)
+                            .frame(width: 10, height: 10)
+                        
+                        Text(hasPermission ? "Accessibility Enabled" : "Accessibility Required")
+                            .foregroundStyle(hasPermission ? .green : .orange)
+                        
+                        Spacer()
+                        
+                        if !hasPermission {
+                            Button("Grant Access") {
+                                KeyboardAutomationService.shared.requestAccessibilityPermission()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    
+                    Text("Audience push uses keyboard automation to trigger ProPresenter's native Bible feature (⌘B). This requires Accessibility permission.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Audience Screen (PP Bible)")
+            } footer: {
+                Text("When you push to Audience, Divine Link will: Open PP's Bible (⌘B) → Type the reference → Press Enter. PP uses its own Bible version and theme.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
