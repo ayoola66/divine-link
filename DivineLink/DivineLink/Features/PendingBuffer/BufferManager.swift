@@ -1,19 +1,39 @@
 import Foundation
 import Combine
 
+// MARK: - Individual Verse Item
+
+/// Represents a single verse within a scripture reference
+struct VerseItem: Identifiable, Equatable {
+    let id = UUID()
+    let verseNumber: Int
+    let text: String
+    
+    /// Formatted verse number (e.g., "16")
+    var formattedNumber: String {
+        "\(verseNumber)"
+    }
+}
+
 // MARK: - Pending Verse Model
 
 /// Represents a detected scripture verse pending operator approval
 struct PendingVerse: Identifiable, Equatable {
     let id = UUID()
     let reference: ScriptureReference
-    let fullText: String
+    let verses: [VerseItem]  // Individual verses for verse-by-verse display
     let translation: String
     let timestamp: Date
     let confidence: Float
     let rawTranscript: String  // What was actually heard (for learning)
     var pushCount: Int = 0  // How many times this verse has been pushed
     var lastPushedAt: Date? = nil  // When it was last pushed
+    var currentVerseIndex: Int = 0  // For verse-by-verse navigation
+    
+    /// Combined full text of all verses (for backwards compatibility)
+    var fullText: String {
+        verses.map { $0.text }.joined(separator: " ")
+    }
     
     /// Whether this verse has been pushed at least once
     var isPushed: Bool {
@@ -25,6 +45,47 @@ struct PendingVerse: Identifiable, Equatable {
         reference.formatted
     }
     
+    /// Whether this contains multiple verses
+    var isMultiVerse: Bool {
+        verses.count > 1
+    }
+    
+    /// Get the currently selected verse (for verse-by-verse push)
+    var currentVerse: VerseItem? {
+        guard currentVerseIndex >= 0 && currentVerseIndex < verses.count else { return nil }
+        return verses[currentVerseIndex]
+    }
+    
+    /// Get formatted text for current verse with reference
+    var currentVerseFormatted: String {
+        guard let verse = currentVerse else { return fullText }
+        if isMultiVerse {
+            return "\(reference.book) \(reference.chapter):\(verse.verseNumber)\n\(verse.text)"
+        } else {
+            return "\(displayReference)\n\(verse.text)"
+        }
+    }
+    
+    // MARK: - Initialisers
+    
+    /// New initialiser with individual verses
+    init(
+        reference: ScriptureReference,
+        verses: [VerseItem],
+        translation: String,
+        timestamp: Date,
+        confidence: Float,
+        rawTranscript: String = ""
+    ) {
+        self.reference = reference
+        self.verses = verses
+        self.translation = translation
+        self.timestamp = timestamp
+        self.confidence = confidence
+        self.rawTranscript = rawTranscript
+    }
+    
+    /// Legacy initialiser with combined text (creates single verse)
     init(
         reference: ScriptureReference,
         fullText: String,
@@ -34,7 +95,7 @@ struct PendingVerse: Identifiable, Equatable {
         rawTranscript: String = ""
     ) {
         self.reference = reference
-        self.fullText = fullText
+        self.verses = [VerseItem(verseNumber: reference.verseStart, text: fullText)]
         self.translation = translation
         self.timestamp = timestamp
         self.confidence = confidence
@@ -177,5 +238,42 @@ class BufferManager: ObservableObject {
     /// Get a verse by ID
     func getVerse(id: UUID) -> PendingVerse? {
         pendingVerses.first(where: { $0.id == id })
+    }
+    
+    // MARK: - Verse Navigation (for multi-verse references)
+    
+    /// Move to next verse within a multi-verse reference
+    func nextVerse(id: UUID) -> Bool {
+        guard let index = pendingVerses.firstIndex(where: { $0.id == id }) else { return false }
+        let verse = pendingVerses[index]
+        
+        if verse.currentVerseIndex < verse.verses.count - 1 {
+            pendingVerses[index].currentVerseIndex += 1
+            print("[Buffer] Advanced to verse \(pendingVerses[index].currentVerseIndex + 1) of \(verse.verses.count)")
+            return true
+        }
+        return false
+    }
+    
+    /// Move to previous verse within a multi-verse reference
+    func previousVerse(id: UUID) -> Bool {
+        guard let index = pendingVerses.firstIndex(where: { $0.id == id }) else { return false }
+        
+        if pendingVerses[index].currentVerseIndex > 0 {
+            pendingVerses[index].currentVerseIndex -= 1
+            print("[Buffer] Moved back to verse \(pendingVerses[index].currentVerseIndex + 1)")
+            return true
+        }
+        return false
+    }
+    
+    /// Set current verse index directly
+    func setCurrentVerse(id: UUID, index: Int) {
+        guard let verseIndex = pendingVerses.firstIndex(where: { $0.id == id }) else { return }
+        let verse = pendingVerses[verseIndex]
+        
+        if index >= 0 && index < verse.verses.count {
+            pendingVerses[verseIndex].currentVerseIndex = index
+        }
     }
 }

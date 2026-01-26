@@ -178,19 +178,27 @@ class DetectionPipeline: ObservableObject {
             return
         }
         
-        guard let verseText = bible.getVerseText(from: detection.reference) else {
+        // Get individual verses from Bible database
+        let bibleVerses = bible.getVerses(from: detection.reference)
+        
+        guard !bibleVerses.isEmpty else {
             // Verse not found - REJECT this detection (invalid chapter/verse)
             Logger.pipeline.warning("Rejected invalid detection: \(detection.displayReference) - verse not found")
             return
         }
         
+        // Convert BibleVerse objects to VerseItem objects for display
+        let verseItems = bibleVerses.map { bibleVerse in
+            VerseItem(verseNumber: bibleVerse.verse, text: bibleVerse.text)
+        }
+        
         // Get current translation name
         let translationName = bible.currentTranslation
         
-        // Create pending verse
+        // Create pending verse with individual verses
         let pendingVerse = PendingVerse(
             reference: detection.reference,
-            fullText: verseText,
+            verses: verseItems,
             translation: translationName,
             timestamp: detection.timestamp,
             confidence: detection.confidence,
@@ -200,11 +208,16 @@ class DetectionPipeline: ObservableObject {
         // Add to buffer
         buffer.add(pendingVerse)
         
+        // Log multi-verse detection
+        if verseItems.count > 1 {
+            Logger.pipeline.info("Multi-verse detection: \(verseItems.count) verses in \(detection.displayReference)")
+        }
+        
         // Add to current session if active
         if sessionManager.currentSession != nil {
             let detectedScripture = DetectedScripture(
                 reference: detection.displayReference,
-                verseText: verseText,
+                verseText: pendingVerse.fullText,  // Combined text for storage
                 translation: translationName,
                 rawTranscript: rawTranscript,
                 confidence: detection.confidence
@@ -221,23 +234,46 @@ extension DetectionPipeline {
     static var preview: DetectionPipeline {
         let pipeline = DetectionPipeline()
         
-        // Add sample pending verse
-        let sampleReference = ScriptureReference(
+        // Add sample single verse
+        let singleReference = ScriptureReference(
             book: "John",
             chapter: 3,
             verseStart: 16,
             verseEnd: nil
         )
         
-        let sampleVerse = PendingVerse(
-            reference: sampleReference,
-            fullText: "For God so loved the world that he gave his only begotten Son, that whoever believes in him should not perish but have everlasting life.",
+        let singleVerse = PendingVerse(
+            reference: singleReference,
+            verses: [
+                VerseItem(verseNumber: 16, text: "For God so loved the world that he gave his only begotten Son, that whoever believes in him should not perish but have everlasting life.")
+            ],
             translation: "KJV",
             timestamp: Date(),
             confidence: 0.95
         )
+        pipeline.buffer.add(singleVerse)
         
-        pipeline.buffer.add(sampleVerse)
+        // Add sample multi-verse reference
+        let multiReference = ScriptureReference(
+            book: "John",
+            chapter: 3,
+            verseStart: 16,
+            verseEnd: 18
+        )
+        
+        let multiVerse = PendingVerse(
+            reference: multiReference,
+            verses: [
+                VerseItem(verseNumber: 16, text: "For God so loved the world that he gave his only begotten Son, that whoever believes in him should not perish but have everlasting life."),
+                VerseItem(verseNumber: 17, text: "For God sent not his Son into the world to condemn the world; but that the world through him might be saved."),
+                VerseItem(verseNumber: 18, text: "He that believeth on him is not condemned: but he that believeth not is condemned already, because he hath not believed in the name of the only begotten Son of God.")
+            ],
+            translation: "KJV",
+            timestamp: Date().addingTimeInterval(-60),
+            confidence: 0.92
+        )
+        pipeline.buffer.add(multiVerse)
+        
         pipeline.transcriptBuffer.update("For God so loved the world that he gave his only begotten son. John 3:16 is a very famous verse.")
         
         return pipeline

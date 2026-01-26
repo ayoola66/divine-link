@@ -732,6 +732,7 @@ struct VerseRowView: View {
     let onDelete: () -> Void
     
     @State private var isHovering = false
+    @State private var isExpanded = false
     
     /// Background colour based on state
     private var backgroundColor: Color {
@@ -766,6 +767,16 @@ struct VerseRowView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(verse.isPushed ? .green : (isSelected ? Color.divineBlue : .primary))
                     
+                    // Multi-verse indicator
+                    if verse.isMultiVerse {
+                        Text("\(verse.verses.count) verses")
+                            .font(.caption2)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.blue.opacity(0.7), in: Capsule())
+                    }
+                    
                     // Push count badge
                     if verse.pushCount > 1 {
                         Text("×\(verse.pushCount)")
@@ -779,6 +790,21 @@ struct VerseRowView: View {
                     
                     Spacer()
                     
+                    // Expand/collapse for multi-verse
+                    if verse.isMultiVerse {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isExpanded.toggle()
+                            }
+                        } label: {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(isExpanded ? "Collapse verses" : "Expand verses")
+                    }
+                    
                     Text(verse.translation)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -789,12 +815,45 @@ struct VerseRowView: View {
                         .foregroundStyle(.tertiary)
                 }
                 
-                // Verse text
-                Text(verse.fullText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Verse text - different display based on multi-verse and expansion
+                if verse.isMultiVerse && isExpanded {
+                    // Expanded view: show each verse individually
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(verse.verses) { verseItem in
+                            HStack(alignment: .top, spacing: 6) {
+                                // Verse number badge
+                                Text("v\(verseItem.verseNumber)")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(Color.divineBlue.opacity(0.8), in: RoundedRectangle(cornerRadius: 4))
+                                
+                                // Verse text
+                                Text(verseItem.text)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+                } else if verse.isMultiVerse {
+                    // Collapsed multi-verse: show preview
+                    Text("v\(verse.verses.first?.verseNumber ?? 0): \(verse.verses.first?.text ?? "")...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    // Single verse
+                    Text(verse.fullText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             
             // Action buttons (show on hover or selection)
