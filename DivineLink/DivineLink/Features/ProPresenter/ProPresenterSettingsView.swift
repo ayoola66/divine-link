@@ -9,6 +9,7 @@ struct ProPresenterSettingsView: View {
     @State private var isTesting = false
     @State private var isPushing = false
     @State private var pushResult: PushResult?
+    @State private var hasAccessibilityPermission = false
     
     enum PushResult {
         case success
@@ -161,23 +162,26 @@ struct ProPresenterSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     // Permission status
                     HStack(spacing: 8) {
-                        let hasPermission = KeyboardAutomationService.shared.hasAccessibilityPermission
-                        
                         Circle()
-                            .fill(hasPermission ? Color.green : Color.orange)
+                            .fill(hasAccessibilityPermission ? Color.green : Color.orange)
                             .frame(width: 10, height: 10)
                         
-                        Text(hasPermission ? "Accessibility Enabled" : "Accessibility Required")
-                            .foregroundStyle(hasPermission ? .green : .orange)
+                        Text(hasAccessibilityPermission ? "Accessibility Enabled" : "Accessibility Required")
+                            .foregroundStyle(hasAccessibilityPermission ? .green : .orange)
                         
                         Spacer()
                         
-                        if !hasPermission {
+                        if !hasAccessibilityPermission {
                             Button("Grant Access") {
-                                KeyboardAutomationService.shared.requestAccessibilityPermission()
+                                requestAccessibility()
                             }
                             .buttonStyle(.borderedProminent)
                         }
+                        
+                        Button("Refresh") {
+                            checkAccessibility()
+                        }
+                        .buttonStyle(.bordered)
                     }
                     
                     Text("Audience push uses keyboard automation to trigger ProPresenter's native Bible feature (⌘B). This requires Accessibility permission.")
@@ -191,6 +195,9 @@ struct ProPresenterSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .onAppear {
+            checkAccessibility()
         }
         .formStyle(.grouped)
     }
@@ -243,6 +250,21 @@ struct ProPresenterSettingsView: View {
         }
         
         isPushing = false
+    }
+    
+    private func checkAccessibility() {
+        Task { @MainActor in
+            hasAccessibilityPermission = KeyboardAutomationService.shared.checkAccessibilityPermission()
+        }
+    }
+    
+    private func requestAccessibility() {
+        Task { @MainActor in
+            KeyboardAutomationService.shared.requestAccessibilityPermission()
+            // Check again after a short delay
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            hasAccessibilityPermission = KeyboardAutomationService.shared.checkAccessibilityPermission()
+        }
     }
 }
 
