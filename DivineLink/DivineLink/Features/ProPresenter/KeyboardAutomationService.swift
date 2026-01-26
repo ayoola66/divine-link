@@ -54,11 +54,11 @@ class KeyboardAutomationService: ObservableObject {
     /// Push a scripture reference to ProPresenter's Audience screen via native Bible feature
     /// Workflow: ⌘B → type reference → Enter
     func pushToProPresenterBible(reference: String) async -> Bool {
-        guard checkAccessibilityPermission() else {
-            lastError = "Accessibility permission required"
-            print("❌ Cannot automate: Accessibility permission not granted")
-            requestAccessibilityPermission()
-            return false
+        // Check permission but don't block - Xcode may have permission when debugging
+        let hasPermission = checkAccessibilityPermission()
+        if !hasPermission {
+            print("⚠️ Accessibility permission not confirmed - attempting anyway (Xcode may have permission)")
+            // Don't return false - try anyway for development
         }
         
         print("🎹 Keyboard automation: Pushing '\(reference)' to ProPresenter Bible")
