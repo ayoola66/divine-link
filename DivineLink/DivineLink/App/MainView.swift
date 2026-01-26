@@ -505,11 +505,23 @@ struct MainView: View {
                                 onSelect: {
                                     selectedVerseId = verse.id
                                 },
-                                onPush: {
-                                    pushVerse(verse)
+                                onPushAll: {
+                                    pushVerseAll(verse)
+                                },
+                                onPushOne: {
+                                    pushVerseOne(verse)
                                 },
                                 onDelete: {
                                     deleteVerse(verse)
+                                },
+                                onNextVerse: {
+                                    _ = pipeline.buffer.nextVerse(id: verse.id)
+                                },
+                                onPreviousVerse: {
+                                    _ = pipeline.buffer.previousVerse(id: verse.id)
+                                },
+                                onSelectVerse: { index in
+                                    pipeline.buffer.setCurrentVerse(id: verse.id, index: index)
                                 }
                             )
                         }
@@ -527,7 +539,7 @@ struct MainView: View {
     
     private func pushSelectedVerse() {
         if let verse = selectedVerse {
-            pushVerse(verse)
+            pushVerseAll(verse)
         }
     }
     
@@ -537,15 +549,16 @@ struct MainView: View {
         }
     }
     
-    private func pushVerse(_ verse: PendingVerse) {
-        print("[Push] \(verse.displayReference)")
+    /// Push all verses (full text) to ProPresenter
+    private func pushVerseAll(_ verse: PendingVerse) {
+        print("[Push All] \(verse.displayReference) (\(verse.verses.count) verses)")
         
         // Push to ProPresenter
         Task {
             do {
                 let message = ppClient.formatStageMessage(from: verse)
                 try await ppClient.sendStageMessage(message)
-                print("✅ Pushed to ProPresenter: \(verse.displayReference)")
+                print("✅ Pushed all to ProPresenter: \(verse.displayReference)")
             } catch {
                 print("❌ Failed to push to ProPresenter: \(error.localizedDescription)")
                 // Still mark as pushed locally even if PP fails
@@ -553,6 +566,38 @@ struct MainView: View {
         }
         
         // Mark as pushed (keeps it in list with visual indicator)
+        pipeline.buffer.markAsPushed(id: verse.id)
+    }
+    
+    /// Push only the current verse to ProPresenter
+    private func pushVerseOne(_ verse: PendingVerse) {
+        guard let currentVerse = verse.currentVerse else {
+            print("[Push One] No current verse selected")
+            return
+        }
+        
+        let reference = verse.reference
+        let singleRef = "\(reference.book) \(reference.chapter):\(currentVerse.verseNumber)"
+        print("[Push One] \(singleRef)")
+        
+        // Push to ProPresenter
+        Task {
+            do {
+                // Format as single verse message
+                let message = "\(singleRef)\n\(currentVerse.text)"
+                try await ppClient.sendStageMessage(message)
+                print("✅ Pushed single verse to ProPresenter: \(singleRef)")
+                
+                // Auto-advance to next verse after push
+                if pipeline.buffer.nextVerse(id: verse.id) {
+                    print("[Push One] Auto-advanced to next verse")
+                }
+            } catch {
+                print("❌ Failed to push to ProPresenter: \(error.localizedDescription)")
+            }
+        }
+        
+        // Mark as pushed
         pipeline.buffer.markAsPushed(id: verse.id)
     }
     
@@ -728,8 +773,12 @@ struct VerseRowView: View {
     let verse: PendingVerse
     let isSelected: Bool
     let onSelect: () -> Void
-    let onPush: () -> Void
+    let onPushAll: () -> Void       // Push all verses
+    let onPushOne: () -> Void       // Push current verse only
     let onDelete: () -> Void
+    let onNextVerse: () -> Void     // Navigate to next verse
+    let onPreviousVerse: () -> Void // Navigate to previous verse
+    let onSelectVerse: (Int) -> Void // Select specific verse by index
     
     @State private var isHovering = false
     @State private var isExpanded = false
@@ -817,24 +866,40 @@ struct VerseRowView: View {
                 
                 // Verse text - different display based on multi-verse and expansion
                 if verse.isMultiVerse && isExpanded {
-                    // Expanded view: show each verse individually
+                    // Expanded view: show each verse individually with current highlighted
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(verse.verses) { verseItem in
+                        ForEach(Array(verse.verses.enumerated()), id: \.element.id) { index, verseItem in
+                            let isCurrent = index == verse.currentVerseIndex
+                            
                             HStack(alignment: .top, spacing: 6) {
-                                // Verse number badge
+                                // Verse number badge - highlighted if current
                                 Text("v\(verseItem.verseNumber)")
                                     .font(.caption2)
                                     .fontWeight(.bold)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 2)
-                                    .background(Color.divineBlue.opacity(0.8), in: RoundedRectangle(cornerRadius: 4))
+                                    .background(
+                                        isCurrent ? Color.divineGold : Color.divineBlue.opacity(0.8),
+                                        in: RoundedRectangle(cornerRadius: 4)
+                                    )
                                 
                                 // Verse text
                                 Text(verseItem.text)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(isCurrent ? .primary : .secondary)
+                                    .fontWeight(isCurrent ? .medium : .regular)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(isCurrent ? Color.divineGold.opacity(0.1) : Color.clear)
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                onSelectVerse(index)
                             }
                         }
                     }
@@ -858,24 +923,91 @@ struct VerseRowView: View {
             
             // Action buttons (show on hover or selection)
             if isHovering || isSelected {
-                HStack(spacing: 4) {
-                    Button {
-                        onPush()
-                    } label: {
-                        Image(systemName: verse.isPushed ? "arrow.up.circle" : "arrow.up.circle.fill")
-                            .foregroundStyle(Color.divineGold)
+                if verse.isMultiVerse {
+                    // Multi-verse: show navigation and push options
+                    HStack(spacing: 4) {
+                        // Previous verse button
+                        Button {
+                            onPreviousVerse()
+                        } label: {
+                            Image(systemName: "chevron.left.circle")
+                                .foregroundStyle(verse.currentVerseIndex > 0 ? Color.divineBlue : .gray.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(verse.currentVerseIndex <= 0)
+                        .help("Previous verse")
+                        
+                        // Current verse indicator
+                        Text("\(verse.currentVerseIndex + 1)/\(verse.verses.count)")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 30)
+                        
+                        // Next verse button
+                        Button {
+                            onNextVerse()
+                        } label: {
+                            Image(systemName: "chevron.right.circle")
+                                .foregroundStyle(verse.currentVerseIndex < verse.verses.count - 1 ? Color.divineBlue : .gray.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(verse.currentVerseIndex >= verse.verses.count - 1)
+                        .help("Next verse")
+                        
+                        Divider()
+                            .frame(height: 14)
+                        
+                        // Push one (current verse)
+                        Button {
+                            onPushOne()
+                        } label: {
+                            Image(systemName: "1.circle.fill")
+                                .foregroundStyle(Color.divineGold)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Push verse \(verse.currentVerse?.verseNumber ?? 0) only")
+                        
+                        // Push all verses
+                        Button {
+                            onPushAll()
+                        } label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .foregroundStyle(Color.divineGold)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Push all \(verse.verses.count) verses")
+                        
+                        Button {
+                            onDelete()
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.red.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete")
                     }
-                    .buttonStyle(.plain)
-                    .help(verse.isPushed ? "Push again" : "Push to ProPresenter")
-                    
-                    Button {
-                        onDelete()
-                    } label: {
-                        Image(systemName: "trash")
-                            .foregroundStyle(.red.opacity(0.7))
+                } else {
+                    // Single verse: simple push
+                    HStack(spacing: 4) {
+                        Button {
+                            onPushAll()
+                        } label: {
+                            Image(systemName: verse.isPushed ? "arrow.up.circle" : "arrow.up.circle.fill")
+                                .foregroundStyle(Color.divineGold)
+                        }
+                        .buttonStyle(.plain)
+                        .help(verse.isPushed ? "Push again" : "Push to ProPresenter")
+                        
+                        Button {
+                            onDelete()
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.red.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete")
                     }
-                    .buttonStyle(.plain)
-                    .help("Delete")
                 }
             }
         }
