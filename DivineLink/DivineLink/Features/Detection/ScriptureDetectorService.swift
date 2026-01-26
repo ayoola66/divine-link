@@ -77,7 +77,30 @@ class ScriptureDetectorService: ObservableObject {
     }
     
     private func compilePatterns() {
-        // Standard format: "John 3:16" or "John 3:16-18" or "1 John 3:16"
+        // IMPORTANT: Order matters! More specific patterns should come FIRST
+        // to prevent less specific patterns from matching partial references
+        
+        // 1. VERBAL FORMAT (most specific - has "chapter" and "verse" keywords)
+        // "John chapter 3 verse 16" or "Genesis chapter 1 verses 1 to 5"
+        // Accepts both digits and number words for chapter and verse
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+verse?s?\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z-]+))?"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .verbal))
+            print("✅ verbal pattern compiled (priority 1)")
+        }
+        
+        // 2. VERBAL SHORT: "Genesis 1 verse 1" or "John 3 verse 16 to 20" (no "chapter" keyword)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(\d{1,3})\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .verbalShort))
+            print("✅ verbalShort pattern compiled (priority 2)")
+        }
+        
+        // 3. STANDARD FORMAT: "John 3:16" or "John 3:16-18" or "1 John 3:16"
         if let regex = try? NSRegularExpression(
             pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3}):(\d{1,3})(?:\s?-\s?(\d{1,3}))?"#,
             options: .caseInsensitive
@@ -85,9 +108,8 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .standard))
         }
         
-        // Spoken format without colon: "John 316" (chapter+verse concatenated)
+        // 4. SPOKEN FORMAT without colon: "John 316" (chapter+verse concatenated)
         // ONLY matches 3+ digits to avoid "11" being split into "1:1"
-        // Examples: 316 → 3:16, 828 → 8:28, 2316 → 23:16
         if let regex = try? NSRegularExpression(
             pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,2})(\d{2})(?:\s|$|[,.])"#,
             options: .caseInsensitive
@@ -95,7 +117,7 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .spoken))
         }
         
-        // Spoken format with space: "John 3 16" (space instead of colon)
+        // 5. SPOKEN FORMAT with space: "John 3 16" (space instead of colon)
         if let regex = try? NSRegularExpression(
             pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+(\d{1,3})(?:\s|$|[,.])"#,
             options: .caseInsensitive
@@ -103,62 +125,26 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .spoken))
         }
         
-        // Verbal format: "John chapter 3 verse 16" or "Genesis chapter 1 verse one"
-        // Accepts both digits and number words for chapter and verse
+        // 6. VERBAL with word numbers: "Genesis one verse one"
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+verse?s?\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+))?"#,
-            options: .caseInsensitive
-        ) {
-            patterns.append((regex, .verbal))
-        }
-        
-        // Verbal short format: "Genesis 1 verse 1" or "Genesis 1 verse one" (no "chapter" keyword)
-        // Pattern: Book Number verse Number/Word
-        if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
-            options: .caseInsensitive
-        ) {
-            patterns.append((regex, .verbalShort))
-            print("✅ verbalShort pattern compiled")
-        }
-        
-        // Verbal with word numbers: "Genesis one verse one", "Psalm twenty-three"
-        if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-\w+|thirty|thirty-\w+|forty|forty-\w+|fifty)\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-\w+|thirty|thirty-\w+|forty|forty-\w+|fifty)\s+verse?s?\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbalShort))
         }
         
-        // Spoken word numbers without "verse" keyword:
-        // Pattern: "Genesis twenty one one" → 21:1 (compound chapter + single verse)
-        // Pattern: "John three sixteen" → 3:16 (single chapter + compound verse)
+        // 7. SPOKEN WORD NUMBERS: "John three sixteen" → 3:16
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(twenty|thirty|forty|fifty)[\s-]?(one|two|three|four|five|six|seven|eight|nine)\s+(one|two|three|four|five|six|seven|eight|nine|ten)(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*)(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .spokenWords))
         }
         
-        // Pattern: "John three sixteen" → 3:16 (single + teens/compound)
+        // 8. CHAPTER ONLY: "Romans 8" (LAST - least specific)
+        // Only match at end of text or followed by punctuation to avoid partial matches
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*)(?:\s|$|[,.])"#,
-            options: .caseInsensitive
-        ) {
-            patterns.append((regex, .spokenWords))
-        }
-        
-        // Pattern: "Revelation one one" → 1:1 (two single numbers)
-        if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*)(?:\s|$|[,.])"#,
-            options: .caseInsensitive
-        ) {
-            patterns.append((regex, .spokenWords))
-        }
-        
-        // Chapter only format: "Romans 8" (at end of sentence or followed by comma/period)
-        if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+(?:\s[A-Za-z]+)?)\s+(\d{1,3})(?:\s*[,.\s]|$)"#,
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(\d{1,3})(?:\s*[,.!?;:]|\s*$)"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .chapterOnly))
@@ -214,16 +200,25 @@ class ScriptureDetectorService: ObservableObject {
         
         var rawBook = String(text[bookRange]).trimmingCharacters(in: .whitespaces)
         
-        // Strip common leading prepositions that get captured before book names
-        // e.g., "to Exodus" → "Exodus", "in Genesis" → "Genesis"
-        let prepositions = ["to", "in", "from", "the", "of", "at", "on", "for", "by", "into", "unto", "about", "through"]
-        for prep in prepositions {
-            let prefix = prep + " "
+        // Strip common leading words that get captured before book names
+        // e.g., "to Exodus" → "Exodus", "you John" → "John", "the Psalms" → "Psalms"
+        let wordsToStrip = [
+            // Prepositions
+            "to", "in", "from", "the", "of", "at", "on", "for", "by", "into", "unto", "about", "through",
+            // Common speech fragments
+            "you", "we", "lets", "let's", "let", "us", "our", "and", "or", "but", "so", "now",
+            "open", "read", "turn", "go", "see", "look", "find",
+            // Filler words
+            "a", "an", "would", "could", "should", "please", "just", "also", "then"
+        ]
+        for word in wordsToStrip {
+            let prefix = word + " "
             if rawBook.lowercased().hasPrefix(prefix) {
                 rawBook = String(rawBook.dropFirst(prefix.count))
-                break
+                // Don't break - strip multiple words if needed ("would you John" → "John")
             }
         }
+        rawBook = rawBook.trimmingCharacters(in: .whitespaces)
         
         // Normalise book name
         guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
@@ -377,6 +372,28 @@ class ScriptureDetectorService: ObservableObject {
 /// Normalises various book name formats to canonical names
 class BookNameNormaliser {
     
+    // Common words that should NEVER be matched as book names
+    // These get incorrectly fuzzy-matched to short book abbreviations
+    private let excludedWords: Set<String> = [
+        // Prepositions and articles
+        "to", "the", "a", "an", "in", "on", "at", "by", "of", "for", "from",
+        "into", "unto", "upon", "with", "about", "through", "between", "among",
+        // Common verbs
+        "go", "be", "do", "is", "am", "are", "was", "were", "has", "have", "had",
+        "can", "may", "will", "would", "could", "should", "let", "lets", "let's",
+        // Pronouns
+        "i", "me", "my", "we", "us", "our", "you", "your", "he", "him", "his",
+        "she", "her", "it", "its", "they", "them", "their", "this", "that",
+        // Common words in church context
+        "open", "turn", "read", "chapter", "verse", "verses", "and", "or", "but",
+        "bible", "scripture", "word", "passage", "text", "book", "books",
+        "today", "now", "here", "there", "where", "when", "what", "which", "who",
+        // Numbers as words that might be mistaken
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        // Other common short words
+        "bar", "so", "if", "as", "up", "no", "yes", "ok", "oh", "ah", "um", "uh",
+    ]
+    
     // Canonical book names mapped from various inputs (mutable for learned corrections)
     private var bookMappings: [String: String] = [
         // Old Testament
@@ -460,6 +477,18 @@ class BookNameNormaliser {
     func normalise(_ input: String) -> String? {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
         
+        // FIRST: Check if this is a common word that should NEVER be a book name
+        // This prevents "to" from being fuzzy-matched to "ho" → Hosea
+        if excludedWords.contains(lowercased) {
+            return nil
+        }
+        
+        // Also exclude very short words (1-2 chars) unless they're exact matches
+        // This prevents random short words from fuzzy-matching
+        if lowercased.count <= 2 && bookMappings[lowercased] == nil {
+            return nil
+        }
+        
         // Direct lookup in primary mappings
         if let canonical = bookMappings[lowercased] {
             return canonical
@@ -481,9 +510,11 @@ class BookNameNormaliser {
             return canonical
         }
         
-        // Try fuzzy match if no exact match
-        if let fuzzyMatch = fuzzyMatch(lowercased, maxDistance: 2) {
-            return fuzzyMatch.canonical
+        // Try fuzzy match if no exact match (only for words 3+ chars to avoid false matches)
+        if lowercased.count >= 3 {
+            if let fuzzyMatch = fuzzyMatch(lowercased, maxDistance: 2) {
+                return fuzzyMatch.canonical
+            }
         }
         
         return nil
