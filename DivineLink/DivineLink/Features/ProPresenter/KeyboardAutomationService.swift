@@ -28,10 +28,12 @@ class KeyboardAutomationService: ObservableObject {
     // MARK: - Permission Handling
     
     /// Check if we have accessibility permission
+    @discardableResult
     func checkAccessibilityPermission() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(options)
         hasAccessibilityPermission = trusted
+        print("🔐 Accessibility permission check: \(trusted ? "GRANTED" : "DENIED")")
         return trusted
     }
     
