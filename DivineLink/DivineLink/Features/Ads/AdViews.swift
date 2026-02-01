@@ -325,18 +325,60 @@ struct SingleAdView: View {
 // MARK: - Video Player View
 
 /// Displays video or GIF content with looping support
+/// Supports: Direct video URLs (MP4), YouTube URLs, and animated GIFs
 struct VideoPlayerView: View {
     let url: URL
     let isGIF: Bool
     @State private var player: AVPlayer?
+    
+    /// Check if URL is a YouTube link
+    private var isYouTubeURL: Bool {
+        let urlString = url.absoluteString.lowercased()
+        return urlString.contains("youtube.com") || urlString.contains("youtu.be")
+    }
+    
+    /// Extract YouTube video ID from URL
+    private var youtubeVideoID: String? {
+        guard isYouTubeURL else { return nil }
+        let urlString = url.absoluteString
+        
+        // Handle youtu.be short links
+        if urlString.contains("youtu.be/") {
+            let components = urlString.components(separatedBy: "youtu.be/")
+            if components.count > 1 {
+                return components[1].components(separatedBy: "?")[0].components(separatedBy: "&")[0]
+            }
+        }
+        
+        // Handle youtube.com/watch?v= links
+        if urlString.contains("watch?v=") {
+            let components = urlString.components(separatedBy: "watch?v=")
+            if components.count > 1 {
+                return components[1].components(separatedBy: "&")[0].components(separatedBy: "#")[0]
+            }
+        }
+        
+        // Handle youtube.com/embed/ links
+        if urlString.contains("embed/") {
+            let components = urlString.components(separatedBy: "embed/")
+            if components.count > 1 {
+                return components[1].components(separatedBy: "?")[0].components(separatedBy: "&")[0]
+            }
+        }
+        
+        return nil
+    }
     
     var body: some View {
         Group {
             if isGIF {
                 // Use WebKit for GIFs (better support for animated GIFs)
                 GIFWebView(url: url)
+            } else if isYouTubeURL, let videoID = youtubeVideoID {
+                // Use WebKit for YouTube videos (embed format)
+                YouTubeWebView(videoID: videoID)
             } else {
-                // Use AVPlayer for videos
+                // Use AVPlayer for direct video URLs (MP4, etc.)
                 if let player = player {
                     VideoPlayer(player: player)
                         .disabled(true) // Disable controls for ads
@@ -350,7 +392,7 @@ struct VideoPlayerView: View {
             }
         }
         .onAppear {
-            if !isGIF {
+            if !isGIF && !isYouTubeURL {
                 setupVideoPlayer()
             }
         }
@@ -412,6 +454,38 @@ struct GIFWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // GIF loaded
         }
+    }
+}
+
+// MARK: - YouTube Web View
+
+/// Displays YouTube videos using WebKit embed
+/// Note: Will play the FULL video (or Short). For YouTube Shorts, they're already short.
+/// To play a specific time range, use YouTube's time parameter: ?t=10s (starts at 10 seconds)
+struct YouTubeWebView: NSViewRepresentable {
+    let videoID: String
+    
+    func makeNSView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.configuration.preferences.javaScriptEnabled = true
+        webView.configuration.mediaTypesRequiringUserActionForPlayback = []
+        
+        // YouTube embed URL with autoplay, loop, mute, and no controls
+        // Note: autoplay=1, loop=1, mute=1, controls=0, modestbranding=1
+        let embedURL = "https://www.youtube.com/embed/\(videoID)?autoplay=1&loop=1&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0"
+        
+        guard let url = URL(string: embedURL) else {
+            return webView
+        }
+        
+        let request = URLRequest(url: url)
+        webView.load(request)
+        
+        return webView
+    }
+    
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        // Update if needed
     }
 }
 
