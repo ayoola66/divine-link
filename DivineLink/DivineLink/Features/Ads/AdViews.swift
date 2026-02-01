@@ -537,7 +537,8 @@ struct YouTubeWebView: NSViewRepresentable {
         
         // Load HTML with embedded iframe - using youtube-nocookie for privacy and better compatibility
         // Note: YouTube Shorts work with the same /embed/ URL format using the video ID
-        let embedURL = "https://www.youtube-nocookie.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&fs=0&disablekb=1&origin=https://divinelink.app"
+        // Parameters to minimize branding: modestbranding=1, controls=0, showinfo=0, iv_load_policy=3 (hide annotations)
+        let embedURL = "https://www.youtube-nocookie.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&fs=0&disablekb=1&showinfo=0&iv_load_policy=3&cc_load_policy=0&origin=https://divinelink.app"
         
         print("📺 YouTubeWebView embed URL: \(embedURL)")
         
