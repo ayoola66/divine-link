@@ -231,10 +231,16 @@ struct SingleAdView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.gray.opacity(0.1))
             
+            // Debug: Log which media path is taken
+            let _ = debugMediaSelection()
+            
             // Media content (video/GIF takes priority over image)
             if ad.hasVideo, let videoURL = ad.videoURL {
                 // Video or GIF content (looping)
                 VideoPlayerView(url: videoURL, isGIF: ad.mediaType == "gif")
+                    .onAppear {
+                        print("📺 VideoPlayerView appeared for: \(ad.name)")
+                    }
             } else if let imageURL = ad.imageURL {
                 // Static image
                 AsyncImage(url: imageURL) { phase in
@@ -320,6 +326,15 @@ struct SingleAdView: View {
                 .foregroundStyle(.secondary)
         }
     }
+    
+    /// Debug: Log which media path is taken for this ad
+    private func debugMediaSelection() {
+        print("🔍 Ad: \(ad.name)")
+        print("   - mediaType: \(ad.mediaType ?? "nil")")
+        print("   - hasVideo: \(ad.hasVideo)")
+        print("   - videoURL: \(ad.videoURL?.absoluteString ?? "nil")")
+        print("   - imageURL: \(ad.imageURL?.absoluteString ?? "nil")")
+    }
 }
 
 // MARK: - Video Player View
@@ -334,7 +349,10 @@ struct VideoPlayerView: View {
     /// Check if URL is a YouTube link (including Shorts)
     private var isYouTubeURL: Bool {
         let urlString = url.absoluteString.lowercased()
-        return urlString.contains("youtube.com") || urlString.contains("youtu.be")
+        let result = urlString.contains("youtube.com") || urlString.contains("youtu.be")
+        print("🎬 VideoPlayerView - URL: \(url.absoluteString)")
+        print("   - isYouTubeURL: \(result), isGIF: \(isGIF)")
+        return result
     }
     
     /// Extract YouTube video ID from URL
@@ -378,28 +396,33 @@ struct VideoPlayerView: View {
     }
     
     var body: some View {
-        Group {
-            if isGIF {
-                // Use WebKit for GIFs (better support for animated GIFs)
-                GIFWebView(url: url)
-            } else if isYouTubeURL, let videoID = youtubeVideoID {
-                // Use WebKit for YouTube videos (embed format)
-                YouTubeWebView(videoID: videoID)
-            } else {
-                // Use AVPlayer for direct video URLs (MP4, etc.)
-                if let player = player {
-                    VideoPlayer(player: player)
-                        .disabled(true) // Disable controls for ads
+        GeometryReader { geometry in
+            ZStack {
+                if isGIF {
+                    // Use WebKit for GIFs (better support for animated GIFs)
+                    GIFWebView(url: url)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                } else if isYouTubeURL, let videoID = youtubeVideoID {
+                    // Use WebKit for YouTube videos (embed format)
+                    YouTubeWebView(videoID: videoID)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 } else {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .onAppear {
-                            setupVideoPlayer()
-                        }
+                    // Use AVPlayer for direct video URLs (MP4, etc.)
+                    if let player = player {
+                        VideoPlayer(player: player)
+                            .disabled(true) // Disable controls for ads
+                    } else {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .onAppear {
+                                setupVideoPlayer()
+                            }
+                    }
                 }
             }
         }
         .onAppear {
+            print("🎬 VideoPlayerView.onAppear - isGIF: \(isGIF), isYouTube: \(isYouTubeURL)")
             if !isGIF && !isYouTubeURL {
                 setupVideoPlayer()
             }
@@ -438,17 +461,35 @@ struct GIFWebView: NSViewRepresentable {
     let url: URL
     
     func makeNSView(context: Context) -> WKWebView {
+        print("🖼️ GIFWebView makeNSView called for: \(url.absoluteString)")
+        
         // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
         let configuration = WKWebViewConfiguration()
-        configuration.preferences.javaScriptEnabled = false
+        configuration.preferences.javaScriptEnabled = true  // Enable JS for some GIF hosts
         configuration.mediaTypesRequiringUserActionForPlayback = []
         
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         
-        // Load GIF
-        let request = URLRequest(url: url)
-        webView.load(request)
+        // Load GIF using HTML to ensure it displays and loops
+        let html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                * { margin: 0; padding: 0; }
+                html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+                img { width: 100%; height: 100%; object-fit: cover; }
+            </style>
+        </head>
+        <body>
+            <img src="\(url.absoluteString)" alt="GIF" />
+        </body>
+        </html>
+        """
+        
+        webView.loadHTMLString(html, baseURL: url)
         
         return webView
     }
@@ -463,7 +504,15 @@ struct GIFWebView: NSViewRepresentable {
     
     class Coordinator: NSObject, WKNavigationDelegate {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // GIF loaded
+            print("✅ GIFWebView loaded successfully")
+        }
+        
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            print("❌ GIFWebView failed: \(error.localizedDescription)")
+        }
+        
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            print("❌ GIFWebView provisional failed: \(error.localizedDescription)")
         }
     }
 }
@@ -476,6 +525,8 @@ struct YouTubeWebView: NSViewRepresentable {
     let videoID: String
     
     func makeNSView(context: Context) -> WKWebView {
+        print("📺 YouTubeWebView makeNSView called for videoID: \(videoID)")
+        
         // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
         let configuration = WKWebViewConfiguration()
         configuration.preferences.javaScriptEnabled = true
@@ -511,6 +562,7 @@ struct YouTubeWebView: NSViewRepresentable {
         </html>
         """
         
+        print("📺 YouTubeWebView loading HTML with embed URL")
         webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
         
         return webView
@@ -526,15 +578,15 @@ struct YouTubeWebView: NSViewRepresentable {
     
     class Coordinator: NSObject, WKNavigationDelegate {
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            print("YouTube WebView failed: \(error.localizedDescription)")
+            print("❌ YouTubeWebView failed: \(error.localizedDescription)")
         }
         
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            print("YouTube WebView provisional navigation failed: \(error.localizedDescription)")
+            print("❌ YouTubeWebView provisional failed: \(error.localizedDescription)")
         }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            print("YouTube WebView loaded successfully")
+            print("✅ YouTubeWebView loaded successfully")
         }
     }
 }
