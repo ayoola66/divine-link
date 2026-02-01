@@ -32,5 +32,28 @@
 	<string>NSApplication</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Divine Link uses speech recognition to detect Bible verses in real-time.</string>
+	
+	<!-- App Transport Security - Allow web content for ads -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
+	
+	<!-- Sparkle Auto-Update Configuration -->
+	<key>SUFeedURL</key>
+	<string>https://divinelink.netlify.app/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>fbg4DwpGznsP6/scSfKu1hbfIlW0/LgnSRS+fi/4Ciw=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUShowReleaseNotes</key>
+	<true/>
 </dict>
 </plist>

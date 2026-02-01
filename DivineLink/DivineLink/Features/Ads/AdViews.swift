@@ -331,7 +331,7 @@ struct VideoPlayerView: View {
     let isGIF: Bool
     @State private var player: AVPlayer?
     
-    /// Check if URL is a YouTube link
+    /// Check if URL is a YouTube link (including Shorts)
     private var isYouTubeURL: Bool {
         let urlString = url.absoluteString.lowercased()
         return urlString.contains("youtube.com") || urlString.contains("youtu.be")
@@ -347,6 +347,14 @@ struct VideoPlayerView: View {
             let components = urlString.components(separatedBy: "youtu.be/")
             if components.count > 1 {
                 return components[1].components(separatedBy: "?")[0].components(separatedBy: "&")[0]
+            }
+        }
+        
+        // Handle YouTube Shorts: youtube.com/shorts/VIDEO_ID
+        if urlString.contains("/shorts/") {
+            let components = urlString.components(separatedBy: "/shorts/")
+            if components.count > 1 {
+                return components[1].components(separatedBy: "?")[0].components(separatedBy: "&")[0].components(separatedBy: "#")[0]
             }
         }
         
@@ -430,10 +438,13 @@ struct GIFWebView: NSViewRepresentable {
     let url: URL
     
     func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView()
+        // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
+        let configuration = WKWebViewConfiguration()
+        configuration.preferences.javaScriptEnabled = false
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        webView.configuration.preferences.javaScriptEnabled = false
-        webView.configuration.mediaTypesRequiringUserActionForPlayback = []
         
         // Load GIF
         let request = URLRequest(url: url)
@@ -466,13 +477,17 @@ struct YouTubeWebView: NSViewRepresentable {
     let videoID: String
     
     func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView()
-        webView.configuration.preferences.javaScriptEnabled = true
-        webView.configuration.mediaTypesRequiringUserActionForPlayback = []
+        // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
+        let configuration = WKWebViewConfiguration()
+        configuration.preferences.javaScriptEnabled = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         
         // YouTube embed URL with autoplay, loop, mute, and no controls
-        // Note: autoplay=1, loop=1, mute=1, controls=0, modestbranding=1
-        let embedURL = "https://www.youtube.com/embed/\(videoID)?autoplay=1&loop=1&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0"
+        // Note: playlist=VIDEO_ID is REQUIRED for loop to work on YouTube embeds
+        // origin parameter helps with some embed restrictions
+        let embedURL = "https://www.youtube.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&enablejsapi=1"
         
         guard let url = URL(string: embedURL) else {
             return webView
