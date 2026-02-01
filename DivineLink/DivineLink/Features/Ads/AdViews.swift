@@ -465,7 +465,7 @@ struct GIFWebView: NSViewRepresentable {
         
         // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
         let configuration = WKWebViewConfiguration()
-        configuration.preferences.javaScriptEnabled = true  // Enable JS for some GIF hosts
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true  // Enable JS for some GIF hosts
         configuration.mediaTypesRequiringUserActionForPlayback = []
         
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -529,7 +529,7 @@ struct YouTubeWebView: NSViewRepresentable {
         
         // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
         let configuration = WKWebViewConfiguration()
-        configuration.preferences.javaScriptEnabled = true
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         
         let webView = WKWebView(frame: .zero, configuration: configuration)
