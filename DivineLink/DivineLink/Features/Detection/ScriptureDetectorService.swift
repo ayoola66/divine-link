@@ -233,6 +233,25 @@ class ScriptureDetectorService: ObservableObject {
         
         var rawBook = String(text[bookRange]).trimmingCharacters(in: .whitespaces)
         
+        // CRITICAL: Reject common words that are frequently misidentified as book names
+        // These cause false detections when audio quality is poor
+        let commonWordsToReject: Set<String> = [
+            "for", "of", "on", "and", "or", "but", "the", "a", "an", "in", "at", "to",
+            "drop", "instead", "instead of", "with", "from", "by", "about", "through",
+            "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+            "do", "does", "did", "done", "go", "goes", "went", "gone", "get", "got",
+            "say", "says", "said", "see", "sees", "saw", "know", "knows", "knew",
+            "think", "thinks", "thought", "take", "takes", "took", "come", "comes", "came"
+        ]
+        
+        let rawBookLower = rawBook.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        // Reject if the entire "book name" is a common word
+        if commonWordsToReject.contains(rawBookLower) {
+            print("⚠️ Rejected common word as book name: '\(rawBook)' (pattern: \(type))")
+            return nil
+        }
+        
         // Strip common leading words that get captured before book names
         // e.g., "to Exodus" → "Exodus", "you John" → "John", "the Psalms" → "Psalms"
         let wordsToStrip = [
@@ -252,6 +271,13 @@ class ScriptureDetectorService: ObservableObject {
             }
         }
         rawBook = rawBook.trimmingCharacters(in: .whitespaces)
+        
+        // After stripping, check again if it's a common word
+        let strippedLower = rawBook.lowercased().trimmingCharacters(in: .whitespaces)
+        if strippedLower.isEmpty || commonWordsToReject.contains(strippedLower) {
+            print("⚠️ Rejected stripped result as common word: '\(rawBook)' (pattern: \(type))")
+            return nil
+        }
         
         // Normalise book name
         guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
@@ -313,6 +339,14 @@ class ScriptureDetectorService: ObservableObject {
                 return nil
             }
             
+            // Additional validation: most books have far fewer chapters
+            // Only Psalms has 150, Isaiah has 66, Jeremiah 52, etc.
+            // Reject obviously wrong chapter numbers for non-Psalms books
+            if ch > 50 && type != .chapterOnly {
+                // This is suspicious - log it for review
+                print("⚠️ Suspicious high chapter number: \(ch) for pattern \(type)")
+            }
+            
             chapter = ch
             
             if type != .chapterOnly {
@@ -335,6 +369,31 @@ class ScriptureDetectorService: ObservableObject {
             }
         }
         
+        // Validate verse numbers are reasonable
+        // Most chapters have fewer than 50 verses, very few have more than 100
+        // Psalm 119 has 176 verses (the longest)
+        if verseStart > 176 {
+            print("⚠️ Rejected invalid verse number: \(verseStart) (max allowed: 176)")
+            return nil
+        }
+        
+        if let endVerse = verseEnd, endVerse > 176 {
+            print("⚠️ Rejected invalid end verse: \(endVerse) (max allowed: 176)")
+            return nil
+        }
+        
+        // Reject if verse start is higher than verse end (invalid range)
+        if let endVerse = verseEnd, verseStart > endVerse {
+            print("⚠️ Rejected invalid verse range: \(verseStart)-\(endVerse) (start > end)")
+            return nil
+        }
+        
+        // Reject suspiciously large verse ranges (more than 30 verses at once is unusual)
+        if let endVerse = verseEnd, (endVerse - verseStart) > 30 {
+            print("⚠️ Suspicious large verse range: \(verseStart)-\(endVerse) (\(endVerse - verseStart) verses)")
+            // Still allow but log it
+        }
+        
         // Extract the raw matched text
         let rawMatch: String
         if let fullRange = Range(match.range, in: text) {
@@ -352,7 +411,7 @@ class ScriptureDetectorService: ObservableObject {
         )
         
         // Calculate confidence based on pattern type
-        let confidence: Float = switch type {
+        var confidence: Float = switch type {
         case .standard: 0.95
         case .spoken: 0.85        // Lower confidence for speech-to-text formats
         case .spokenRange: 0.86   // Spoken format with verse range
@@ -360,6 +419,14 @@ class ScriptureDetectorService: ObservableObject {
         case .verbalShort: 0.88   // Natural speech without "chapter" keyword
         case .spokenWords: 0.87   // Word numbers like "twenty one one"
         case .chapterOnly: 0.80
+        }
+        
+        // CRITICAL: Apply minimum confidence threshold to prevent false detections
+        // from poor audio quality (e.g., "drop" → "Romans")
+        let minimumConfidence: Float = 0.75
+        if confidence < minimumConfidence {
+            print("⚠️ Rejected detection below minimum confidence: \(confidence) < \(minimumConfidence) for \(reference.formatted)")
+            return nil
         }
         
         return DetectionResult(
@@ -434,6 +501,8 @@ class BookNameNormaliser {
         "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
         // Other common short words
         "bar", "so", "if", "as", "up", "no", "yes", "ok", "oh", "ah", "um", "uh",
+        // Additional words found in logs causing false detections
+        "drop", "instead", "instead of", "insteadof",
     ]
     
     // Canonical book names mapped from various inputs (mutable for learned corrections)
@@ -523,6 +592,16 @@ class BookNameNormaliser {
         // This prevents "to" from being fuzzy-matched to "ho" → Hosea
         if excludedWords.contains(lowercased) {
             return nil
+        }
+        
+        // Check for numbered prefixes with excluded words: "1 to" → check if "to" is excluded
+        // This prevents "1 to" from fuzzy-matching to "1 Timothy"
+        if let match = lowercased.firstMatch(of: /^(\d+)\s+(.+)$/) {
+            let baseWord = String(match.output.2)
+            if excludedWords.contains(baseWord) {
+                print("   ⚠️ Rejecting '\(lowercased)' - base word '\(baseWord)' is excluded")
+                return nil
+            }
         }
         
         // Also exclude very short words (1-2 chars) unless they're exact matches

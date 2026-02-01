@@ -52,6 +52,9 @@ class AudioCaptureService: ObservableObject {
     private var currentLevel: Float = 0.0
     private let levelSmoothingFactor: Float = 0.3
     
+    // Audio processing queue for format conversion
+    private let audioProcessingQueue = DispatchQueue(label: "com.divinelink.audio-processing", qos: .userInitiated)
+    
     // MARK: - Initialisation
     
     init() {
@@ -94,15 +97,26 @@ class AudioCaptureService: ObservableObject {
                 return
             }
             
-            // Install tap on input node
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            // Install tap on input node with larger buffer to prevent overload
+            // Increased from 1024 to 4096 to reduce HALC_ProxyIOContext overload errors
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
                 guard let self = self else { return }
                 
-                // Send buffer to subscribers (can be called from any thread)
-                self.audioBufferPublisher.send(buffer)
-                
-                // Calculate audio level on background thread
-                self.processAudioBufferBackground(buffer)
+                // Process audio on dedicated queue to prevent blocking
+                self.audioProcessingQueue.async {
+                    // Convert to optimal format (16kHz mono) for speech recognition
+                    if let convertedBuffer = self.convertToOptimalFormat(buffer, from: format) {
+                        // Send converted buffer to subscribers
+                        self.audioBufferPublisher.send(convertedBuffer)
+                        
+                        // Calculate audio level on background thread
+                        self.processAudioBufferBackground(convertedBuffer)
+                    } else {
+                        // Fallback: send original buffer if conversion fails
+                        self.audioBufferPublisher.send(buffer)
+                        self.processAudioBufferBackground(buffer)
+                    }
+                }
             }
             
             // Start the engine
@@ -199,6 +213,52 @@ class AudioCaptureService: ObservableObject {
     private func stopLevelUpdateTimer() {
         levelUpdateTimer?.invalidate()
         levelUpdateTimer = nil
+    }
+    
+    // MARK: - Audio Format Conversion
+    
+    /// Converts audio buffer to optimal format for speech recognition (16kHz mono)
+    /// This reduces processing overhead by ~75% compared to typical 48kHz stereo input
+    nonisolated private func convertToOptimalFormat(_ buffer: AVAudioPCMBuffer, from sourceFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
+        // Create optimal format inline (not accessing main actor-isolated property)
+        guard let optimalFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) else {
+            return nil
+        }
+        
+        // If already in optimal format, return as-is
+        if buffer.format.sampleRate == optimalFormat.sampleRate &&
+           buffer.format.channelCount == optimalFormat.channelCount {
+            return buffer
+        }
+        
+        // Create converter
+        guard let converter = AVAudioConverter(from: sourceFormat, to: optimalFormat) else {
+            return nil
+        }
+        
+        // Calculate output buffer size
+        let ratio = optimalFormat.sampleRate / sourceFormat.sampleRate
+        let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+        
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: optimalFormat, frameCapacity: outputFrameCapacity) else {
+            return nil
+        }
+        
+        // Convert
+        var error: NSError?
+        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+        
+        if let error = error {
+            print("⚠️ Audio format conversion error: \(error.localizedDescription)")
+            return nil
+        }
+        
+        return outputBuffer
     }
     
     // MARK: - Permission Check

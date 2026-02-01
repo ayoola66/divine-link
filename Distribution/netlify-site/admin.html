@@ -527,7 +527,7 @@
                 <h2>📱 App Preview</h2>
                 <div class="app-preview">
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
-                        <!-- Two squares stacked -->
+                        <!-- Sidebar ads: Can show 2 squares + 1 portrait when space allows -->
                         <div class="sidebar-row" style="flex-direction: column; gap: 8px;">
                             <div class="preview-slot slot-square" id="preview-square-1" data-slot="square_1">
                                 <div class="empty">Square 1<br>1:1</div>
@@ -535,21 +535,43 @@
                             <div class="preview-slot slot-square" id="preview-square-2" data-slot="square_2">
                                 <div class="empty">Square 2<br>1:1</div>
                             </div>
+                            <div class="preview-slot slot-portrait" id="preview-portrait" data-slot="portrait">
+                                <div class="empty">Portrait<br>9:16</div>
+                            </div>
                         </div>
                     </div>
-                    <!-- Bottom Banner -->
+                    <!-- Bottom Banner - Always shows if ad available -->
                     <div class="preview-slot slot-banner" id="preview-banner" data-slot="banner">
                         <div class="empty">Bottom Banner</div>
                     </div>
                 </div>
                 
                 <div style="margin-top: 20px; padding: 16px; background: var(--bg-input); border-radius: 8px;">
-                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
-                        <strong style="color: var(--text);">Ad Rotation:</strong> Every 5 minutes
-                    </p>
-                    <p style="font-size: 12px; color: var(--text-muted);">
-                        <strong style="color: var(--danger);">📌 Enforced:</strong> Always shown first
-                    </p>
+                    <h3 style="font-size: 13px; color: var(--text); margin-bottom: 12px; font-weight: 600;">📐 Layout Rules</h3>
+                    <div style="font-size: 11px; color: var(--text-muted); line-height: 1.6;">
+                        <p style="margin-bottom: 8px;">
+                            <strong style="color: var(--text);">Sidebar (Default):</strong><br>
+                            • 3 squares OR<br>
+                            • 1 square + 1 portrait
+                        </p>
+                        <p style="margin-bottom: 8px;">
+                            <strong style="color: var(--text);">Sidebar (Stretched):</strong><br>
+                            • 2 squares + 1 portrait<br>
+                            <span style="font-size: 10px; color: var(--text-muted);">(when window height allows)</span>
+                        </p>
+                        <p style="margin-bottom: 8px;">
+                            <strong style="color: var(--text);">Bottom Banner:</strong><br>
+                            • Always shows if ad available<br>
+                            <span style="font-size: 10px; color: var(--text-muted);">(regardless of subscription)</span>
+                        </p>
+                        <hr style="border: none; border-top: 1px solid var(--border); margin: 12px 0;">
+                        <p style="margin-bottom: 4px;">
+                            <strong style="color: var(--text);">Ad Rotation:</strong> Every 5 minutes
+                        </p>
+                        <p>
+                            <strong style="color: var(--danger);">📌 Enforced:</strong> Always shown first
+                        </p>
+                    </div>
                 </div>
             </aside>
             
@@ -691,7 +713,7 @@
     <script>
         // Configuration
         const SUPABASE_URL = 'https://qzjhjgkvvcamcqpdrgkf.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6amhqZ2t2dmNhbWNxcGRyZ2tmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgxODcwNDMsImV4cCI6MjA1Mzc2MzA0M30.hsT2BXMz8ri-SxDHVG5xt4M5w8K_BQXZ95rJr72Fyfo';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6amhqZ2t2dmNhbWNxcGRyZ2tmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4ODM0NzMsImV4cCI6MjA4NTQ1OTQ3M30.IQYO9V99IO7hubM87nVL14l6qaxvjNTKllDz2sXk6aU';
         
         let selectedFormat = 'square';
         let allAds = [];
@@ -904,19 +926,25 @@
         
         // Update app preview sidebar
         function updateAppPreview() {
-            // Get enforced or active ads for each slot
+            // Get enforced or active ads for each format
             const squares = allAds.filter(a => (a.slot === 'square_1' || a.slot === 'square_2' || a.format === 'square') && a.is_active);
+            const portraits = allAds.filter(a => (a.slot === 'portrait' || a.format === 'portrait') && a.is_active);
             const banners = allAds.filter(a => (a.slot === 'banner' || a.format === 'banner') && a.is_active);
             
-            // Update square 1
+            // Update square 1 (enforced first, then first available)
             const sq1 = squares.find(a => a.is_enforced) || squares[0];
             updatePreviewSlot('preview-square-1', sq1);
             
-            // Update square 2
+            // Update square 2 (skip sq1, get next)
             const sq2 = squares.filter(a => a !== sq1)[0];
             updatePreviewSlot('preview-square-2', sq2);
             
-            // Update banner
+            // Update portrait ad (enforced first, then first available)
+            const portrait = portraits.find(a => a.is_enforced) || portraits[0];
+            updatePreviewSlot('preview-portrait', portrait);
+            
+            // Update banner (enforced first, then first available)
+            // Banner always shows if ad is available
             const banner = banners.find(a => a.is_enforced) || banners[0];
             updatePreviewSlot('preview-banner', banner);
         }
@@ -929,8 +957,16 @@
                 el.innerHTML = `<img src="${ad.image_url}" alt="${ad.name}">`;
                 el.classList.toggle('enforced', ad.is_enforced);
             } else {
-                const isSquare = elementId.includes('square');
-                el.innerHTML = `<div class="empty">${isSquare ? 'Square<br>1:1' : 'Bottom Banner'}</div>`;
+                // Determine placeholder text based on slot type
+                let placeholderText = 'Ad Space';
+                if (elementId.includes('square')) {
+                    placeholderText = 'Square<br>1:1';
+                } else if (elementId.includes('portrait')) {
+                    placeholderText = 'Portrait<br>9:16';
+                } else if (elementId.includes('banner')) {
+                    placeholderText = 'Bottom Banner';
+                }
+                el.innerHTML = `<div class="empty">${placeholderText}</div>`;
                 el.classList.remove('enforced');
             }
         }

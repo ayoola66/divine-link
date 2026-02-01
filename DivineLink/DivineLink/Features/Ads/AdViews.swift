@@ -25,8 +25,9 @@ struct AdContainerView<Content: View>: View {
                 }
             }
             
-            // Bottom banner (if showing ads)
-            if adManager.shouldShowAds {
+            // Bottom banner - always show if banner ad is available
+            // This ensures banner ads are displayed when available, regardless of subscription status
+            if adManager.bottomBannerHeight > 0 {
                 AdBannerView(slot: .bottomBanner)
                     .frame(height: adManager.bottomBannerHeight)
             }
@@ -36,50 +37,319 @@ struct AdContainerView<Content: View>: View {
 
 // MARK: - Ad Sidebar View
 
-/// Right sidebar containing stacked ad slots
+/// Right sidebar containing stacked ad slots - dynamically adapts based on available ads and window size
+/// Layout rules:
+/// - Default: 3 squares OR 1 square + 1 portrait (2 ads total)
+/// - If window stretched and space allows: 2 squares + 1 portrait (3 ads total)
+/// - Portrait ad always prioritised when available
+/// - Enforced ads always show in their designated slots
 struct AdSidebarView: View {
     @ObservedObject private var adManager = AdManager.shared
-    @State private var sidebarLayout: SidebarAdLayout = .twoRectangles
+    @ObservedObject private var adService = DynamicAdService.shared
     
-    enum SidebarAdLayout {
-        case twoRectangles          // 2 x Medium Rectangle (300x250 ratio)
-        case threeSmall             // 3 x smaller ads
-        case oneRectangleOneBanner  // 1 rectangle + 1 banner
+    /// Get unique square ads (no duplicates)
+    private var squareAds: [DynamicAd] {
+        adService.ads(for: .square)
+    }
+    
+    /// Get portrait ad if available
+    private var portraitAd: DynamicAd? {
+        adService.portraitAd
+    }
+    
+    /// Determine the layout based on available ads and available space
+    private func layout(availableHeight: CGFloat) -> SidebarLayout {
+        let squares = squareAds.count
+        let hasPortrait = portraitAd != nil
+        
+        // Estimate heights: square ~133px, portrait ~200px, spacing ~8px each, button ~50px
+        let squareHeight: CGFloat = 133
+        let portraitHeight: CGFloat = 200
+        let spacing: CGFloat = 8
+        let buttonHeight: CGFloat = 50
+        let padding: CGFloat = 20 // Top and bottom padding
+        
+        // Calculate if we have space for 2 squares + 1 portrait
+        let heightForThreeAds = (squareHeight * 2) + portraitHeight + (spacing * 3) + buttonHeight + padding
+        let canFitThreeAds = availableHeight >= heightForThreeAds
+        
+        // Priority 1: If portrait available and we have space, show 2 squares + 1 portrait
+        if hasPortrait && canFitThreeAds && squares >= 2 {
+            return .twoSquaresOnePortrait
+        }
+        
+        // Priority 2: Default - 3 squares if available
+        if squares >= 3 {
+            return .threeSquares
+        }
+        
+        // Priority 3: If portrait available, show 1 square + 1 portrait (default)
+        if hasPortrait && squares >= 1 {
+            return .oneSquareOnePortrait
+        }
+        
+        // Priority 4: If portrait available but no squares, show portrait + placeholder
+        if hasPortrait {
+            return .portraitOnly
+        }
+        
+        // Priority 5: Show squares + portrait placeholder
+        if squares >= 3 {
+            return .threeSquares
+        } else if squares >= 1 {
+            return .squaresWithPortraitPlaceholder(squareCount: squares)
+        } else {
+            return .squaresWithPortraitPlaceholder(squareCount: 1)
+        }
+    }
+    
+    enum SidebarLayout {
+        case threeSquares
+        case twoSquaresOnePortrait  // New: 2 squares + 1 portrait (when space allows)
+        case oneSquareOnePortrait   // Default: 1 square + 1 portrait
+        case portraitOnly           // Portrait only (no squares available)
+        case squaresWithPortrait(squareCount: Int)
+        case squaresWithPortraitPlaceholder(squareCount: Int)
     }
     
     var body: some View {
-        VStack(spacing: 10) {
-            switch sidebarLayout {
-            case .twoRectangles:
-                // Two medium rectangle ads (recommended for AdMob)
-                AdSlotView(slot: .sidebarTop)
-                AdSlotView(slot: .sidebarMiddle)
+        GeometryReader { geometry in
+            VStack(spacing: 8) {
+                let currentLayout = layout(availableHeight: geometry.size.height)
                 
-            case .threeSmall:
-                // Three smaller ads stacked
-                AdSlotView(slot: .sidebarTop)
-                AdSlotView(slot: .sidebarMiddle)
-                AdSlotView(slot: .sidebarBottom)
+                switch currentLayout {
+                case .threeSquares:
+                    // Show up to 3 square ads (default when no portrait)
+                    ForEach(Array(squareAds.prefix(3).enumerated()), id: \.element.id) { _, ad in
+                        SingleAdView(ad: ad)
+                    }
+                    
+                case .twoSquaresOnePortrait:
+                    // Show 2 squares + 1 portrait (when window stretched and space allows)
+                    ForEach(Array(squareAds.prefix(2).enumerated()), id: \.element.id) { _, ad in
+                        SingleAdView(ad: ad)
+                    }
+                    // Show portrait ad
+                    if let portrait = portraitAd {
+                        SingleAdView(ad: portrait)
+                    }
+                    
+                case .oneSquareOnePortrait:
+                    // Default: 1 square + 1 portrait
+                    if let firstSquare = squareAds.first {
+                        SingleAdView(ad: firstSquare)
+                    } else {
+                        AdPlaceholderView(format: .square)
+                    }
+                    // Show portrait ad
+                    if let portrait = portraitAd {
+                        SingleAdView(ad: portrait)
+                    }
+                    
+                case .portraitOnly:
+                    // Portrait only (no squares available)
+                    if let portrait = portraitAd {
+                        SingleAdView(ad: portrait)
+                    }
+                    AdPlaceholderView(format: .square)
+                    
+                case .squaresWithPortrait(let squareCount):
+                    // Show square ads
+                    ForEach(Array(squareAds.prefix(squareCount).enumerated()), id: \.element.id) { _, ad in
+                        SingleAdView(ad: ad)
+                    }
+                    // Show square placeholder if no squares
+                    if squareCount == 0 {
+                        AdPlaceholderView(format: .square)
+                    }
+                    // Show portrait ad
+                    if let portrait = portraitAd {
+                        SingleAdView(ad: portrait)
+                    }
+                    
+                case .squaresWithPortraitPlaceholder(let squareCount):
+                    // Show square ads or placeholder
+                    if squareCount > 0 {
+                        ForEach(Array(squareAds.prefix(squareCount).enumerated()), id: \.element.id) { _, ad in
+                            SingleAdView(ad: ad)
+                        }
+                    } else {
+                        AdPlaceholderView(format: .square)
+                    }
+                    // Show portrait placeholder
+                    PortraitPlaceholderView()
+                }
+            
+                Spacer(minLength: 8)
                 
-            case .oneRectangleOneBanner:
-                // One rectangle + one portrait
-                AdSlotView(slot: .sidebarTop)
-                PortraitAdSlotView()
+                // Upgrade button - blue background, white text - ALWAYS visible
+                Button {
+                    adManager.requestUpgrade()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .font(.caption)
+                        Text("Remove Ads")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(10)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 1),
+                alignment: .leading
+            )
+        }
+    }
+}
+
+// MARK: - Single Ad View (no duplication)
+
+/// Displays a single ad from the database
+struct SingleAdView: View {
+    let ad: DynamicAd
+    @ObservedObject private var adService = DynamicAdService.shared
+    @State private var isHovering = false
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.gray.opacity(0.1))
+            
+            if let imageURL = ad.imageURL {
+                AsyncImage(url: imageURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    case .failure:
+                        placeholderContent
+                    case .empty:
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    @unknown default:
+                        placeholderContent
+                    }
+                }
+            } else {
+                placeholderContent
             }
             
-            Spacer()
-            
-            // Upgrade button
-            UpgradeButton()
+            if isHovering {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(0.1))
+            }
         }
-        .padding(10)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .aspectRatio(ad.adFormat.aspectRatio, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(width: 1),
-            alignment: .leading
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
         )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
+        .onTapGesture {
+            if let url = ad.clickURL {
+                NSWorkspace.shared.open(url)
+                adService.recordClick(adId: ad.id)
+            }
+        }
+        .onAppear {
+            adService.recordImpression(adId: ad.id)
+        }
+        .help(ad.altText ?? ad.name) // Tooltip showing ad title on hover
+    }
+    
+    private var placeholderContent: some View {
+        VStack(spacing: 4) {
+            Image(systemName: "photo")
+                .foregroundStyle(.secondary)
+            Text("Loading...")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Ad Placeholder View
+
+/// Placeholder for empty ad slots - "Ad Space Available"
+struct AdPlaceholderView: View {
+    var format: AdFormat = .square
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.gray.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                        .foregroundStyle(Color.gray.opacity(0.3))
+                )
+            
+            VStack(spacing: 6) {
+                Image(systemName: "rectangle.dashed")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                Text("Ad Space")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                Text("Available")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .aspectRatio(format.aspectRatio, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// MARK: - Portrait Placeholder View
+
+/// Tall portrait placeholder for empty portrait ad slot
+struct PortraitPlaceholderView: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.gray.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                        .foregroundStyle(Color.gray.opacity(0.3))
+                )
+            
+            VStack(spacing: 8) {
+                Image(systemName: "rectangle.portrait.dashed")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                Text("Portrait Ad")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                Text("Space Available")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .aspectRatio(9.0/16.0, contentMode: .fit)
+        .frame(maxHeight: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -238,73 +508,66 @@ struct PortraitAdSlotView: View {
 /// Full-width bottom banner ad
 struct AdBannerView: View {
     let slot: AdSlot
-    @ObservedObject private var adManager = AdManager.shared
+    @ObservedObject private var adService = DynamicAdService.shared
     @State private var isHovering = false
     
+    /// Get the banner ad if available
+    private var bannerAd: DynamicAd? {
+        adService.bannerAd
+    }
+    
     var body: some View {
-        let ad = adManager.ad(for: slot)
-        
         ZStack {
             // Background
             Rectangle()
                 .fill(Color(nsColor: .windowBackgroundColor))
             
-            if ad.isPlaceholder {
-                // Default upgrade banner
-                HStack(spacing: 16) {
-                    Image(systemName: "star.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.orange)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Upgrade to Divine Link Premium")
-                            .font(.callout)
-                            .fontWeight(.medium)
-                        
-                        Text("Remove ads and support development")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Button {
-                        adManager.requestUpgrade()
-                    } label: {
-                        Text("Go Premium")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                    .controlSize(.small)
-                }
-                .padding(.horizontal, 20)
-            } else if let imageURL = ad.imageURL {
-                // Dynamic banner ad
+            // CRITICAL: Always show banner ad if available, regardless of subscription status
+            // This ensures banner ads are displayed when available
+            if let banner = bannerAd, let imageURL = banner.imageURL {
+                // Dynamic banner ad - full width
                 AsyncImage(url: imageURL) { phase in
                     switch phase {
                     case .success(let image):
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity)
                     case .failure(_):
-                        defaultBannerContent
+                        bannerPlaceholder
                     case .empty:
-                        defaultBannerContent
+                        ProgressView()
                     @unknown default:
-                        defaultBannerContent
+                        bannerPlaceholder
                     }
                 }
+                .contentShape(Rectangle())
                 .onTapGesture {
-                    if let clickURL = ad.clickURL {
+                    if let clickURL = banner.clickURL {
                         NSWorkspace.shared.open(clickURL)
-                        DynamicAdService.shared.recordClick(adId: ad.id.uuidString)
+                        adService.recordClick(adId: banner.id)
                     }
                 }
+                .onAppear {
+                    adService.recordImpression(adId: banner.id)
+                }
+                .help(banner.altText ?? banner.name) // Tooltip showing ad title on hover
             } else {
-                defaultBannerContent
+                // No banner ad - show placeholder only if ads should be shown
+                if AdManager.shared.shouldShowAds {
+                    bannerPlaceholder
+                }
             }
+            
+            // Hover effect
+            if isHovering && bannerAd != nil {
+                Rectangle()
+                    .fill(Color.black.opacity(0.05))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: 80)
+        .onHover { hovering in
+            isHovering = hovering
         }
         .overlay(
             Rectangle()
@@ -312,35 +575,26 @@ struct AdBannerView: View {
                 .frame(height: 1),
             alignment: .top
         )
-        .onAppear {
-            adManager.recordAdImpression(ad)
-            if !ad.isPlaceholder {
-                DynamicAdService.shared.recordImpression(adId: ad.id.uuidString)
-            }
-        }
-        .sheet(isPresented: $adManager.showPaywall) {
-            PaywallView()
-        }
     }
     
-    /// Default banner content
-    private var defaultBannerContent: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "star.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.orange)
+    /// Placeholder when no banner ad is available
+    private var bannerPlaceholder: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "rectangle.dashed")
+                .font(.title3)
+                .foregroundStyle(.secondary)
             
-            Text("Upgrade to Premium for an ad-free experience")
-                .font(.callout)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Banner Ad Space")
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                Text("Available for advertising")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
             
             Spacer()
-            
-            Button("Upgrade") {
-                adManager.requestUpgrade()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
-            .controlSize(.small)
         }
         .padding(.horizontal, 20)
     }

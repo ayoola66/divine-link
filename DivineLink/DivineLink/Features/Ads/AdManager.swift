@@ -127,12 +127,15 @@ class AdManager: ObservableObject {
     
     /// Sidebar width when ads are shown
     var sidebarWidth: CGFloat {
-        shouldShowAds ? 180 : 0 // Wider to fit 160px ads + padding
+        shouldShowAds ? 200 : 0 // Width for square/portrait ads + padding
     }
     
-    /// Bottom banner height when ads are shown
+    /// Bottom banner height - always reserve space if banner ad exists
+    /// This ensures banner ads are displayed when available, regardless of subscription status
     var bottomBannerHeight: CGFloat {
-        shouldShowAds ? 70 : 0
+        // Always show banner space if banner ad is available, even for premium users
+        let hasBannerAd = DynamicAdService.shared.bannerAd != nil
+        return (shouldShowAds || hasBannerAd) ? 80 : 0 // Full-width banner height
     }
     
     // MARK: - Initialisation
