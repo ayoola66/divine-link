@@ -207,7 +207,8 @@ CREATE TABLE IF NOT EXISTS public.ads (
     
     -- Ad identification
     name TEXT NOT NULL,
-    slot TEXT NOT NULL CHECK (slot IN ('sidebar_top', 'sidebar_middle', 'sidebar_bottom', 'bottom_banner')),
+    slot TEXT NOT NULL CHECK (slot IN ('square_1', 'square_2', 'portrait', 'banner', 'sidebar_top', 'sidebar_middle', 'sidebar_bottom', 'bottom_banner')),
+    format TEXT CHECK (format IN ('square', 'portrait', 'banner')),  -- 1:1, 9:16, or 728x90
     
     -- Content
     image_url TEXT NOT NULL,           -- URL to ad image (hosted on your CDN/storage)
@@ -216,7 +217,8 @@ CREATE TABLE IF NOT EXISTS public.ads (
     
     -- Targeting & Scheduling
     is_active BOOLEAN DEFAULT TRUE,
-    priority INTEGER DEFAULT 0,        -- Higher = shown more often
+    is_enforced BOOLEAN DEFAULT FALSE, -- When true, ad MUST be shown (overrides rotation)
+    priority INTEGER DEFAULT 50,       -- Higher = shown more often (1-100)
     start_date TIMESTAMPTZ,            -- Optional: when to start showing
     end_date TIMESTAMPTZ,              -- Optional: when to stop showing
     
@@ -229,19 +231,27 @@ CREATE TABLE IF NOT EXISTS public.ads (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security (public read for active ads)
+-- Enable Row Level Security
 ALTER TABLE public.ads ENABLE ROW LEVEL SECURITY;
 
--- Anyone can read active ads (no auth required for ad serving)
-CREATE POLICY "Anyone can view active ads" ON public.ads
-    FOR SELECT USING (
-        is_active = TRUE 
-        AND (start_date IS NULL OR start_date <= NOW())
-        AND (end_date IS NULL OR end_date >= NOW())
-    );
+-- Allow public read of all ads (admin dashboard needs to see inactive too)
+CREATE POLICY "Anyone can view ads" ON public.ads
+    FOR SELECT USING (TRUE);
 
--- Create index for efficient ad queries
+-- Allow insert/update/delete for admin dashboard
+CREATE POLICY "Anyone can insert ads" ON public.ads
+    FOR INSERT WITH CHECK (TRUE);
+
+CREATE POLICY "Anyone can update ads" ON public.ads
+    FOR UPDATE USING (TRUE);
+
+CREATE POLICY "Anyone can delete ads" ON public.ads
+    FOR DELETE USING (TRUE);
+
+-- Create indexes for efficient ad queries
 CREATE INDEX IF NOT EXISTS idx_ads_slot_active ON public.ads(slot, is_active, priority DESC);
+CREATE INDEX IF NOT EXISTS idx_ads_format ON public.ads(format, is_active);
+CREATE INDEX IF NOT EXISTS idx_ads_enforced ON public.ads(is_enforced, is_active);
 CREATE INDEX IF NOT EXISTS idx_ads_dates ON public.ads(start_date, end_date);
 
 -- Trigger to update updated_at
@@ -398,10 +408,12 @@ RETURNS TABLE (
     id UUID,
     name TEXT,
     slot TEXT,
+    format TEXT,
     image_url TEXT,
     click_url TEXT,
     alt_text TEXT,
-    priority INTEGER
+    priority INTEGER,
+    is_enforced BOOLEAN
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -409,14 +421,16 @@ BEGIN
         a.id,
         a.name,
         a.slot,
+        a.format,
         a.image_url,
         a.click_url,
         a.alt_text,
-        a.priority
+        a.priority,
+        a.is_enforced
     FROM public.ads a
     WHERE a.is_active = TRUE
       AND (a.start_date IS NULL OR a.start_date <= NOW())
       AND (a.end_date IS NULL OR a.end_date >= NOW())
-    ORDER BY a.slot, a.priority DESC;
+    ORDER BY a.is_enforced DESC, a.priority DESC, a.slot;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
