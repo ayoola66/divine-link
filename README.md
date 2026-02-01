@@ -1,5 +1,7 @@
 # Divine Link
 
+**Version 1.0.2** | [Changelog](CHANGELOG.md)
+
 **Real-time Scripture Detection & ProPresenter Integration for macOS**
 
 Divine Link listens to live speech (sermons, Bible studies, etc.) and automatically detects scripture references, making them instantly available to push to ProPresenter for display.
@@ -90,6 +92,8 @@ Divine Link bridges the gap between spoken scripture references and visual displ
    git clone <repository-url>
    cd "Divine Link"
    ```
+
+   **Note:** This project uses two separate repositories. See [Repository Structure Guide](docs/REPOSITORY_STRUCTURE.md) for details.
 
 2. Open in Xcode:
    ```bash
@@ -228,10 +232,11 @@ Divine Link simulates keyboard input to trigger PP's native Bible feature:
 ```
 DivineLink/
 ├── App/
-│   ├── DivineLinkApp.swift      # App entry point
+│   ├── DivineLinkApp.swift       # App entry point
 │   ├── AppDelegate.swift         # Menu bar, window management
 │   ├── MainView.swift            # Primary UI
-│   └── SettingsView.swift        # Settings interface
+│   ├── SettingsView.swift        # Settings interface
+│   └── AccessibilitySettings.swift # Font scaling & display preferences
 │
 ├── Features/
 │   ├── AudioCapture/
@@ -301,6 +306,8 @@ ProPresenter Display
 ---
 
 ## Development
+
+**⚠️ Repository Structure:** This project uses two separate GitHub repositories. See [Repository Structure Guide](docs/REPOSITORY_STRUCTURE.md) for details on which files go to which repository.
 
 ### Building
 
@@ -400,16 +407,35 @@ The system handles these common mishearings:
 
 ## Version History
 
-### Current Development
+See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Stories Completed:**
-- ✅ Story 6.1: Individual Verse Storage & Display
-- ✅ Story 6.2: Verse Navigation & Push Controls
-- ✅ Story 6.3: Detection Pattern Improvements
-- ✅ Story 6.4: Audience Screen Integration (Keyboard Automation)
+### Version 1.0.3 (In Development)
+- Added user authentication with email OTP
+- Added device management (2-device limit per account)
+- Added subscription backend with Supabase
+- Added Stripe payment integration
 
-**Pending:**
-- Story 6.5: ProPresenter Theme/Template Configuration
+### Version 1.0.2
+- Added Sparkle auto-updates with secure EdDSA signing
+- Added ad-supported free version with right sidebar and bottom banner
+- Added Premium subscription to remove ads
+- Changed default font size to Medium for better readability
+- Improved scripture detection with stricter verse number validation
+
+### Version 1.0.1
+- Added accessibility settings with font size scaling (5 levels)
+- Added ProPresenter Audience screen push via native Bible feature
+- Improved window resizability
+- Fixed scripture detection issues with numbered book prefixes
+- Enhanced ProPresenter keyboard automation reliability
+
+### Version 1.0.0 (Initial Release)
+- Real-time speech-to-text transcription
+- Scripture reference detection (multiple formats)
+- Multi-verse support with navigation
+- ProPresenter Stage screen integration
+- Service session management
+- Pastor profiles with speech corrections
 
 ---
 

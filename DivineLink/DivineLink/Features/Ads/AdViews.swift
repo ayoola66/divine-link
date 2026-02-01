@@ -231,16 +231,10 @@ struct SingleAdView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.gray.opacity(0.1))
             
-            // Debug: Log which media path is taken
-            let _ = debugMediaSelection()
-            
             // Media content (video/GIF takes priority over image)
             if ad.hasVideo, let videoURL = ad.videoURL {
                 // Video or GIF content (looping)
                 VideoPlayerView(url: videoURL, isGIF: ad.mediaType == "gif")
-                    .onAppear {
-                        print("📺 VideoPlayerView appeared for: \(ad.name)")
-                    }
             } else if let imageURL = ad.imageURL {
                 // Static image
                 AsyncImage(url: imageURL) { phase in
@@ -326,15 +320,6 @@ struct SingleAdView: View {
                 .foregroundStyle(.secondary)
         }
     }
-    
-    /// Debug: Log which media path is taken for this ad
-    private func debugMediaSelection() {
-        print("🔍 Ad: \(ad.name)")
-        print("   - mediaType: \(ad.mediaType ?? "nil")")
-        print("   - hasVideo: \(ad.hasVideo)")
-        print("   - videoURL: \(ad.videoURL?.absoluteString ?? "nil")")
-        print("   - imageURL: \(ad.imageURL?.absoluteString ?? "nil")")
-    }
 }
 
 // MARK: - Video Player View
@@ -349,10 +334,7 @@ struct VideoPlayerView: View {
     /// Check if URL is a YouTube link (including Shorts)
     private var isYouTubeURL: Bool {
         let urlString = url.absoluteString.lowercased()
-        let result = urlString.contains("youtube.com") || urlString.contains("youtu.be")
-        print("🎬 VideoPlayerView - URL: \(url.absoluteString)")
-        print("   - isYouTubeURL: \(result), isGIF: \(isGIF)")
-        return result
+        return urlString.contains("youtube.com") || urlString.contains("youtu.be")
     }
     
     /// Extract YouTube video ID from URL
@@ -422,7 +404,6 @@ struct VideoPlayerView: View {
             }
         }
         .onAppear {
-            print("🎬 VideoPlayerView.onAppear - isGIF: \(isGIF), isYouTube: \(isYouTubeURL)")
             if !isGIF && !isYouTubeURL {
                 setupVideoPlayer()
             }
@@ -461,8 +442,6 @@ struct GIFWebView: NSViewRepresentable {
     let url: URL
     
     func makeNSView(context: Context) -> WKWebView {
-        print("🖼️ GIFWebView makeNSView called for: \(url.absoluteString)")
-        
         // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true  // Enable JS for some GIF hosts
@@ -503,17 +482,9 @@ struct GIFWebView: NSViewRepresentable {
     }
     
     class Coordinator: NSObject, WKNavigationDelegate {
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            print("✅ GIFWebView loaded successfully")
-        }
-        
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            print("❌ GIFWebView failed: \(error.localizedDescription)")
-        }
-        
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            print("❌ GIFWebView provisional failed: \(error.localizedDescription)")
-        }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { }
     }
 }
 
@@ -525,8 +496,6 @@ struct YouTubeWebView: NSViewRepresentable {
     let videoID: String
     
     func makeNSView(context: Context) -> WKWebView {
-        print("📺 YouTubeWebView makeNSView called for videoID: \(videoID)")
-        
         // IMPORTANT: Configuration MUST be set BEFORE creating WKWebView
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -539,8 +508,6 @@ struct YouTubeWebView: NSViewRepresentable {
         // Note: YouTube Shorts work with the same /embed/ URL format using the video ID
         // Parameters to minimize branding: modestbranding=1, controls=0, showinfo=0, iv_load_policy=3 (hide annotations)
         let embedURL = "https://www.youtube-nocookie.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&fs=0&disablekb=1&showinfo=0&iv_load_policy=3&cc_load_policy=0&origin=https://divinelink.app"
-        
-        print("📺 YouTubeWebView embed URL: \(embedURL)")
         
         let html = """
         <!DOCTYPE html>
@@ -571,9 +538,7 @@ struct YouTubeWebView: NSViewRepresentable {
         </html>
         """
         
-        print("📺 YouTubeWebView loading HTML with embed URL")
         webView.loadHTMLString(html, baseURL: URL(string: "https://divinelink.app"))
-        
         return webView
     }
     
@@ -586,17 +551,9 @@ struct YouTubeWebView: NSViewRepresentable {
     }
     
     class Coordinator: NSObject, WKNavigationDelegate {
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            print("❌ YouTubeWebView failed: \(error.localizedDescription)")
-        }
-        
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            print("❌ YouTubeWebView provisional failed: \(error.localizedDescription)")
-        }
-        
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            print("✅ YouTubeWebView loaded successfully")
-        }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { }
     }
 }
 

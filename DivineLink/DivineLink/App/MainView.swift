@@ -6,6 +6,8 @@ struct MainView: View {
     @StateObject private var sessionManager = ServiceSessionManager.shared
     @StateObject private var ppSettings = ProPresenterSettings()
     @StateObject private var ppClient = ProPresenterClient()
+    @ObservedObject private var accessibilitySettings = AccessibilitySettings.shared
+    @ObservedObject private var adManager = AdManager.shared
     @State private var hasPermission = true
     @State private var showStatus = false
     @State private var showNewServiceSheet = false
@@ -38,6 +40,22 @@ struct MainView: View {
     }
     
     var body: some View {
+        AdContainerView {
+            mainContent
+        }
+        .frame(minWidth: adManager.shouldShowAds ? 580 : 380, 
+               idealWidth: adManager.shouldShowAds ? 680 : 450, 
+               maxWidth: 1000, 
+               minHeight: adManager.shouldShowAds ? 550 : 450, 
+               idealHeight: adManager.shouldShowAds ? 650 : 550, 
+               maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.2), value: showStatus)
+        .animation(.easeInOut(duration: 0.2), value: adManager.shouldShowAds)
+    }
+    
+    // MARK: - Main Content (wrapped by AdContainerView)
+    
+    private var mainContent: some View {
         VStack(spacing: 8) {
             // Header row: Logo + Title + Listening status + Gear
             headerView
@@ -67,11 +85,7 @@ struct MainView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 380, idealWidth: 450, maxWidth: 700, 
-               minHeight: 450, idealHeight: 550, maxHeight: .infinity)
-        .animation(.easeInOut(duration: 0.2), value: showStatus)
         .saturation(pipeline.isActive ? 1.0 : 0.4)
-        .animation(.easeInOut(duration: 0.3), value: pipeline.isActive)
         .overlay {
             // Loading overlay when Bible database is loading
             if pipeline.bible.isLoading {
@@ -143,7 +157,7 @@ struct MainView: View {
             }
             
             Text("Divine Link")
-                .font(.headline)
+                .scaledFont(size: 14, weight: .semibold)
             
             // Session info
             if let session = sessionManager.currentSession {
@@ -462,14 +476,13 @@ struct MainView: View {
             // Header
             HStack {
                 Text("Detected Scriptures")
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
                 
                 Spacer()
                 
                 Text("\(pipeline.buffer.pendingCount) pending")
-                    .font(.caption2)
+                    .scaledCaptionFont()
                     .foregroundStyle(.tertiary)
             }
             
@@ -805,6 +818,7 @@ struct VerseRowView: View {
     let onPreviousVerse: () -> Void // Navigate to previous verse
     let onSelectVerse: (Int) -> Void // Select specific verse by index
     
+    @ObservedObject private var accessibilitySettings = AccessibilitySettings.shared
     @State private var isHovering = false
     @State private var isExpanded = false
     
@@ -837,8 +851,7 @@ struct VerseRowView: View {
                 // Reference and translation
                 HStack {
                     Text(verse.displayReference)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(verse.isPushed ? .green : (isSelected ? Color.divineBlue : .primary))
                     
                     // Multi-verse indicator
@@ -932,14 +945,14 @@ struct VerseRowView: View {
                 } else if verse.isMultiVerse {
                     // Collapsed multi-verse: show preview
                     Text("v\(verse.verses.first?.verseNumber ?? 0): \(verse.verses.first?.text ?? "")...")
-                        .font(.caption)
+                        .scaledBodyFont()
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     // Single verse
                     Text(verse.fullText)
-                        .font(.caption)
+                        .scaledBodyFont()
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)

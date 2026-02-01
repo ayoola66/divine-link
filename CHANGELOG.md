@@ -2,268 +2,199 @@
 
 All notable changes to Divine Link will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
----
-
-## [Unreleased]
-
-### Planned
-- Story 2.7: Bible Database Validation (ASV/WEB completion)
-- Full testing and QA
-- App Store preparation
-
----
-
-## [0.5.0] - 2026-01-22
+## [1.1.0] - 2026-02-01
 
 ### Added
-- **Epic 5: Advanced Bible Vocabulary** (Complete)
-  - `BibleVocabularyData.swift` with comprehensive STT mishearing mappings (100+ entries)
-  - All 66 Bible book names with abbreviations and common errors
-  - Number word mappings (one → 1, twenty-three → 23)
-  - Famous verse detection (implicit references without explicit citation)
-  - `ImplicitReferenceDetector` for phrases like "For God so loved the world" → John 3:16
-
-### Technical
-- Enhanced `BookNameNormaliser` to use `BibleVocabularyData`
-- Integrated `ImplicitReferenceDetector` into `DetectionPipeline`
-- Added ordinal and trigger word mappings
-
----
-
-## [0.4.0] - 2026-01-22
-
-### Added
-- **Epic 4: Service Sessions & History** (Complete)
-  - Service type caching with autocomplete suggestions (`ServiceTypeCache.swift`)
-  - SQLite-based service history archive with full CRUD operations
-  - Service history UI with monthly grouping and detail views
-  - Archive auto-cleanup (90 days retention)
-  - Export to JSON and CSV formats
+- **Video & GIF Ad Support**: Ads now support animated content
+  - YouTube video embeds (including Shorts) with auto-loop and muted playback
+  - Animated GIF support with smooth looping
+  - Direct MP4 video file support
+  - Automatic fallback to static image if video fails
+  - Privacy-enhanced YouTube embedding (youtube-nocookie.com)
+  - Minimised YouTube branding where possible
+- **Dynamic Ad System**: Complete backend-served advertisement system
+  - Admin dashboard at `/admin.html` for managing ads
+  - Support for three ad formats: Square (1:1), Portrait (9:16), Banner (728×90)
+  - Real-time ad updates without app restart (15-minute refresh)
+  - Automatic ad rotation every 5 minutes
+  - Ad enforcement system to pin specific ads
+  - Local caching for offline support (7-day grace period)
+  - Click and impression tracking
+  - Always-visible ad titles with transparent overlay
+- **Admin Dashboard**: Password-protected web interface
+  - Live preview mirroring exact app layout
+  - Create/edit/delete ads with visual preview
+  - Statistics dashboard (views, clicks, CTR)
+  - Enforce/release ads with visual indicators
+  - Active ads summary showing counts per format
+- **Smart Ad Layout**: Dynamic sidebar layout based on available ads
+  - Default: 1 square placeholder + 1 portrait placeholder
+  - With ads: Automatically adjusts (1-3 squares + portrait if available)
+  - Blue "Remove Ads" button always visible at bottom
+  - Banner ad space at bottom (full width)
+- **User Authentication**: Email OTP (one-time password) login system
+  - Sign in with email verification code
+  - Secure session storage in Keychain
+  - Account management in Settings
+- **Device Management**: Track and manage registered devices
+  - Maximum 2 devices per account
+  - View and remove devices from Settings
+  - Automatic device registration on login
+- **Subscription Backend**: Supabase integration for subscription management
+  - Real-time subscription status sync
+  - Offline grace period (7 days)
+  - Stripe payment integration ready
+- **Account Settings Tab**: New tab in Settings for account management
+  - Sign in/out functionality
+  - Device management
+  - Subscription status display
 
 ### Changed
-- `NewServiceSheet` now caches service types for future suggestions
-- `ServiceHistoryView` now allows deletion of individual sessions
-- `ArchiveCleanupService` runs automatically on app launch
+- **Ad Display Logic**: Replaced placeholder system with dynamic Supabase-served ads
+  - Ads fetched from Supabase database
+  - Format-based ad matching (square/portrait/banner)
+  - No ad repetition unless multiple ads exist in database
+- **Sidebar Layout**: Intelligent layout based on available ad formats
+  - Shows portrait placeholder when no portrait ad exists
+  - Automatically hides portrait slot when 3+ square ads present
+  - "Remove Ads" button styled with blue background, white text
 
 ### Technical
-- Added `ServiceTypeCache.swift` for service type suggestions
-- Enhanced `ServiceArchive.swift` with delete functionality
-- Integrated cleanup notifications with export option
+- Added `VideoPlayerView` component with URL type detection (YouTube/GIF/MP4)
+- Added `YouTubeWebView` for embedding YouTube videos via WKWebView with HTML injection
+- Added `GIFWebView` for animated GIF display via WKWebView
+- Added YouTube video ID extraction supporting multiple URL formats (watch, shorts, embed, youtu.be)
+- Updated `get_all_active_ads()` RPC function to include `video_url` and `media_type` columns
+- Added `NSAllowsArbitraryLoadsInWebContent` to Info.plist for web content loading
+- Updated admin.html with video preview support and improved layout
+- Admin form now uses side-by-side layout for compact design
+- Added `DynamicAdService` singleton for ad management
+- Added `DynamicAd` model with format, video URL, and media type support
+- Added `AdFormat` enum (square, portrait, banner) with aspect ratios
+- Added `SingleAdView` and `AdPlaceholderView` components
+- Added `PortraitPlaceholderView` for empty portrait slots
+- Created `ads` table in Supabase with RLS policies
+- Created `record_ad_event()` RPC function for tracking
+- Added automatic server refresh timer (15 minutes)
+- Added ad rotation timer (5 minutes)
+- Added local JSON caching system
+- Added favicon to website pages
 
----
-
-## [0.3.0] - 2026-01-22
+## [1.0.2] - 2026-01-31
 
 ### Added
-- **Epic 3: ProPresenter Integration** (Complete)
-  - ProPresenter connection settings UI with IP/port configuration
-  - ProPresenter API client with async/await networking
-  - Push to ProPresenter action (sends verse to stage display)
-  - Connection status indicator in header (colour-coded)
-  - Automatic reconnection on connection failure (5 attempts)
+- **Sparkle Auto-Updates**: Automatic update checking and installation
+  - Check for Updates in app menu (⌘U)
+  - Updates tab in Settings for configuration
+  - Automatic background checks every 24 hours
+  - EdDSA signed updates for security
+- **Ad-Supported Free Version**: App now supports advertisements for free users
+  - Right sidebar with 2-3 ad slots (1:1 square or 9:16 portrait format)
+  - Bottom banner ad across the full width
+  - Premium subscription option to remove all ads
+- **Premium Subscription**: New subscription management in Settings
+  - Premium tab in Settings for managing subscription
+  - Upgrade to Premium to remove advertisements
+  - Trial period support
+  - Restore purchases functionality
+- **Subscription Settings Tab**: Dedicated tab for subscription management
 
 ### Changed
-- MainView header now displays ProPresenter connection status
-- Push button now sends verse text to ProPresenter stage display
-- Settings panel includes ProPresenter setup instructions
+- **Default Font Size**: Changed from Small to Medium for better readability
+  - New users now start with Medium (Level 2) font size
+  - Users can reduce to Small (Level 1) if preferred
+- **Window Size**: Adjusted minimum/ideal sizes to accommodate ad layout
+  - Free version: Wider window to fit sidebar ads
+  - Premium version: Original compact layout
+
+### Improved
+- **Scripture Detection Validation**: Added stricter validation for verse numbers
+  - Reject verse numbers above 176 (longest chapter is Psalm 119)
+  - Reject invalid verse ranges (start > end)
+  - Log suspicious high chapter numbers for review
+  - Reject verse ranges spanning more than 30 verses (unusual)
 
 ### Technical
-- Added `ProPresenterSettings.swift` for connection persistence
-- Added `ProPresenterClient.swift` for API communication
-- Added `ProPresenterSettingsView.swift` for configuration UI
-- Added `PushActionCoordinator.swift` for managing push actions
-- Added `ConnectionStatusIndicator` component
+- Added Sparkle framework for auto-updates
+- Added SparkleUpdaterController for update management
+- Added AdManager for subscription and ad state management
+- Added AdContainerView, AdSidebarView, AdBannerView components
+- Subscription state persisted to UserDefaults
+- Placeholder ad slots ready for ad network integration
 
----
+## [1.0.1] - 2026-01-27
 
-## [0.2.5] - 2026-01-22
+### Added
+- **Accessibility Settings**: New Display settings tab with font size scaling (5 levels)
+  - Level 1: Default size
+  - Level 2: Medium (+2 points)
+  - Level 3: Large (+4 points)
+  - Level 4: Extra Large (+6 points)
+  - Level 5: Maximum (+8 points)
+- **ProPresenter Audience Push**: Push verses directly to ProPresenter's Audience screen via native Bible feature
+  - Automatically clicks Bible toolbar button to switch to Bible view
+  - Types scripture reference into search field
+  - Presses Enter to display on Audience screen
+- **Window Resizability**: Main window can now be freely resized by dragging edges/corners
+- **Dynamic Version Display**: About tab now reads version from app bundle
+- **Build Number Display**: Shows build number in About tab
+
+### Improved
+- **Scripture Detection**: Better handling of numbered book prefixes (e.g., "1 Timothy")
+  - Fixed issue where "1 to" was incorrectly matching to "1 Timothy"
+- **ProPresenter Integration**: More robust keyboard automation
+  - Clicks Bible button first to ensure correct view
+  - Improved search field focus detection
+  - Fallback mechanisms for accessibility API limitations
 
 ### Fixed
-- **Critical: Pushed verses no longer removed from list** - Verses now stay visible with green background and checkmark indicator
-- **Invalid chapter detection** - "Philippians 6:7" now correctly rejected (max 4 chapters)
-- **Leading prepositions** - "to Exodus 12:6" now correctly strips "to" before lookup
-- **"Philippines" country name** - Now correctly maps to "Philippians" book
+- Fixed AXValue and AXUIElement type casting issues in macOS Accessibility APIs
+- Fixed `kAXSearchFieldRole` reference (using string literal instead)
+- Improved scripture parser to reject excluded words with number prefixes
+
+## [1.0.0] - 2026-01-17
 
 ### Added
-- Bible database loading indicator with progress text
-- Chapter validation using pre-cached book metadata
-- Push count badge (×2, ×3, etc.) for repeatedly pushed verses
-
-### Changed
-- Pushed verses show green background instead of being removed
-- Invalid detections now silently rejected instead of showing "[Verse text not available]"
-
----
-
-## [0.2.4] - 2026-01-22
-
-### Fixed
-- **Nonsensical correction suggestions** - Added ignore list for common words ("let's", "the", "to")
-- **Cancel button missing** - Added "Cancel" button to correction dialog
-- **"Filipinos" mishearing** - Added to book mappings for "Philippians"
-
-### Added
-- Common STT error mappings for difficult book names:
-  - "filipinos", "filipino" → Philippians
-  - "glacians" → Galatians
-  - "fusions", "a fusions" → Ephesians
-  - "cautions", "closions" → Colossians
-  - "the saloni", "the salonika" → 1 Thessalonians
+- Initial release of Divine Link
+- **Live Speech-to-Text**: Real-time transcription of spoken words
+- **Scripture Detection**: Automatic detection of Bible verse references
+  - Supports multiple formats: "John 3:16", "John chapter 3 verse 16", spoken numbers
+  - Fuzzy matching for misheard book names
+- **Multi-Verse Support**: Detects and displays verse ranges (e.g., John 3:16-18)
+- **Bible Database**: Built-in KJV, ASV, and WEB translations
+- **ProPresenter Stage Integration**: Push verses to ProPresenter Stage screen via Network API
+- **Pastor Profiles**: Save and load pastor-specific speech corrections
+- **Service Sessions**: Track scriptures by service with auto-archival
+- **Audio Level Monitoring**: Visual audio level indicator with peak detection
+- **Transcript Editing**: Manual correction of misheard transcripts
+- **BlackHole Support**: System audio capture for stream monitoring
+- **Menu Bar Quick Access**: Quick access icon in macOS menu bar
+- **Settings Panels**: 
+  - Audio input configuration
+  - ProPresenter connection settings
+  - Pastor profile management
+  - Service history browser
 
 ---
 
-## [0.2.3] - 2026-01-21
+## Version Numbering
 
-### Fixed
-- **Verbal pattern not matching number words** - "three seven" now correctly parsed as 3:7
-- **Space key triggering during edit** - Disabled listening toggle when editing transcript
+Divine Link follows [Semantic Versioning](https://semver.org/):
 
-### Added
-- `spokenWords` pattern for natural number speech ("Genesis twenty one one")
-- Number word dictionary supporting 1-50 plus ordinals
-- Song of Solomon aliases ("songs", "sos", "canticles")
+- **MAJOR.MINOR.PATCH** (e.g., 1.0.1)
+- **MAJOR**: Breaking changes or major feature overhauls
+- **MINOR**: New features, backwards compatible
+- **PATCH**: Bug fixes and minor improvements
 
----
+## Release Notes Format
 
-## [0.2.2] - 2026-01-20
-
-### Fixed
-- **2-digit numbers split incorrectly** - "John 11" no longer becomes "John 1:1"
-- **Fuzzy matching too aggressive** - Reduced max Levenshtein distance
-
-### Added
-- Fuzzy book name matching with confidence scores
-- Editable transcript with inline corrections
-- Speech correction learning (saved per pastor)
-- "roof" → "Ruth", "romance" → "Romans" mappings
-
----
-
-## [0.2.1] - 2026-01-19
-
-### Fixed
-- **Wrong translation column name** - Changed from `translation_id` to `translation`
-- **Hardcoded BSB translation** - Now uses user-selected translation
-- **App icon missing in header** - Uses custom icon from asset catalog
-
-### Changed
-- Redesigned MainView with scrollable verse list
-- Translation selector moved to status indicators row
-- Available translations limited to KJV, ASV, WEB (database content)
-
----
-
-## [0.2.0] - 2026-01-18
-
-### Added
-- **Epic 2: Transcription & Scripture Detection** (Complete)
-  - Bible database with KJV, ASV, and WEB translations
-  - Speech recognition service using macOS native Speech framework
-  - Custom language model biasing for Bible vocabulary
-  - Live transcript feed UI with real-time display
-  - Scripture reference detection engine with pattern matching
-  - Full detection pipeline integration
-  - Transcript editing with speech correction learning
-  - Bible translation selection (KJV/ASV/WEB dropdown)
-
-### Changed
-- MainView now includes status indicators for Audio, Speech, Bible, and Detection
-- Expanded status panel with detailed system information
-- Verse cards now display in scrollable list with selection support
-
-### Technical
-- Added `BibleService.swift` for SQLite database access
-- Added `TranscriptionService.swift` for speech-to-text
-- Added `ScriptureDetectorService.swift` with book name normalisation
-- Added `DetectionPipeline.swift` for coordinating all services
-- Added `ListeningFeedView.swift` for transcript display
-
----
-
-## [0.1.0] - 2026-01-15
-
-### Added
-- **Epic 1: Foundation & Audio Capture** (Complete)
-  - macOS menu bar application shell (no Dock icon)
-  - Custom app icon with Divine Link branding
-  - Audio input device selection and management
-  - Real-time audio capture engine using AVAudioEngine
-  - Audio level monitoring with visual indicator
-  - Peak level detection and display
-  - Listening state management (Start/Pause toggle)
-  - Settings view with Audio tab
-  - Keyboard shortcut: Space to toggle listening
-
-### Technical
-- Project scaffolding with SwiftUI lifecycle
-- Xcode project configured for macOS 14+ (Sonoma)
-- App entitlements for microphone access
-- Folder structure: App/, Features/, Resources/
-- Added `AudioCaptureService.swift` for audio input handling
-- Added `AudioDeviceManager.swift` for device enumeration
-- Added `AudioLevelIndicator.swift` for visual feedback
-
----
-
-## [0.0.1] - 2026-01-10
-
-### Added
-- Initial project setup
-- Project documentation suite:
-  - Project Brief (`docs/brief.md`)
-  - Product Requirements Document (`docs/prd.md`)
-  - Architecture Document (`docs/architecture.md`)
-  - UI Specification (`docs/ui-specification.md`)
-  - Technical Decisions (`docs/technical-decisions.md`)
-  - Wireframes and design assets
-- User stories for all 4 epics (28 stories total)
-- BMAD Method integration for development workflow
-- README with setup instructions
-
----
-
-## Version Summary
-
-| Version | Date | Epic | Stories Complete |
-|---------|------|------|------------------|
-| 0.5.0 | 2026-01-22 | Epic 5 | 2 (5.1-5.2) |
-| 0.4.0 | 2026-01-22 | Epic 4 | 4 (4.2-4.4, 4.7) |
-| 0.3.0 | 2026-01-22 | Epic 3 | 5 (3.5-3.9) |
-| 0.2.x | 2026-01-18-22 | Epic 2 | 6 (2.1-2.6) + fixes |
-| 0.1.0 | 2026-01-15 | Epic 1 | 5 (1.1-1.5) |
-| 0.0.1 | 2026-01-10 | Setup | Documentation |
-
-**Total Progress: 22/28 stories (79%)**
-
----
-
-## Upcoming Milestones
-
-### v0.6.0 - Full MVP
-- [ ] Story 2.7: Bible Database Validation (ASV/WEB completion)
-- [ ] Story 4.1: Service Session Creation
-- [ ] Story 4.5: Pastor Profile Management
-- [ ] Story 4.6: Pastor Speech Learning
-
-### v1.0.0 - Production Release
-- [ ] Full testing and QA
-- [ ] Performance optimisation
-- [ ] App Store preparation
-
----
-
-[Unreleased]: https://github.com/ayoola66/divine-link/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/ayoola66/divine-link/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/ayoola66/divine-link/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/ayoola66/divine-link/compare/v0.2.5...v0.3.0
-[0.2.5]: https://github.com/ayoola66/divine-link/compare/v0.2.4...v0.2.5
-[0.2.4]: https://github.com/ayoola66/divine-link/compare/v0.2.3...v0.2.4
-[0.2.3]: https://github.com/ayoola66/divine-link/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/ayoola66/divine-link/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/ayoola66/divine-link/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/ayoola66/divine-link/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/ayoola66/divine-link/compare/v0.0.1...v0.1.0
-[0.0.1]: https://github.com/ayoola66/divine-link/releases/tag/v0.0.1
+Each release includes:
+- **Added**: New features
+- **Changed**: Changes to existing functionality
+- **Deprecated**: Features to be removed in future
+- **Removed**: Features removed in this release
+- **Fixed**: Bug fixes
+- **Security**: Security-related changes

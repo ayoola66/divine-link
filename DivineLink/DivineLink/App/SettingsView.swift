@@ -5,6 +5,11 @@ import AVFoundation
 struct SettingsView: View {
     var body: some View {
         TabView {
+            AccountSettingsTab()
+                .tabItem {
+                    Label("Account", systemImage: "person.circle")
+                }
+            
             AudioSettingsTab()
                 .tabItem {
                     Label("Audio", systemImage: "waveform")
@@ -20,6 +25,21 @@ struct SettingsView: View {
                     Label("Pastors", systemImage: "person.2")
                 }
             
+            AccessibilitySettingsTab()
+                .tabItem {
+                    Label("Display", systemImage: "textformat.size")
+                }
+            
+            SubscriptionSettingsTab()
+                .tabItem {
+                    Label("Premium", systemImage: "star.fill")
+                }
+            
+            UpdatesSettingsTab()
+                .tabItem {
+                    Label("Updates", systemImage: "arrow.down.circle")
+                }
+            
             ServiceHistoryView()
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
@@ -30,7 +50,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 520, height: 480)
+        .frame(width: 580, height: 540)
     }
 }
 
@@ -242,6 +262,149 @@ struct ProPresenterSettingsTab: View {
     }
 }
 
+// MARK: - Subscription Settings Tab
+
+struct SubscriptionSettingsTab: View {
+    var body: some View {
+        SubscriptionSettingsView()
+            .padding()
+    }
+}
+
+// MARK: - Updates Settings Tab
+
+struct UpdatesSettingsTab: View {
+    var body: some View {
+        UpdateSettingsView()
+            .padding()
+    }
+}
+
+// MARK: - Account Settings Tab
+
+struct AccountSettingsTab: View {
+    @ObservedObject private var authService = AuthService.shared
+    @State private var showLoginSheet = false
+    
+    var body: some View {
+        if authService.isAuthenticated {
+            AccountView()
+        } else {
+            VStack(spacing: 20) {
+                Image(systemName: "person.circle")
+                    .font(.system(size: 60))
+                    .foregroundStyle(.secondary)
+                
+                Text("Sign In to Divine Link")
+                    .font(.title2.bold())
+                
+                Text("Create an account to access premium features, sync across devices, and manage your subscription.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                Button("Sign In") {
+                    showLoginSheet = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
+            .padding()
+            .sheet(isPresented: $showLoginSheet) {
+                LoginView()
+            }
+        }
+    }
+}
+
+// MARK: - Accessibility Settings Tab
+
+struct AccessibilitySettingsTab: View {
+    @ObservedObject private var settings = AccessibilitySettings.shared
+    
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Font Size")
+                        .font(.headline)
+                    
+                    HStack(spacing: 20) {
+                        Text("A")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                        
+                        Slider(
+                            value: Binding(
+                                get: { Double(settings.fontScaleLevel) },
+                                set: { settings.fontScaleLevel = Int($0) }
+                            ),
+                            in: 1...5,
+                            step: 1
+                        )
+                        .frame(maxWidth: 200)
+                        
+                        Text("A")
+                            .font(.system(size: 24))
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Level \(settings.fontScaleLevel): \(settings.levelDescription)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
+                        Button("Reset") {
+                            settings.resetToDefault()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(settings.fontScaleLevel == 2) // Medium is default
+                    }
+                }
+                .padding(.vertical, 8)
+            } header: {
+                Text("Display Size")
+            } footer: {
+                Text("Adjusts the text size throughout the app. Each level increases the font size by 2 points.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Section {
+                // Preview section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Preview")
+                        .font(.headline)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("John 3:16")
+                            .scaledTitleFont()
+                        
+                        Text("For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.")
+                            .scaledBodyFont()
+                            .lineLimit(3)
+                        
+                        Text("KJV • Detected 2 minutes ago")
+                            .scaledCaptionFont()
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                }
+            } header: {
+                Text("Preview")
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
 // MARK: - About Tab
 
 struct AboutTab: View {
@@ -290,10 +453,22 @@ struct AboutTab: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Version 1.0.0")
+            Text("Version \(appVersion)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            
+            Text("Build \(buildNumber)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
+    }
+    
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1"
+    }
+    
+    private var buildNumber: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
     }
     
     private var storageSection: some View {
