@@ -1,0 +1,26 @@
+# Netlify configuration for Divine Link
+# This tells Netlify to deploy from the Distribution/netlify-site folder
+
+[build]
+  base = "Distribution/netlify-site"
+  publish = "."
+
+# Headers for appcast.xml
+[[headers]]
+  for = "/appcast.xml"
+  [headers.values]
+    Content-Type = "application/xml"
+    Cache-Control = "public, max-age=3600"
+
+# Headers for zip downloads
+[[headers]]
+  for = "/releases/*"
+  [headers.values]
+    Content-Type = "application/octet-stream"
+    Content-Disposition = "attachment"
+
+# Redirects
+[[redirects]]
+  from = "/download"
+  to = "/releases/DivineLink-latest.zip"
+  status = 302
