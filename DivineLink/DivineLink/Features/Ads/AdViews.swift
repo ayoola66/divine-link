@@ -535,7 +535,12 @@ struct YouTubeWebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         
-        // Load HTML with embedded iframe - works better than loading URL directly
+        // Load HTML with embedded iframe - using youtube-nocookie for privacy and better compatibility
+        // Note: YouTube Shorts work with the same /embed/ URL format using the video ID
+        let embedURL = "https://www.youtube-nocookie.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&fs=0&disablekb=1&origin=https://divinelink.app"
+        
+        print("📺 YouTubeWebView embed URL: \(embedURL)")
+        
         let html = """
         <!DOCTYPE html>
         <html>
@@ -554,8 +559,11 @@ struct YouTubeWebView: NSViewRepresentable {
         </head>
         <body>
             <iframe 
-                src="https://www.youtube.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&showinfo=0&iv_load_policy=3"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                id="ytplayer"
+                src="\(embedURL)"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin"
                 allowfullscreen>
             </iframe>
         </body>
@@ -563,7 +571,7 @@ struct YouTubeWebView: NSViewRepresentable {
         """
         
         print("📺 YouTubeWebView loading HTML with embed URL")
-        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+        webView.loadHTMLString(html, baseURL: URL(string: "https://divinelink.app"))
         
         return webView
     }
