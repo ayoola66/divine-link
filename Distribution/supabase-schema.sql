@@ -212,6 +212,8 @@ CREATE TABLE IF NOT EXISTS public.ads (
     
     -- Content
     image_url TEXT NOT NULL,           -- URL to ad image (hosted on your CDN/storage)
+    video_url TEXT,                    -- Optional: URL to video/GIF (10-15 seconds, looping)
+    media_type TEXT DEFAULT 'image' CHECK (media_type IN ('image', 'video', 'gif')), -- Type of media
     click_url TEXT NOT NULL,           -- Affiliate link or destination URL
     alt_text TEXT,                     -- Accessibility text
     

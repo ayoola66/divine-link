@@ -1,6 +1,23 @@
 import SwiftUI
 import Combine
 
+// MARK: - Ad Format
+
+/// Types of ad formats supported
+enum AdFormat: String, Codable, CaseIterable {
+    case square = "square"
+    case portrait = "portrait"
+    case banner = "banner"
+    
+    var aspectRatio: CGFloat {
+        switch self {
+        case .square: return 1.0           // 1:1
+        case .portrait: return 9.0 / 16.0  // 9:16 (tall)
+        case .banner: return 728.0 / 90.0  // Wide banner
+        }
+    }
+}
+
 // MARK: - Dynamic Ad Model
 
 /// Represents an ad fetched from Supabase
@@ -8,20 +25,45 @@ struct DynamicAd: Codable, Identifiable {
     let id: String
     let name: String
     let slot: String
+    let format: String?
     let imageUrl: String
+    let videoUrl: String?              // Optional: Video/GIF URL for animated ads
+    let mediaType: String?              // 'image', 'video', or 'gif'
     let clickUrl: String
     let altText: String?
     let priority: Int
+    let isEnforced: Bool
     
     enum CodingKeys: String, CodingKey {
-        case id, name, slot, priority
+        case id, name, slot, format, priority
         case imageUrl = "image_url"
+        case videoUrl = "video_url"
+        case mediaType = "media_type"
         case clickUrl = "click_url"
         case altText = "alt_text"
+        case isEnforced = "is_enforced"
     }
     
     var imageURL: URL? { URL(string: imageUrl) }
+    var videoURL: URL? { 
+        guard let videoUrl = videoUrl else { return nil }
+        return URL(string: videoUrl)
+    }
     var clickURL: URL? { URL(string: clickUrl) }
+    
+    var adFormat: AdFormat {
+        AdFormat(rawValue: format ?? slot) ?? .square
+    }
+    
+    /// Determine if this ad has video/GIF content
+    var hasVideo: Bool {
+        videoURL != nil && (mediaType == "video" || mediaType == "gif")
+    }
+    
+    /// Get the primary media URL (video takes priority over image)
+    var primaryMediaURL: URL? {
+        hasVideo ? videoURL : imageURL
+    }
 }
 
 // MARK: - Cached Ad Data
@@ -64,8 +106,11 @@ class DynamicAdService: ObservableObject {
     /// Maximum days offline before app locks
     private let maxOfflineDays: Int = 7
     
-    /// Ad rotation interval (5 minutes)
+    /// Ad rotation interval (5 minutes) - rotates between cached ads
     private let rotationInterval: TimeInterval = 300
+    
+    /// Server refresh interval (15 minutes) - fetches new ads from server
+    private let serverRefreshInterval: TimeInterval = 900
     
     /// Cache file location
     private var cacheURL: URL {
@@ -92,6 +137,7 @@ class DynamicAdService: ObservableObject {
     // MARK: - Private Properties
     
     private var rotationTimer: Timer?
+    private var serverRefreshTimer: Timer?
     private var rotationIndex: [String: Int] = [:]  // Track rotation per slot
     
     // MARK: - Initialisation
@@ -100,10 +146,37 @@ class DynamicAdService: ObservableObject {
         loadCachedAds()
         checkConnectivityStatus()
         startAdRotation()
+        startServerRefresh()
+        
+        // Initial fetch from server
+        Task {
+            await fetchAds()
+        }
     }
     
     deinit {
         rotationTimer?.invalidate()
+        serverRefreshTimer?.invalidate()
+    }
+    
+    // MARK: - Server Refresh
+    
+    /// Start periodic server refresh to get new ads
+    private func startServerRefresh() {
+        serverRefreshTimer?.invalidate()
+        serverRefreshTimer = Timer.scheduledTimer(withTimeInterval: serverRefreshInterval, repeats: true) { [weak self] _ in
+            Task { [weak self] in
+                await self?.fetchAds()
+            }
+        }
+        print("🔄 Server refresh scheduled every \(Int(serverRefreshInterval/60)) minutes")
+    }
+    
+    /// Force refresh ads from server (call this after adding new ad in admin)
+    func forceRefresh() {
+        Task {
+            await fetchAds()
+        }
     }
     
     // MARK: - Ad Rotation
@@ -118,24 +191,31 @@ class DynamicAdService: ObservableObject {
         rotateAds()
     }
     
-    /// Rotate to next ad for each slot
+    /// Rotate to next ad for each format
     private func rotateAds() {
-        let slots = ["sidebar_top", "sidebar_middle", "sidebar_bottom", "bottom_banner"]
+        let formats = ["square", "portrait", "banner"]
         
-        for slot in slots {
-            let adsForSlot = allAds.filter { $0.slot == slot }
-            guard !adsForSlot.isEmpty else { continue }
+        for format in formats {
+            // Get ads for this format, prioritising enforced ads
+            let adsForFormat = allAds.filter { $0.format == format || $0.slot.contains(format) }
+            guard !adsForFormat.isEmpty else { continue }
             
-            // Get current index and advance
-            let currentIndex = rotationIndex[slot] ?? 0
-            let nextIndex = (currentIndex + 1) % adsForSlot.count
-            rotationIndex[slot] = nextIndex
+            // Check for enforced ads first - they don't rotate
+            if let enforcedAd = adsForFormat.first(where: { $0.isEnforced }) {
+                currentAds[format] = enforcedAd
+                continue
+            }
             
-            // Update current ad for this slot
-            currentAds[slot] = adsForSlot[nextIndex]
+            // Get current index and advance for non-enforced rotation
+            let currentIndex = rotationIndex[format] ?? 0
+            let nextIndex = (currentIndex + 1) % adsForFormat.count
+            rotationIndex[format] = nextIndex
+            
+            // Update current ad for this format
+            currentAds[format] = adsForFormat[nextIndex]
         }
         
-        print("🔄 Ads rotated at \(Date())")
+        print("🔄 Ads rotated at \(Date()) - \(currentAds.count) active")
     }
     
     // MARK: - Public Methods
@@ -182,17 +262,17 @@ class DynamicAdService: ObservableObject {
     
     /// Get ad for a specific slot (with fallback to default)
     func ad(for slot: AdSlot) -> AdDisplayContent {
-        // Map AdSlot enum to database slot names
-        let slotKey: String
+        // Map AdSlot enum to format names
+        let formatKey: String
         switch slot {
-        case .sidebarTop: slotKey = "sidebar_top"
-        case .sidebarMiddle: slotKey = "sidebar_middle"
-        case .sidebarBottom: slotKey = "sidebar_bottom"
-        case .bottomBanner: slotKey = "bottom_banner"
+        case .sidebarTop, .sidebarMiddle, .sidebarBottom:
+            formatKey = "square"
+        case .bottomBanner:
+            formatKey = "banner"
         }
         
         // Try dynamic ad first
-        if let dynamicAd = currentAds[slotKey] {
+        if let dynamicAd = currentAds[formatKey] {
             return AdDisplayContent(
                 id: dynamicAd.id,
                 imageURL: dynamicAd.imageURL,
@@ -204,6 +284,45 @@ class DynamicAdService: ObservableObject {
         
         // Fall back to default upgrade ad
         return AdDisplayContent.defaultUpgradeAd(for: slot)
+    }
+    
+    /// Get ad by format directly
+    func ad(for format: AdFormat) -> AdDisplayContent {
+        if let dynamicAd = currentAds[format.rawValue] {
+            return AdDisplayContent(
+                id: dynamicAd.id,
+                imageURL: dynamicAd.imageURL,
+                clickURL: dynamicAd.clickURL,
+                altText: dynamicAd.altText ?? dynamicAd.name,
+                isDefault: false
+            )
+        }
+        return AdDisplayContent.defaultUpgradeAd(for: .sidebarTop)
+    }
+    
+    /// Get all ads for a specific format
+    func ads(for format: AdFormat) -> [DynamicAd] {
+        allAds.filter { $0.format == format.rawValue || $0.slot.contains(format.rawValue) }
+    }
+    
+    /// Check if there's a portrait ad available
+    var hasPortraitAd: Bool {
+        !ads(for: .portrait).isEmpty
+    }
+    
+    /// Get the current portrait ad if available
+    var portraitAd: DynamicAd? {
+        currentAds["portrait"]
+    }
+    
+    /// Get current square ads
+    var squareAds: [DynamicAd] {
+        ads(for: .square)
+    }
+    
+    /// Get current banner ad
+    var bannerAd: DynamicAd? {
+        currentAds["banner"]
     }
     
     /// Record an ad impression
@@ -320,7 +439,7 @@ class DynamicAdService: ObservableObject {
         let urlString = "\(SupabaseConfig.supabaseURL)/rest/v1/app_heartbeats"
         guard let url = URL(string: urlString) else { return }
         
-        let deviceId = DeviceIdentifier.getDeviceID()
+        let deviceId = DeviceManager.shared.deviceId
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         
         var request = URLRequest(url: url)

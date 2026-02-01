@@ -1,4 +1,7 @@
 import SwiftUI
+import AVKit
+import AVFoundation
+import WebKit
 
 // MARK: - Ad Container View
 
@@ -216,18 +219,24 @@ struct AdSidebarView: View {
 
 // MARK: - Single Ad View (no duplication)
 
-/// Displays a single ad from the database
+/// Displays a single ad from the database with always-visible title and video/GIF support
 struct SingleAdView: View {
     let ad: DynamicAd
     @ObservedObject private var adService = DynamicAdService.shared
     @State private var isHovering = false
+    @State private var player: AVPlayer?
     
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.gray.opacity(0.1))
             
-            if let imageURL = ad.imageURL {
+            // Media content (video/GIF takes priority over image)
+            if ad.hasVideo, let videoURL = ad.videoURL {
+                // Video or GIF content (looping)
+                VideoPlayerView(url: videoURL, isGIF: ad.mediaType == "gif")
+            } else if let imageURL = ad.imageURL {
+                // Static image
                 AsyncImage(url: imageURL) { phase in
                     switch phase {
                     case .success(let image):
@@ -247,6 +256,33 @@ struct SingleAdView: View {
                 placeholderContent
             }
             
+            // Always-visible title overlay (transparent background, white text)
+            VStack {
+                Spacer()
+                HStack {
+                    Text(ad.name)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.black.opacity(0.7),
+                                    Color.black.opacity(0.5)
+                                ]),
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                        )
+                }
+            }
+            
+            // Hover overlay
             if isHovering {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.black.opacity(0.1))
@@ -272,7 +308,7 @@ struct SingleAdView: View {
         .onAppear {
             adService.recordImpression(adId: ad.id)
         }
-        .help(ad.altText ?? ad.name) // Tooltip showing ad title on hover
+        .help(ad.altText ?? ad.name)
     }
     
     private var placeholderContent: some View {
@@ -282,6 +318,99 @@ struct SingleAdView: View {
             Text("Loading...")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Video Player View
+
+/// Displays video or GIF content with looping support
+struct VideoPlayerView: View {
+    let url: URL
+    let isGIF: Bool
+    @State private var player: AVPlayer?
+    
+    var body: some View {
+        Group {
+            if isGIF {
+                // Use WebKit for GIFs (better support for animated GIFs)
+                GIFWebView(url: url)
+            } else {
+                // Use AVPlayer for videos
+                if let player = player {
+                    VideoPlayer(player: player)
+                        .disabled(true) // Disable controls for ads
+                } else {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .onAppear {
+                            setupVideoPlayer()
+                        }
+                }
+            }
+        }
+        .onAppear {
+            if !isGIF {
+                setupVideoPlayer()
+            }
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
+        }
+    }
+    
+    private func setupVideoPlayer() {
+        guard player == nil else { return }
+        
+        player = AVPlayer(url: url)
+        player?.isMuted = true // Mute by default for ads
+        player?.actionAtItemEnd = .none
+        
+        // Loop the video
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player?.currentItem,
+            queue: .main
+        ) { [weak player] _ in
+            player?.seek(to: .zero)
+            player?.play()
+        }
+        
+        player?.play()
+    }
+}
+
+// MARK: - GIF Web View
+
+/// Displays animated GIFs using WebKit
+struct GIFWebView: NSViewRepresentable {
+    let url: URL
+    
+    func makeNSView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.navigationDelegate = context.coordinator
+        webView.configuration.preferences.javaScriptEnabled = false
+        webView.configuration.mediaTypesRequiringUserActionForPlayback = []
+        
+        // Load GIF
+        let request = URLRequest(url: url)
+        webView.load(request)
+        
+        return webView
+    }
+    
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        // Update if needed
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // GIF loaded
         }
     }
 }
@@ -524,21 +653,56 @@ struct AdBannerView: View {
             
             // CRITICAL: Always show banner ad if available, regardless of subscription status
             // This ensures banner ads are displayed when available
-            if let banner = bannerAd, let imageURL = banner.imageURL {
-                // Dynamic banner ad - full width
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
+            if let banner = bannerAd {
+                ZStack {
+                    // Media content (video/GIF takes priority)
+                    if banner.hasVideo, let videoURL = banner.videoURL {
+                        VideoPlayerView(url: videoURL, isGIF: banner.mediaType == "gif")
                             .frame(maxWidth: .infinity)
-                    case .failure(_):
+                    } else if let imageURL = banner.imageURL {
+                        // Static image
+                        AsyncImage(url: imageURL) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(maxWidth: .infinity)
+                            case .failure(_):
+                                bannerPlaceholder
+                            case .empty:
+                                ProgressView()
+                            @unknown default:
+                                bannerPlaceholder
+                            }
+                        }
+                    } else {
                         bannerPlaceholder
-                    case .empty:
-                        ProgressView()
-                    @unknown default:
-                        bannerPlaceholder
+                    }
+                    
+                    // Always-visible title overlay for banner
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Text(banner.name)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            Color.black.opacity(0.7),
+                                            Color.black.opacity(0.5)
+                                        ]),
+                                        startPoint: .bottom,
+                                        endPoint: .top
+                                    )
+                                )
+                        }
                     }
                 }
                 .contentShape(Rectangle())
@@ -551,7 +715,7 @@ struct AdBannerView: View {
                 .onAppear {
                     adService.recordImpression(adId: banner.id)
                 }
-                .help(banner.altText ?? banner.name) // Tooltip showing ad title on hover
+                .help(banner.altText ?? banner.name)
             } else {
                 // No banner ad - show placeholder only if ads should be shown
                 if AdManager.shared.shouldShowAds {
