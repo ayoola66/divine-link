@@ -470,9 +470,8 @@ struct GIFWebView: NSViewRepresentable {
 
 // MARK: - YouTube Web View
 
-/// Displays YouTube videos using WebKit embed
-/// Note: Will play the FULL video (or Short). For YouTube Shorts, they're already short.
-/// To play a specific time range, use YouTube's time parameter: ?t=10s (starts at 10 seconds)
+/// Displays YouTube videos using WebKit embed with HTML injection
+/// This approach works better on macOS than loading embed URL directly
 struct YouTubeWebView: NSViewRepresentable {
     let videoID: String
     
@@ -483,24 +482,60 @@ struct YouTubeWebView: NSViewRepresentable {
         configuration.mediaTypesRequiringUserActionForPlayback = []
         
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
         
-        // YouTube embed URL with autoplay, loop, mute, and no controls
-        // Note: playlist=VIDEO_ID is REQUIRED for loop to work on YouTube embeds
-        // origin parameter helps with some embed restrictions
-        let embedURL = "https://www.youtube.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&enablejsapi=1"
+        // Load HTML with embedded iframe - works better than loading URL directly
+        let html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+                iframe { 
+                    position: absolute; 
+                    top: 0; left: 0; 
+                    width: 100%; height: 100%; 
+                    border: none;
+                }
+            </style>
+        </head>
+        <body>
+            <iframe 
+                src="https://www.youtube.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&showinfo=0&iv_load_policy=3"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen>
+            </iframe>
+        </body>
+        </html>
+        """
         
-        guard let url = URL(string: embedURL) else {
-            return webView
-        }
-        
-        let request = URLRequest(url: url)
-        webView.load(request)
+        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
         
         return webView
     }
     
     func updateNSView(_ nsView: WKWebView, context: Context) {
         // Update if needed
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            print("YouTube WebView failed: \(error.localizedDescription)")
+        }
+        
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            print("YouTube WebView provisional navigation failed: \(error.localizedDescription)")
+        }
+        
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            print("YouTube WebView loaded successfully")
+        }
     }
 }
 
