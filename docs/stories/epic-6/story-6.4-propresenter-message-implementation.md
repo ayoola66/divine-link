@@ -1,40 +1,38 @@
-# Story 6.4: ProPresenter Message API Implementation
+# Story 6.4: ProPresenter WebSocket Messages API Implementation
 
 **Epic:** 6 - Operator Safety & Detection Confidence  
 **Story ID:** 6.4  
 **Status:** Not Started  
 **Complexity:** Large  
-**Priority:** P2 (Enhancement - Depends on 6.3 Research)
+**Priority:** P1 (Technical Improvement)
 
 ---
 
 ## User Story
 
 **As an** operator using Divine Link with ProPresenter,  
-**I want** scriptures to be displayed via the Message API,  
-**so that** I have more reliable verse display without window focus issues.
+**I want** scriptures to be displayed via the WebSocket Messages API,  
+**so that** verses appear on the Audience screen reliably without requiring window focus or accessibility permissions.
 
 ---
 
 ## Background
 
-**Note: This story should only proceed if Story 6.3 research recommends the Message API approach.**
+Story 6.3 research confirmed:
+1. **Direct slide text injection is NOT available** via ProPresenter API
+2. **Messages API CAN display on Audience screen** via Looks routing
+3. **WebSocket is required** for `messageSend` (HTTP REST only supports Stage Display)
 
-If the research confirms Message API viability, this story implements:
-- New ProPresenter service using HTTP API
-- Message template setup workflow
-- Token-based verse display
-- Fallback to keyboard automation
-- User preference for integration method
+This story implements the WebSocket Messages API integration as the primary method for Premium/Pro tiers, with keyboard automation as fallback for Mercy tier or unconfigured setups.
 
 ---
 
 ## Prerequisites
 
-- [ ] Story 6.3 completed with positive recommendation for Message API
-- [ ] ProPresenter 7+ confirmed as minimum supported version
-- [ ] Message template design approved
-- [ ] API endpoint compatibility verified
+- [x] Story 6.3 completed with positive recommendation for Messages API
+- [x] ProPresenter 7+ confirmed as minimum supported version
+- [x] Looks routing mechanism verified for Audience screen
+- [ ] WebSocket client implementation for ProPresenter
 
 ---
 
@@ -42,15 +40,16 @@ If the research confirms Message API viability, this story implements:
 
 | # | Criterion | Verification |
 |---|-----------|--------------|
-| 1 | Scripture displays via Message API | Verse appears in ProPresenter |
-| 2 | Reference shows correctly (book, chapter, verse) | Formatting matches expectation |
-| 3 | Verse text displays in message area | Text is readable and styled |
-| 4 | Message clears when new verse pushed | Previous content replaced |
-| 5 | Manual clear works (panic button) | API clear endpoint called |
-| 6 | Fallback to keyboard if API fails | Graceful degradation |
-| 7 | User can choose integration method | Settings option available |
-| 8 | Setup wizard helps configure message | First-run guidance |
-| 9 | Connection status shown in UI | API health indicator |
+| 1 | Scripture displays on Audience screen via Messages API | Verse appears in ProPresenter via Looks |
+| 2 | Reference and text show correctly formatted | Uses church's message template |
+| 3 | WebSocket connection established with ProPresenter | Connected status shown |
+| 4 | Authentication handled (if password set) | Password stored securely in Keychain |
+| 5 | Message clears when requested | `messageHide` API called |
+| 6 | Fallback to keyboard if WebSocket fails | Graceful degradation |
+| 7 | User can configure message template index | Settings option available |
+| 8 | Setup guide for Looks configuration | Help documentation included |
+| 9 | Connection status indicator in UI | Real-time status badge |
+| 10 | Factory Pattern enables swappable outputs | Architecture supports multiple output methods |
 
 ---
 
@@ -59,449 +58,549 @@ If the research confirms Message API viability, this story implements:
 ### Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Divine Link                              │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │            ProPresenterIntegrationService                 │   │
-│  │  ┌────────────────────┐  ┌────────────────────────────┐  │   │
-│  │  │ KeyboardAutomation │  │     MessageAPIService      │  │   │
-│  │  │    (existing)      │  │        (new)               │  │   │
-│  │  └────────────────────┘  └────────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Divine Link                                  │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │                ProPresenterOutputFactory                        │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐   │ │
+│  │  │ StageDisplay │  │ AudienceAPI  │  │ AudienceFallback   │   │ │
+│  │  │  (HTTP PUT)  │  │ (WebSocket)  │  │ (Keyboard)         │   │ │
+│  │  └──────────────┘  └──────────────┘  └────────────────────┘   │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
-                    HTTP API (port 1025)
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       ProPresenter 7+                            │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    Scripture Message                      │   │
-│  │  ┌────────────────────────────────────────────────────┐  │   │
-│  │  │ {reference}                                        │  │   │
-│  │  │ ─────────────────────────────────────────────────  │  │   │
-│  │  │ {verse_text}                                       │  │   │
-│  │  └────────────────────────────────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+            ┌─────────────────┼─────────────────┐
+            ▼                 ▼                 ▼
+   HTTP REST (:1025)    WebSocket (:1025)   Keyboard Sim
+   /v1/stage/message    /remote             CGEvent
+            │                 │                 │
+            ▼                 ▼                 ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       ProPresenter 7+                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
+│  │ Stage Display│  │ Audience     │  │ Audience (Bible View)    │  │
+│  │ (Confidence) │  │ (via Looks)  │  │ (via ⌘B)                 │  │
+│  └──────────────┘  └──────────────┘  └──────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Service Implementation
-
-#### ProPresenterMessageService
+### Factory Pattern Implementation
 
 ```swift
-// ProPresenterMessageService.swift
+// ProPresenterOutput.swift
 import Foundation
 
-class ProPresenterMessageService: ObservableObject {
-    @Published var isConnected = false
-    @Published var lastError: String?
+/// Protocol for all ProPresenter output methods
+protocol ProPresenterOutput {
+    var displayName: String { get }
+    var isAvailable: Bool { get }
+    var requiresConfiguration: Bool { get }
+    
+    func display(reference: String, text: String) async throws
+    func clear() async throws
+    func checkConnection() async -> Bool
+}
+
+/// Factory to create appropriate output based on tier and configuration
+class ProPresenterOutputFactory {
+    enum OutputType: String, CaseIterable {
+        case stageDisplay = "Stage Display (HTTP)"
+        case audienceWebSocket = "Audience Screen (Messages API)"
+        case audienceKeyboard = "Audience Screen (Keyboard)"
+    }
+    
+    static func createOutput(
+        type: OutputType,
+        host: String = "localhost",
+        port: Int = 1025,
+        password: String? = nil
+    ) -> ProPresenterOutput {
+        switch type {
+        case .stageDisplay:
+            return StageDisplayOutput(host: host, port: port)
+        case .audienceWebSocket:
+            return AudienceWebSocketOutput(host: host, port: port, password: password)
+        case .audienceKeyboard:
+            return AudienceKeyboardOutput()
+        }
+    }
+    
+    /// Returns available outputs for the user's subscription tier
+    static func availableOutputs(for tier: SubscriptionTier) -> [OutputType] {
+        switch tier {
+        case .mercy:
+            return [.stageDisplay, .audienceKeyboard]
+        case .grace, .love:
+            return [.stageDisplay, .audienceWebSocket, .audienceKeyboard]
+        }
+    }
+}
+```
+
+### WebSocket Messages Implementation
+
+```swift
+// AudienceWebSocketOutput.swift
+import Foundation
+
+class AudienceWebSocketOutput: NSObject, ProPresenterOutput, URLSessionWebSocketDelegate {
+    let displayName = "Audience Screen (Messages API)"
+    var isAvailable: Bool { isConnected }
+    let requiresConfiguration = true
+    
+    private var webSocket: URLSessionWebSocketTask?
+    private let host: String
+    private let port: Int
+    private let password: String?
+    private var isConnected = false
+    private var messageTemplateIndex: Int = 0
+    
+    init(host: String, port: Int, password: String?) {
+        self.host = host
+        self.port = port
+        self.password = password
+        super.init()
+    }
+    
+    // MARK: - Connection
+    
+    func connect() async throws {
+        let url = URL(string: "ws://\(host):\(port)/remote")!
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        webSocket = session.webSocketTask(with: url)
+        webSocket?.resume()
+        
+        // Authenticate
+        let authMessage: [String: Any] = [
+            "action": "authenticate",
+            "protocol": 701,
+            "password": password ?? ""
+        ]
+        try await send(authMessage)
+        
+        // Start receiving messages
+        receiveMessages()
+        
+        isConnected = true
+    }
+    
+    func disconnect() {
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        isConnected = false
+    }
+    
+    // MARK: - ProPresenterOutput Protocol
+    
+    func checkConnection() async -> Bool {
+        if !isConnected {
+            try? await connect()
+        }
+        return isConnected
+    }
+    
+    func display(reference: String, text: String) async throws {
+        guard isConnected else {
+            throw ProPresenterError.notConnected
+        }
+        
+        // Format verse for multi-line display
+        let formattedText = formatVerseText(text, reference: reference)
+        
+        let message: [String: Any] = [
+            "action": "messageSend",
+            "messageIndex": messageTemplateIndex,
+            "messageKeys": ["ScriptureText", "Reference"],
+            "messageValues": [formattedText, reference]
+        ]
+        
+        try await send(message)
+    }
+    
+    func clear() async throws {
+        guard isConnected else { return }
+        
+        let message: [String: Any] = [
+            "action": "messageHide",
+            "messageIndex": messageTemplateIndex
+        ]
+        
+        try await send(message)
+    }
+    
+    // MARK: - Private Helpers
+    
+    private func send(_ message: [String: Any]) async throws {
+        let data = try JSONSerialization.data(withJSONObject: message)
+        guard let jsonString = String(data: data, encoding: .utf8) else {
+            throw ProPresenterError.encodingFailed
+        }
+        
+        try await webSocket?.send(.string(jsonString))
+    }
+    
+    private func receiveMessages() {
+        webSocket?.receive { [weak self] result in
+            switch result {
+            case .success(let message):
+                self?.handleMessage(message)
+                self?.receiveMessages() // Continue listening
+            case .failure(let error):
+                print("WebSocket receive error: \(error)")
+                self?.isConnected = false
+            }
+        }
+    }
+    
+    private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
+        switch message {
+        case .string(let text):
+            if let data = text.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                handleResponse(json)
+            }
+        case .data(let data):
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                handleResponse(json)
+            }
+        @unknown default:
+            break
+        }
+    }
+    
+    private func handleResponse(_ json: [String: Any]) {
+        if let action = json["action"] as? String {
+            switch action {
+            case "authenticate":
+                if let authenticated = json["authenticated"] as? Bool, authenticated {
+                    print("ProPresenter WebSocket authenticated")
+                    isConnected = true
+                } else {
+                    print("ProPresenter WebSocket authentication failed")
+                    isConnected = false
+                }
+            case "messageResponse":
+                // Handle message template list response
+                break
+            default:
+                break
+            }
+        }
+    }
+    
+    private func formatVerseText(_ text: String, reference: String) -> String {
+        // Add reference on separate line if long verse
+        if text.count > 100 {
+            return "\(text)\n\n— \(reference)"
+        }
+        return text
+    }
+    
+    // MARK: - URLSessionWebSocketDelegate
+    
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, 
+                    didOpenWithProtocol protocol: String?) {
+        print("WebSocket connected")
+    }
+    
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, 
+                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        isConnected = false
+    }
+}
+
+enum ProPresenterError: LocalizedError {
+    case notConnected
+    case encodingFailed
+    case authenticationFailed
+    case messageNotConfigured
+    
+    var errorDescription: String? {
+        switch self {
+        case .notConnected:
+            return "Not connected to ProPresenter"
+        case .encodingFailed:
+            return "Failed to encode message"
+        case .authenticationFailed:
+            return "ProPresenter authentication failed"
+        case .messageNotConfigured:
+            return "No message template configured in ProPresenter"
+        }
+    }
+}
+```
+
+### Stage Display Output (HTTP - Already Implemented)
+
+```swift
+// StageDisplayOutput.swift
+import Foundation
+
+class StageDisplayOutput: ProPresenterOutput {
+    let displayName = "Stage Display (HTTP)"
+    var isAvailable: Bool { lastCheckSucceeded }
+    let requiresConfiguration = false
     
     private let baseURL: URL
     private let session: URLSession
-    private var scriptureMessageId: String?
+    private var lastCheckSucceeded = false
     
-    // Token names matching ProPresenter template
-    private let referenceToken = "reference"
-    private let verseTextToken = "verse_text"
-    
-    init(host: String = "localhost", port: Int = 1025) {
+    init(host: String, port: Int) {
         self.baseURL = URL(string: "http://\(host):\(port)/v1")!
-        
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 5
         self.session = URLSession(configuration: config)
     }
     
-    // MARK: - Connection
-    
     func checkConnection() async -> Bool {
         do {
             let url = baseURL.appendingPathComponent("status")
             let (_, response) = try await session.data(from: url)
-            
-            if let httpResponse = response as? HTTPURLResponse,
-               httpResponse.statusCode == 200 {
-                await MainActor.run { self.isConnected = true }
-                return true
-            }
+            lastCheckSucceeded = (response as? HTTPURLResponse)?.statusCode == 200
+            return lastCheckSucceeded
         } catch {
-            await MainActor.run { 
-                self.isConnected = false
-                self.lastError = error.localizedDescription
-            }
+            lastCheckSucceeded = false
+            return false
         }
-        return false
     }
     
-    // MARK: - Message Discovery
-    
-    func findScriptureMessage() async throws -> String? {
-        let url = baseURL.appendingPathComponent("messages")
-        let (data, _) = try await session.data(from: url)
-        
-        let messages = try JSONDecoder().decode([PPMessage].self, from: data)
-        
-        // Look for message named "Scripture" or "Divine Link"
-        if let scriptureMessage = messages.first(where: { 
-            $0.name.lowercased().contains("scripture") || 
-            $0.name.lowercased().contains("divine link")
-        }) {
-            self.scriptureMessageId = scriptureMessage.id
-            return scriptureMessage.id
-        }
-        
-        return nil
-    }
-    
-    // MARK: - Display Scripture
-    
-    func displayScripture(reference: String, text: String) async throws {
-        guard let messageId = scriptureMessageId else {
-            throw MessageAPIError.noMessageConfigured
-        }
-        
-        // Update reference token
-        try await updateToken(
-            messageId: messageId,
-            tokenName: referenceToken,
-            value: reference
-        )
-        
-        // Update verse text token
-        try await updateToken(
-            messageId: messageId,
-            tokenName: verseTextToken,
-            value: text
-        )
-        
-        // Trigger the message
-        try await triggerMessage(id: messageId)
-    }
-    
-    // MARK: - Clear
-    
-    func clearScripture() async throws {
-        guard let messageId = scriptureMessageId else { return }
-        
-        let url = baseURL.appendingPathComponent("message/\(messageId)/clear")
-        let (_, _) = try await session.data(from: url)
-    }
-    
-    // MARK: - Private Helpers
-    
-    private func updateToken(messageId: String, tokenName: String, value: String) async throws {
-        let url = baseURL.appendingPathComponent("messages/\(messageId)/tokens/\(tokenName)")
-        
+    func display(reference: String, text: String) async throws {
+        let url = baseURL.appendingPathComponent("stage/message")
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let payload = ["value": value]
-        request.httpBody = try JSONEncoder().encode(payload)
+        request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "\(reference)\n\(text)".data(using: .utf8)
         
         let (_, response) = try await session.data(for: request)
-        
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
-            throw MessageAPIError.tokenUpdateFailed(tokenName)
+            throw ProPresenterError.notConnected
         }
     }
     
-    private func triggerMessage(id: String) async throws {
-        let url = baseURL.appendingPathComponent("message/\(id)/trigger")
-        let (_, response) = try await session.data(from: url)
+    func clear() async throws {
+        let url = baseURL.appendingPathComponent("stage/message")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw MessageAPIError.triggerFailed
-        }
-    }
-}
-
-// MARK: - Models
-
-struct PPMessage: Codable {
-    let id: String
-    let name: String
-}
-
-enum MessageAPIError: LocalizedError {
-    case noMessageConfigured
-    case tokenUpdateFailed(String)
-    case triggerFailed
-    case connectionFailed
-    
-    var errorDescription: String? {
-        switch self {
-        case .noMessageConfigured:
-            return "No scripture message configured in ProPresenter"
-        case .tokenUpdateFailed(let token):
-            return "Failed to update token: \(token)"
-        case .triggerFailed:
-            return "Failed to trigger message display"
-        case .connectionFailed:
-            return "Cannot connect to ProPresenter API"
-        }
+        let (_, _) = try await session.data(for: request)
     }
 }
 ```
 
-### Integration Service Update
+### Keyboard Fallback Output (Existing)
 
 ```swift
-// ProPresenterIntegrationService.swift (updated)
-class ProPresenterIntegrationService: ObservableObject {
-    @Published var integrationMethod: IntegrationMethod = .keyboard
+// AudienceKeyboardOutput.swift
+import Foundation
+import ApplicationServices
+
+class AudienceKeyboardOutput: ProPresenterOutput {
+    let displayName = "Audience Screen (Keyboard)"
+    var isAvailable: Bool { AXIsProcessTrusted() }
+    let requiresConfiguration = false
     
-    private let keyboardService: KeyboardAutomationService
-    private let messageService: ProPresenterMessageService
+    private let keyboardService = KeyboardAutomationService.shared
     
-    enum IntegrationMethod: String, CaseIterable {
-        case keyboard = "Keyboard Automation"
-        case messageAPI = "Message API"
-        case hybrid = "Hybrid (API first, keyboard fallback)"
+    func checkConnection() async -> Bool {
+        return AXIsProcessTrusted()
     }
     
-    func displayScripture(_ match: ScriptureMatch) async {
-        switch integrationMethod {
-        case .keyboard:
-            await keyboardService.triggerScripture(match)
-            
-        case .messageAPI:
-            do {
-                try await messageService.displayScripture(
-                    reference: match.reference,
-                    text: match.verseText
-                )
-            } catch {
-                print("Message API failed: \(error)")
-                // Show error in UI
-            }
-            
-        case .hybrid:
-            do {
-                try await messageService.displayScripture(
-                    reference: match.reference,
-                    text: match.verseText
-                )
-            } catch {
-                print("API failed, falling back to keyboard: \(error)")
-                await keyboardService.triggerScripture(match)
-            }
-        }
+    func display(reference: String, text: String) async throws {
+        await keyboardService.pushToProPresenterBible(reference: reference)
     }
     
-    func clear() async {
-        switch integrationMethod {
-        case .messageAPI, .hybrid:
-            try? await messageService.clearScripture()
-        case .keyboard:
-            await keyboardService.triggerClear()
-        }
+    func clear() async throws {
+        await keyboardService.clearProPresenterBible()
     }
 }
 ```
 
-### Settings UI
+### Integration Manager
 
 ```swift
-// ProPresenterSettingsView.swift
+// ProPresenterIntegrationManager.swift
+import Foundation
+import Combine
+
+class ProPresenterIntegrationManager: ObservableObject {
+    @Published var stageOutput: ProPresenterOutput
+    @Published var audienceOutput: ProPresenterOutput
+    @Published var stageConnected = false
+    @Published var audienceConnected = false
+    
+    private let settings: ProPresenterSettings
+    private var cancellables = Set<AnyCancellable>()
+    
+    init(settings: ProPresenterSettings) {
+        self.settings = settings
+        
+        // Create outputs based on tier
+        let tier = SubscriptionService.shared.currentTier
+        let availableOutputs = ProPresenterOutputFactory.availableOutputs(for: tier)
+        
+        // Stage always uses HTTP
+        stageOutput = ProPresenterOutputFactory.createOutput(
+            type: .stageDisplay,
+            host: settings.host,
+            port: settings.port
+        )
+        
+        // Audience uses WebSocket for Premium, Keyboard for Free
+        if availableOutputs.contains(.audienceWebSocket) && settings.useMessagesAPI {
+            audienceOutput = ProPresenterOutputFactory.createOutput(
+                type: .audienceWebSocket,
+                host: settings.host,
+                port: settings.port,
+                password: settings.password
+            )
+        } else {
+            audienceOutput = ProPresenterOutputFactory.createOutput(
+                type: .audienceKeyboard
+            )
+        }
+        
+        // Start connection monitoring
+        Task { await checkConnections() }
+    }
+    
+    func checkConnections() async {
+        stageConnected = await stageOutput.checkConnection()
+        audienceConnected = await audienceOutput.checkConnection()
+    }
+    
+    func displayToStage(reference: String, text: String) async throws {
+        try await stageOutput.display(reference: reference, text: text)
+    }
+    
+    func displayToAudience(reference: String, text: String) async throws {
+        do {
+            try await audienceOutput.display(reference: reference, text: text)
+        } catch {
+            // If WebSocket fails, try keyboard fallback
+            if audienceOutput is AudienceWebSocketOutput {
+                let fallback = ProPresenterOutputFactory.createOutput(type: .audienceKeyboard)
+                try await fallback.display(reference: reference, text: text)
+            } else {
+                throw error
+            }
+        }
+    }
+    
+    func clearAll() async {
+        try? await stageOutput.clear()
+        try? await audienceOutput.clear()
+    }
+}
+```
+
+---
+
+## User Setup Requirements
+
+### One-Time ProPresenter Configuration
+
+For Messages API to display on Audience screen:
+
+1. **Enable Messages Layer in Look**
+   - Open ProPresenter → View → Looks
+   - Select your Audience Look preset
+   - Enable "Messages" layer checkbox
+   - Save the Look
+
+2. **Create Scripture Message Template**
+   - Go to Messages → New Message
+   - Add tokens: `${ScriptureText}`, `${Reference}`
+   - Name it "Scripture" or "Divine Link"
+   - Style to match church branding
+
+3. **Enable Network API**
+   - ProPresenter Preferences → Network
+   - Enable "Enable Network"
+   - Note the port (default: 1025)
+   - Set password if desired
+
+---
+
+## Settings UI Updates
+
+```swift
 struct ProPresenterSettingsView: View {
-    @ObservedObject var integrationService: ProPresenterIntegrationService
-    @State private var apiHost = "localhost"
-    @State private var apiPort = "1025"
-    @State private var showSetupWizard = false
+    @ObservedObject var manager: ProPresenterIntegrationManager
+    @StateObject private var settings = ProPresenterSettings.shared
     
     var body: some View {
         Form {
-            Section("Integration Method") {
-                Picker("Method", selection: $integrationService.integrationMethod) {
-                    ForEach(IntegrationMethod.allCases, id: \.self) { method in
-                        Text(method.rawValue).tag(method)
-                    }
-                }
-                .pickerStyle(.radioGroup)
+            Section("Connection") {
+                TextField("Host", text: $settings.host)
+                TextField("Port", value: $settings.port, format: .number)
+                SecureField("Password", text: $settings.password)
                 
-                if integrationService.integrationMethod != .keyboard {
-                    GroupBox("API Settings") {
-                        TextField("Host", text: $apiHost)
-                        TextField("Port", text: $apiPort)
-                        
-                        HStack {
-                            Button("Test Connection") {
-                                Task { await testConnection() }
-                            }
-                            
-                            if integrationService.messageService.isConnected {
-                                Label("Connected", systemImage: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                            }
-                        }
+                HStack {
+                    Button("Test Connection") {
+                        Task { await manager.checkConnections() }
                     }
+                    Spacer()
+                    ConnectionStatusBadge(
+                        stage: manager.stageConnected,
+                        audience: manager.audienceConnected
+                    )
+                }
+            }
+            
+            Section("Audience Screen Method") {
+                Toggle("Use Messages API (Premium)", isOn: $settings.useMessagesAPI)
+                    .disabled(!SubscriptionService.shared.isPremium)
+                
+                if settings.useMessagesAPI {
+                    Stepper("Message Template Index: \(settings.messageTemplateIndex)",
+                            value: $settings.messageTemplateIndex, in: 0...10)
                     
-                    Button("Run Setup Wizard") {
-                        showSetupWizard = true
-                    }
+                    Link("Setup Guide: Configure Messages Layer",
+                         destination: URL(string: "https://divinelink.app/docs/propresenter-setup")!)
                 }
             }
-        }
-        .sheet(isPresented: $showSetupWizard) {
-            MessageSetupWizardView()
         }
     }
 }
 ```
-
-### Setup Wizard
-
-```swift
-// MessageSetupWizardView.swift
-struct MessageSetupWizardView: View {
-    @State private var step = 1
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            // Progress indicator
-            HStack {
-                ForEach(1...4, id: \.self) { i in
-                    Circle()
-                        .fill(i <= step ? Color.accentColor : Color.gray)
-                        .frame(width: 10, height: 10)
-                }
-            }
-            
-            switch step {
-            case 1:
-                VStack {
-                    Text("Step 1: Enable ProPresenter API")
-                        .font(.headline)
-                    Text("Open ProPresenter Preferences → Network and enable the API server.")
-                    Image("pp-network-settings") // Screenshot
-                }
-                
-            case 2:
-                VStack {
-                    Text("Step 2: Create Scripture Message")
-                        .font(.headline)
-                    Text("In ProPresenter, create a new Message with these tokens:")
-                    VStack(alignment: .leading) {
-                        Text("• {reference} - for the scripture reference")
-                        Text("• {verse_text} - for the verse content")
-                    }
-                    Text("Name it 'Scripture' or 'Divine Link'")
-                }
-                
-            case 3:
-                VStack {
-                    Text("Step 3: Style Your Message")
-                        .font(.headline)
-                    Text("Configure the message appearance:")
-                    Text("• Font size and style")
-                    Text("• Position on screen")
-                    Text("• Background and effects")
-                }
-                
-            case 4:
-                VStack {
-                    Text("Step 4: Test Connection")
-                        .font(.headline)
-                    Button("Test Now") {
-                        // Run connection test
-                    }
-                }
-                
-            default:
-                EmptyView()
-            }
-            
-            HStack {
-                if step > 1 {
-                    Button("Back") { step -= 1 }
-                }
-                Spacer()
-                if step < 4 {
-                    Button("Next") { step += 1 }
-                } else {
-                    Button("Finish") {
-                        // Complete setup
-                    }
-                }
-            }
-        }
-        .padding()
-        .frame(width: 500, height: 400)
-    }
-}
-```
-
----
-
-## ProPresenter Message Template
-
-### Required Template Structure
-
-Users need to create a message in ProPresenter with:
-
-| Token Name | Purpose | Example Value |
-|------------|---------|---------------|
-| `{reference}` | Scripture reference | "John 3:16" |
-| `{verse_text}` | Full verse text | "For God so loved..." |
-
-### Recommended Styling
-
-- **Reference**: Large, bold, at top
-- **Verse Text**: Medium size, below reference
-- **Background**: Semi-transparent or match church branding
-- **Position**: Lower third or centre
-
----
-
-## Migration Path
-
-If transitioning from keyboard to Message API:
-
-1. **Phase 1**: Add Message API as option in Settings
-2. **Phase 2**: Default to Hybrid mode (API with keyboard fallback)
-3. **Phase 3**: After validation period, recommend API as primary
-4. **No Breaking Changes**: Keyboard automation remains available
 
 ---
 
 ## Dependencies
 
-- Story 6.3 (Research) - Must be completed with positive outcome
-- Story 3.6 (ProPresenter Connection) - Existing connection logic
-- Story 6.1 (Panic Button) - Clear integration
+- Story 6.3 (Research) - COMPLETE
+- Story 3.6 (ProPresenter Connection) - Existing Stage Display implementation
+- Story 6.1 (Panic Button) - Clear integration via Factory outputs
 
 ---
 
 ## Definition of Done
 
-- [ ] All acceptance criteria verified
-- [ ] ProPresenterMessageService implemented
-- [ ] Integration service updated with method selection
-- [ ] Settings UI for method choice
-- [ ] Setup wizard for message configuration
-- [ ] Fallback to keyboard works correctly
-- [ ] Connection status indicator in UI
-- [ ] Error handling for API failures
-- [ ] Unit tests for API service
-- [ ] Documentation for message setup
+- [ ] Factory Pattern implemented with `ProPresenterOutput` protocol
+- [ ] `AudienceWebSocketOutput` connects via WebSocket
+- [ ] `messageSend` correctly displays on Audience screen (via Looks)
+- [ ] `messageHide` clears the message
+- [ ] Fallback to keyboard if WebSocket unavailable
+- [ ] Connection status indicators in Settings
+- [ ] Premium tier check for Messages API access
+- [ ] Setup documentation for Looks configuration
+- [ ] Unit tests for Factory and outputs
+- [ ] Integration tests with ProPresenter
 - [ ] Committed to Git
 
 ---
 
 ## Testing Scenarios
 
-1. **API Display**: Scripture detected → API updates tokens → Message appears
-2. **API Clear**: Clear button pressed → Message clears via API
-3. **API Failure**: API unavailable → Falls back to keyboard (if hybrid)
-4. **Connection Lost**: Mid-service disconnect → Graceful degradation
-5. **Invalid Message**: Message deleted in PP → Error shown, prompt reconfigure
-6. **Token Update**: Long verse text → Handles multi-line content
+| Scenario | Expected Result |
+|----------|-----------------|
+| Premium user with Messages API configured | Verse via WebSocket |
+| Premium user without Looks configured | Falls back to keyboard |
+| Free user | Uses keyboard automation |
+| WebSocket disconnects mid-service | Auto-fallback to keyboard |
+| Password required but not configured | Auth error, prompt user |
+| Message template deleted in PP | Error shown, guide to recreate |
+| Both Stage and Audience enabled | Both outputs receive content |
 
 ---
 
@@ -509,10 +608,10 @@ If transitioning from keyboard to Message API:
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| API endpoints change in PP update | Low | High | Abstract API calls, version check |
-| Message accidentally deleted | Medium | Medium | Setup wizard to recreate |
-| Hybrid mode causes confusion | Low | Low | Clear UI explanation |
-| Performance slower than keyboard | Low | Low | Benchmark during testing |
+| WebSocket API changes in PP update | Low | High | Abstract via Factory Pattern |
+| Looks not configured by user | Medium | Medium | Clear setup documentation |
+| Authentication complexity | Low | Medium | Keychain storage, clear errors |
+| Dual-output timing issues | Low | Low | Sequential async calls |
 
 ---
 
@@ -520,19 +619,21 @@ If transitioning from keyboard to Message API:
 
 | Task | Hours |
 |------|-------|
-| ProPresenterMessageService | 4 |
-| Integration service update | 2 |
-| Settings UI | 2 |
-| Setup wizard | 3 |
-| Error handling & fallback | 2 |
-| Testing & debugging | 3 |
-| **Total** | **16** |
+| ProPresenterOutput protocol | 1 |
+| Factory implementation | 2 |
+| AudienceWebSocketOutput | 6 |
+| Integration manager | 3 |
+| Settings UI updates | 2 |
+| Fallback logic | 2 |
+| Testing & debugging | 4 |
+| Documentation | 2 |
+| **Total** | **22** |
 
 ---
 
 ## Notes
 
-- **Only implement if 6.3 research is positive**
-- Maintain backward compatibility with keyboard method
-- Consider creating template file for easy import into ProPresenter
-- Future: Explore other PP API endpoints for enhanced integration
+- Factory Pattern allows easy addition of future output methods
+- WebSocket maintains persistent connection for lower latency
+- Keyboard fallback ensures reliability for all users
+- Tier-based feature gating via SubscriptionService

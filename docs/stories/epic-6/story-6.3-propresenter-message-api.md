@@ -2,9 +2,31 @@
 
 **Epic:** 6 - Operator Safety & Detection Confidence  
 **Story ID:** 6.3  
-**Status:** Not Started  
+**Status:** Complete  
 **Complexity:** Medium  
-**Priority:** P1 (Technical Improvement)
+**Priority:** P1 (Technical Improvement)  
+
+---
+
+## Completion Summary
+
+**Completed:** 17 January 2026  
+**Research Document:** `docs/research/propresenter-direct-api-theme-injection.md`
+
+### Key Findings
+
+1. **Direct slide text injection is NOT available** via ProPresenter API
+2. **Messages API CAN display on Audience screen** via Looks routing
+3. **Recommended Hybrid Approach:**
+   - Stage Display: HTTP REST `/v1/stage/message` (already implemented)
+   - Audience Screen (Premium): WebSocket `messageSend` via Looks
+   - Audience Screen (Free): Keyboard Automation fallback
+
+### Decision
+
+Proceed with implementing Messages API (WebSocket) for Audience screen in Story 6.4, with Factory Pattern to manage swappable outputs.
+
+---
 
 ---
 
