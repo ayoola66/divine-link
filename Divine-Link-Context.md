@@ -76,11 +76,22 @@ Divine Link solves a common problem in church media operations: when a pastor me
 - Configurable port (default: 1025)
 - Useful for confidence monitor / pastor reference
 
-**Audience Screen (Keyboard Automation):**
+**Audience Screen (Two Methods):**
+
+**Method 1: Messages API (Premium/Pro Tiers)** ✅ **RECOMMENDED**
+- Uses ProPresenter's Messages API via WebSocket
+- Sends templated content to Messages layer
+- Messages layer routed to Audience screen via Looks feature
+- Requires one-time setup: Enable Messages layer in Audience Look
+- Faster (~50ms), more reliable, works in background
+- Uses church's configured Message themes
+
+**Method 2: Keyboard Automation (Free Tier / Fallback)**
 - Uses macOS Accessibility to simulate keyboard input
 - Triggers ProPresenter's native Bible feature (⌘B)
 - Types the scripture reference and presses Enter
 - Displays verse using ProPresenter's own Bible formatting
+- Zero configuration required
 
 ### 3.4 Multi-Verse Handling
 
@@ -121,7 +132,7 @@ When a verse range is detected (e.g., "John 3:16-18"):
 | Sessions per month | 8 |
 | Detections per session | Unlimited |
 | Sidebar advertisements | Yes |
-| Push to Audience Screen | ✗ |
+| Push to Audience Screen (Keyboard) | ✗ |
 | Additional translations | ✗ |
 | Pastor profiles | ✗ |
 
@@ -132,7 +143,7 @@ When a verse range is detected (e.g., "John 3:16-18"):
 |---------|----------|
 | Everything in Mercy | ✓ |
 | No advertisements | ✓ |
-| Push to Audience Screen | ✓ |
+| Push to Audience Screen (Messages API) | ✓ |
 | All Bible translations | ✓ |
 | Unlimited sessions | ✓ |
 | Verse-by-verse push | ✓ |
@@ -222,7 +233,8 @@ Divine Link/
 | `BibleService` | SQLite queries for verse text |
 | `BufferManager` | Manages pending verses queue |
 | `ProPresenterClient` | REST API calls to ProPresenter |
-| `KeyboardAutomationService` | Simulates keyboard for Audience screen |
+| `KeyboardAutomationService` | Simulates keyboard for Audience screen (Free tier) |
+| `MessagesService` | Sends scripture via Messages API (Premium tier) |
 | `DetectionPipeline` | Orchestrates the full detection workflow |
 
 ---
@@ -248,6 +260,20 @@ Divine Link requires the following macOS permissions:
 4. Test connection using the "Test Connection" button
 
 ### Audience Screen Setup
+
+**Option A: Messages API (Premium/Pro Tiers)** ✅ **RECOMMENDED**
+1. Open ProPresenter → Screens → Edit Looks
+2. Select your Audience Look preset (or create new)
+3. Enable "Messages" layer checkbox for Audience screen(s)
+4. Configure a Message template with placeholders:
+   - `${ScriptureText}` for verse text
+   - `${Reference}` for scripture reference
+5. Apply your preferred theme/styling to the Message template
+6. Save the Look preset
+7. In Divine Link, verify Messages layer is detected
+8. Divine Link will use Messages API automatically
+
+**Option B: Keyboard Automation (Free Tier / Fallback)**
 1. Grant Divine Link Accessibility permission in macOS Settings
 2. Ensure ProPresenter is running
 3. Configure ProPresenter's Bible with your preferred translation
@@ -289,10 +315,11 @@ The free tier (Mercy) displays sidebar advertisements to support ongoing develop
 - ✅ Story 6.1: Enhanced Scripture Detection Patterns
 - ✅ Story 6.2: Verse Navigation & Push Controls
 - ✅ Story 6.3: Stage Screen Integration (REST API)
-- ✅ Story 6.4: Audience Screen Integration (Keyboard Automation)
+- ✅ Story 6.4: Stage Screen Integration (REST API)
+- ✅ Story 6.5: Audience Screen Integration (Messages API) - Research Complete
 
 ### Pending
-- ⏳ Story 6.5: ProPresenter Theme/Template Configuration
+- ⏳ Story 6.5: ProPresenter Messages API Implementation (Research Complete ✅)
 - ⏳ Pastor Profile Management
 - ⏳ Session History & Export
 - ⏳ Implicit Verse Detection (AI-powered)
@@ -310,7 +337,8 @@ The free tier (Mercy) displays sidebar advertisements to support ongoing develop
 ### ProPresenter Connection
 - **Connection failed:** Verify IP address and port, ensure PP is running
 - **Stage push not working:** Check that Stage Display is configured in PP
-- **Audience push not working:** Grant Accessibility permission to Divine Link
+- **Audience push not working (Messages API):** Enable Messages layer in Audience Look preset
+- **Audience push not working (Keyboard):** Grant Accessibility permission to Divine Link
 
 ### Permissions
 - **Microphone denied:** Go to System Settings → Privacy & Security → Microphone

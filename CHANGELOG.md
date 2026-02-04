@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-02-01
 
 ### Added
+
 - **Video & GIF Ad Support**: Ads now support animated content
   - YouTube video embeds (including Shorts) with auto-loop and muted playback
   - Animated GIF support with smooth looping
@@ -53,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Subscription status display
 
 ### Changed
+
 - **Ad Display Logic**: Replaced placeholder system with dynamic Supabase-served ads
   - Ads fetched from Supabase database
   - Format-based ad matching (square/portrait/banner)
@@ -63,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - "Remove Ads" button styled with blue background, white text
 
 ### Technical
+
 - Added `VideoPlayerView` component with URL type detection (YouTube/GIF/MP4)
 - Added `YouTubeWebView` for embedding YouTube videos via WKWebView with HTML injection
 - Added `GIFWebView` for animated GIF display via WKWebView
@@ -86,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.2] - 2026-01-31
 
 ### Added
+
 - **Sparkle Auto-Updates**: Automatic update checking and installation
   - Check for Updates in app menu (⌘U)
   - Updates tab in Settings for configuration
@@ -103,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Subscription Settings Tab**: Dedicated tab for subscription management
 
 ### Changed
+
 - **Default Font Size**: Changed from Small to Medium for better readability
   - New users now start with Medium (Level 2) font size
   - Users can reduce to Small (Level 1) if preferred
@@ -111,6 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Premium version: Original compact layout
 
 ### Improved
+
 - **Scripture Detection Validation**: Added stricter validation for verse numbers
   - Reject verse numbers above 176 (longest chapter is Psalm 119)
   - Reject invalid verse ranges (start > end)
@@ -118,6 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reject verse ranges spanning more than 30 verses (unusual)
 
 ### Technical
+
 - Added Sparkle framework for auto-updates
 - Added SparkleUpdaterController for update management
 - Added AdManager for subscription and ad state management
@@ -128,6 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.1] - 2026-01-27
 
 ### Added
+
 - **Accessibility Settings**: New Display settings tab with font size scaling (5 levels)
   - Level 1: Default size
   - Level 2: Medium (+2 points)
@@ -143,6 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Build Number Display**: Shows build number in About tab
 
 ### Improved
+
 - **Scripture Detection**: Better handling of numbered book prefixes (e.g., "1 Timothy")
   - Fixed issue where "1 to" was incorrectly matching to "1 Timothy"
 - **ProPresenter Integration**: More robust keyboard automation
@@ -151,6 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fallback mechanisms for accessibility API limitations
 
 ### Fixed
+
 - Fixed AXValue and AXUIElement type casting issues in macOS Accessibility APIs
 - Fixed `kAXSearchFieldRole` reference (using string literal instead)
 - Improved scripture parser to reject excluded words with number prefixes
@@ -158,6 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-01-17
 
 ### Added
+
 - Initial release of Divine Link
 - **Live Speech-to-Text**: Real-time transcription of spoken words
 - **Scripture Detection**: Automatic detection of Bible verse references
@@ -172,7 +183,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transcript Editing**: Manual correction of misheard transcripts
 - **BlackHole Support**: System audio capture for stream monitoring
 - **Menu Bar Quick Access**: Quick access icon in macOS menu bar
-- **Settings Panels**: 
+- **Settings Panels**:
   - Audio input configuration
   - ProPresenter connection settings
   - Pastor profile management
@@ -192,6 +203,7 @@ Divine Link follows [Semantic Versioning](https://semver.org/):
 ## Release Notes Format
 
 Each release includes:
+
 - **Added**: New features
 - **Changed**: Changes to existing functionality
 - **Deprecated**: Features to be removed in future
