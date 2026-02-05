@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import os
+import AVFoundation
 
 // MARK: - Loggers
 
@@ -31,6 +32,7 @@ class DetectionPipeline: ObservableObject {
     let buffer: BufferManager
     let transcriptBuffer: TranscriptBuffer
     let correctionService: SpeechCorrectionService
+    let audioDeviceManager: AudioDeviceManager
     
     // MARK: - Private Properties
     
@@ -48,8 +50,22 @@ class DetectionPipeline: ObservableObject {
         self.buffer = BufferManager()
         self.transcriptBuffer = TranscriptBuffer()
         self.correctionService = SpeechCorrectionService.shared
+        self.audioDeviceManager = AudioDeviceManager()
         
         setupPipeline()
+        setupDeviceObserver()
+    }
+    
+    /// Observe device selection changes and apply to audio capture
+    private func setupDeviceObserver() {
+        audioDeviceManager.$selectedDevice
+            .compactMap { $0 }
+            .sink { [weak self] device in
+                guard let self = self else { return }
+                print("🎛️ [Pipeline] Device selection changed to: \(device.localizedName)")
+                let _ = self.audioCapture.setInputDevice(device)
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Pipeline Setup
@@ -84,13 +100,17 @@ class DetectionPipeline: ObservableObject {
     
     /// Start the detection pipeline
     func start() async {
+        print("🚀 [Pipeline] Starting detection pipeline...")
         Logger.pipeline.info("Starting detection pipeline...")
         
         // Check permissions
         let hasAudioPermission = await AudioCaptureService.checkPermission()
         let hasSpeechPermission = await transcription.requestPermission()
         
+        print("🔐 [Pipeline] Permissions - Audio: \(hasAudioPermission), Speech: \(hasSpeechPermission)")
+        
         guard hasAudioPermission && hasSpeechPermission else {
+            print("❌ [Pipeline] Missing permissions")
             Logger.pipeline.error("Missing permissions - audio: \(hasAudioPermission), speech: \(hasSpeechPermission)")
             return
         }
@@ -99,13 +119,28 @@ class DetectionPipeline: ObservableObject {
         transcriptBuffer.clear()
         detector.clearCache()
         
+        // Ensure device list is refreshed and apply saved device
+        await audioDeviceManager.refreshDevices()
+        if let selectedDevice = audioDeviceManager.selectedDevice {
+            print("🎛️ [Pipeline] Configuring input device: \(selectedDevice.localizedName)")
+            let deviceSet = audioCapture.setInputDevice(selectedDevice)
+            print("🎛️ [Pipeline] Device configured: \(deviceSet ? "✅ Success" : "⚠️ Failed, using default")")
+        } else {
+            print("⚠️ [Pipeline] No device selected, using system default")
+        }
+        
         // Start audio capture
+        print("🎤 [Pipeline] Starting audio capture...")
         audioCapture.start()
+        print("✅ [Pipeline] Audio capture started, isCapturing: \(audioCapture.isCapturing)")
         
         // Start transcription
+        print("🎙️ [Pipeline] Starting transcription...")
         transcription.start(with: audioCapture)
+        print("✅ [Pipeline] Transcription started, isTranscribing: \(transcription.isTranscribing)")
         
         isActive = true
+        print("✅ [Pipeline] Pipeline started successfully, isActive: \(isActive)")
         Logger.pipeline.info("Pipeline started successfully")
     }
     

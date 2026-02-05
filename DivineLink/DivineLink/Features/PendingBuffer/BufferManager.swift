@@ -24,11 +24,16 @@ struct PendingVerse: Identifiable, Equatable {
     let verses: [VerseItem]  // Individual verses for verse-by-verse display
     let translation: String
     let timestamp: Date
-    let confidence: Float
+    let detectionConfidence: DetectionConfidence  // Updated to use DetectionConfidence model
     let rawTranscript: String  // What was actually heard (for learning)
     var pushCount: Int = 0  // How many times this verse has been pushed
     var lastPushedAt: Date? = nil  // When it was last pushed
     var currentVerseIndex: Int = 0  // For verse-by-verse navigation
+    
+    /// Legacy confidence value for backwards compatibility
+    var confidence: Float {
+        Float(detectionConfidence.overall)
+    }
     
     /// Combined full text of all verses (for backwards compatibility)
     var fullText: String {
@@ -66,9 +71,36 @@ struct PendingVerse: Identifiable, Equatable {
         }
     }
     
+    /// Whether this is a low-confidence detection requiring verification
+    var isLowConfidence: Bool {
+        detectionConfidence.level == .low
+    }
+    
+    /// Whether this is a high-confidence detection
+    var isHighConfidence: Bool {
+        detectionConfidence.level == .high
+    }
+    
     // MARK: - Initialisers
     
-    /// New initialiser with individual verses
+    /// New initialiser with DetectionConfidence
+    init(
+        reference: ScriptureReference,
+        verses: [VerseItem],
+        translation: String,
+        timestamp: Date,
+        detectionConfidence: DetectionConfidence,
+        rawTranscript: String = ""
+    ) {
+        self.reference = reference
+        self.verses = verses
+        self.translation = translation
+        self.timestamp = timestamp
+        self.detectionConfidence = detectionConfidence
+        self.rawTranscript = rawTranscript
+    }
+    
+    /// Legacy initialiser with Float confidence (for backwards compatibility)
     init(
         reference: ScriptureReference,
         verses: [VerseItem],
@@ -81,7 +113,7 @@ struct PendingVerse: Identifiable, Equatable {
         self.verses = verses
         self.translation = translation
         self.timestamp = timestamp
-        self.confidence = confidence
+        self.detectionConfidence = DetectionConfidence.fromLegacy(confidence)
         self.rawTranscript = rawTranscript
     }
     
@@ -98,7 +130,7 @@ struct PendingVerse: Identifiable, Equatable {
         self.verses = [VerseItem(verseNumber: reference.verseStart, text: fullText)]
         self.translation = translation
         self.timestamp = timestamp
-        self.confidence = confidence
+        self.detectionConfidence = DetectionConfidence.fromLegacy(confidence)
         self.rawTranscript = rawTranscript
     }
     

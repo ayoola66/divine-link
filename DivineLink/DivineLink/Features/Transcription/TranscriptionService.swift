@@ -107,12 +107,16 @@ class TranscriptionService: ObservableObject {
     
     /// Start transcribing audio from the given audio capture service
     func start(with audioCapture: AudioCaptureService) {
+        print("🎙️ [Transcription] Starting transcription service...")
+        
         guard authorizationStatus == .authorized else {
+            print("❌ [Transcription] Permission denied")
             error = .permissionDenied
             return
         }
         
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+            print("❌ [Transcription] Recognizer not available")
             error = .recognizerNotAvailable
             return
         }
@@ -129,6 +133,7 @@ class TranscriptionService: ObservableObject {
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         
         guard let recognitionRequest = recognitionRequest else {
+            print("❌ [Transcription] Failed to create recognition request")
             error = .requestCreationFailed
             return
         }
@@ -136,6 +141,7 @@ class TranscriptionService: ObservableObject {
         // Configure request
         recognitionRequest.shouldReportPartialResults = true
         recognitionRequest.requiresOnDeviceRecognition = requiresOnDevice
+        print("📝 [Transcription] Recognition request created, onDevice: \(requiresOnDevice)")
         
         // Add custom vocabulary if available
         configureCustomVocabulary(request: recognitionRequest)
@@ -144,11 +150,13 @@ class TranscriptionService: ObservableObject {
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             self?.handleRecognitionResult(result: result, error: error)
         }
+        print("✅ [Transcription] Recognition task started")
         
         // Subscribe to audio buffers
         setupAudioBufferSubscription(audioCapture: audioCapture)
         
         isTranscribing = true
+        print("✅ [Transcription] Transcription service started successfully")
     }
     
     /// Stop transcribing
@@ -167,16 +175,50 @@ class TranscriptionService: ObservableObject {
     // MARK: - Audio Buffer Handling
     
     private var audioSubscription: AnyCancellable?
+    private var receivedBufferCount = 0
     
     private func setupAudioBufferSubscription(audioCapture: AudioCaptureService) {
+        print("🔊 [Transcription] Setting up audio buffer subscription")
+        receivedBufferCount = 0
         audioSubscription = audioCapture.audioBufferPublisher
             .sink { [weak self] buffer in
                 self?.appendAudioBuffer(buffer)
             }
+        print("✅ [Transcription] Audio buffer subscription established")
     }
     
     /// Append audio buffer to the recognition request
     func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        receivedBufferCount += 1
+        
+        // Log first buffer with format details
+        if receivedBufferCount == 1 {
+            let format = buffer.format
+            let frameCount = buffer.frameLength
+            
+            // Calculate RMS to verify audio data
+            var rms: Float = 0
+            if let channelData = buffer.floatChannelData?[0], frameCount > 0 {
+                var sum: Float = 0
+                for i in 0..<Int(frameCount) {
+                    sum += channelData[i] * channelData[i]
+                }
+                rms = sqrt(sum / Float(frameCount))
+            }
+            
+            print("🎉 [Transcription] First audio buffer received!")
+            print("   Format: \(format.channelCount)ch, \(Int(format.sampleRate))Hz")
+            print("   Frames: \(frameCount), RMS: \(rms)")
+        } else if receivedBufferCount % 100 == 0 {
+            print("📊 [Transcription] Received \(receivedBufferCount) audio buffers")
+        }
+        
+        guard recognitionRequest != nil else {
+            if receivedBufferCount <= 5 {
+                print("⚠️ [Transcription] Recognition request is nil, cannot append buffer (\(receivedBufferCount))")
+            }
+            return
+        }
         recognitionRequest?.append(buffer)
     }
     
@@ -184,13 +226,18 @@ class TranscriptionService: ObservableObject {
     
     private func handleRecognitionResult(result: SFSpeechRecognitionResult?, error: Error?) {
         if let error = error {
+            print("❌ [Transcription] Recognition error: \(error.localizedDescription)")
             handleRecognitionError(error)
             return
         }
         
-        guard let result = result else { return }
+        guard let result = result else {
+            print("⚠️ [Transcription] Result is nil")
+            return
+        }
         
         let newTranscript = result.bestTranscription.formattedString
+        print("📝 [Transcription] Received: \"\(newTranscript)\" (isFinal: \(result.isFinal))")
         
         // Only update if transcript changed
         if newTranscript != lastTranscript {

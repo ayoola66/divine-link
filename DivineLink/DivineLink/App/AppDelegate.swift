@@ -20,6 +20,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    func applicationWillTerminate(_ notification: Notification) {
+        // Auto-save any active session before quitting
+        Task { @MainActor in
+            if ServiceSessionManager.shared.currentSession != nil {
+                print("[AppDelegate] Auto-saving active session before quit...")
+                ServiceSessionManager.shared.endCurrentSession()
+            }
+        }
+    }
+    
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Keep app running when window is closed (can reopen from menu bar)
         return false

@@ -1,6 +1,11 @@
 import Foundation
 import SQLite3
 
+// MARK: - SQLite Helper
+
+/// SQLITE_TRANSIENT tells SQLite to make its own copy of the string
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
 // MARK: - Service Archive
 
 /// Manages persistent storage of service sessions using SQLite
@@ -15,6 +20,26 @@ class ServiceArchive {
     private var db: OpaquePointer?
     private let retentionDays = 90
     private let dbName = "ServiceHistory.db"
+    
+    // MARK: - Helper Methods
+    
+    /// Safely bind a Swift String to a SQLite statement
+    private func bindText(_ stmt: OpaquePointer?, index: Int32, value: String) {
+        _ = value.withCString { cString in
+            sqlite3_bind_text(stmt, index, cString, -1, SQLITE_TRANSIENT)
+        }
+    }
+    
+    /// Safely bind an optional String to a SQLite statement (null if nil)
+    private func bindTextOrNull(_ stmt: OpaquePointer?, index: Int32, value: String?) {
+        if let value = value {
+            _ = value.withCString { cString in
+                sqlite3_bind_text(stmt, index, cString, -1, SQLITE_TRANSIENT)
+            }
+        } else {
+            sqlite3_bind_null(stmt, index)
+        }
+    }
     
     // MARK: - Initialisation
     
@@ -106,12 +131,34 @@ class ServiceArchive {
     
     /// Save a completed session to the archive
     func save(_ session: ServiceSession) {
+        print("[ServiceArchive] Attempting to save session: \(session.name), id: \(session.id)")
+        
         guard session.endTime != nil else {
-            print("[ServiceArchive] Cannot save active session")
+            print("[ServiceArchive] Cannot save active session - endTime is nil")
+            return
+        }
+        
+        guard db != nil else {
+            print("[ServiceArchive] ERROR: Database is not open!")
             return
         }
         
         let formatter = ISO8601DateFormatter()
+        
+        // Prepare all string values upfront to ensure they persist during binding
+        let idString = session.id.uuidString
+        let nameString = session.name
+        let serviceTypeString = session.serviceType
+        let dateString = formatter.string(from: session.date)
+        let pastorIdString = session.pastorId?.uuidString
+        let startTimeString = formatter.string(from: session.startTime)
+        let endTimeString = session.endTime.map { formatter.string(from: $0) }
+        
+        var snippetsString: String?
+        if let snippetsData = try? JSONEncoder().encode(session.transcriptSnippets),
+           let encoded = String(data: snippetsData, encoding: .utf8) {
+            snippetsString = encoded
+        }
         
         let insertSessionSQL = """
             INSERT OR REPLACE INTO service_sessions 
@@ -122,36 +169,23 @@ class ServiceArchive {
         var stmt: OpaquePointer?
         
         if sqlite3_prepare_v2(db, insertSessionSQL, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, session.id.uuidString, -1, nil)
-            sqlite3_bind_text(stmt, 2, session.name, -1, nil)
-            sqlite3_bind_text(stmt, 3, session.serviceType, -1, nil)
-            sqlite3_bind_text(stmt, 4, formatter.string(from: session.date), -1, nil)
+            bindText(stmt, index: 1, value: idString)
+            bindText(stmt, index: 2, value: nameString)
+            bindText(stmt, index: 3, value: serviceTypeString)
+            bindText(stmt, index: 4, value: dateString)
+            bindTextOrNull(stmt, index: 5, value: pastorIdString)
+            bindText(stmt, index: 6, value: startTimeString)
+            bindTextOrNull(stmt, index: 7, value: endTimeString)
+            bindTextOrNull(stmt, index: 8, value: snippetsString)
             
-            if let pastorId = session.pastorId {
-                sqlite3_bind_text(stmt, 5, pastorId.uuidString, -1, nil)
+            let result = sqlite3_step(stmt)
+            if result != SQLITE_DONE {
+                print("[ServiceArchive] Error saving session: \(String(cString: sqlite3_errmsg(db))) (code: \(result))")
             } else {
-                sqlite3_bind_null(stmt, 5)
+                print("[ServiceArchive] Session INSERT successful for id: \(idString)")
             }
-            
-            sqlite3_bind_text(stmt, 6, formatter.string(from: session.startTime), -1, nil)
-            
-            if let endTime = session.endTime {
-                sqlite3_bind_text(stmt, 7, formatter.string(from: endTime), -1, nil)
-            } else {
-                sqlite3_bind_null(stmt, 7)
-            }
-            
-            // Encode transcript snippets as JSON
-            if let snippetsData = try? JSONEncoder().encode(session.transcriptSnippets),
-               let snippetsString = String(data: snippetsData, encoding: .utf8) {
-                sqlite3_bind_text(stmt, 8, snippetsString, -1, nil)
-            } else {
-                sqlite3_bind_null(stmt, 8)
-            }
-            
-            if sqlite3_step(stmt) != SQLITE_DONE {
-                print("[ServiceArchive] Error saving session: \(String(cString: sqlite3_errmsg(db)))")
-            }
+        } else {
+            print("[ServiceArchive] Error preparing INSERT: \(String(cString: sqlite3_errmsg(db)))")
         }
         sqlite3_finalize(stmt)
         
@@ -160,11 +194,20 @@ class ServiceArchive {
             saveScripture(scripture, sessionId: session.id)
         }
         
-        print("[ServiceArchive] Saved session: \(session.name)")
+        print("[ServiceArchive] Saved session: \(session.name) with \(session.detectedScriptures.count) scriptures")
     }
     
     private func saveScripture(_ scripture: DetectedScripture, sessionId: UUID) {
         let formatter = ISO8601DateFormatter()
+        
+        // Prepare all string values upfront
+        let idString = scripture.id.uuidString
+        let sessionIdString = sessionId.uuidString
+        let referenceString = scripture.reference
+        let verseTextString = scripture.verseText
+        let translationString = scripture.translation
+        let timestampString = formatter.string(from: scripture.timestamp)
+        let rawTranscriptString = scripture.rawTranscript
         
         let insertSQL = """
             INSERT OR REPLACE INTO detected_scriptures 
@@ -175,14 +218,14 @@ class ServiceArchive {
         var stmt: OpaquePointer?
         
         if sqlite3_prepare_v2(db, insertSQL, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, scripture.id.uuidString, -1, nil)
-            sqlite3_bind_text(stmt, 2, sessionId.uuidString, -1, nil)
-            sqlite3_bind_text(stmt, 3, scripture.reference, -1, nil)
-            sqlite3_bind_text(stmt, 4, scripture.verseText, -1, nil)
-            sqlite3_bind_text(stmt, 5, scripture.translation, -1, nil)
-            sqlite3_bind_text(stmt, 6, formatter.string(from: scripture.timestamp), -1, nil)
+            bindText(stmt, index: 1, value: idString)
+            bindText(stmt, index: 2, value: sessionIdString)
+            bindText(stmt, index: 3, value: referenceString)
+            bindText(stmt, index: 4, value: verseTextString)
+            bindText(stmt, index: 5, value: translationString)
+            bindText(stmt, index: 6, value: timestampString)
             sqlite3_bind_int(stmt, 7, scripture.wasPushed ? 1 : 0)
-            sqlite3_bind_text(stmt, 8, scripture.rawTranscript, -1, nil)
+            bindText(stmt, index: 8, value: rawTranscriptString)
             sqlite3_bind_double(stmt, 9, Double(scripture.confidence))
             
             if sqlite3_step(stmt) != SQLITE_DONE {
@@ -196,6 +239,13 @@ class ServiceArchive {
     
     /// Load all archived sessions
     func loadAll() -> [ServiceSession] {
+        print("[ServiceArchive] Loading all sessions...")
+        
+        guard db != nil else {
+            print("[ServiceArchive] ERROR: Database is not open for loadAll!")
+            return []
+        }
+        
         var sessions: [ServiceSession] = []
         let formatter = ISO8601DateFormatter()
         
@@ -221,18 +271,17 @@ class ServiceArchive {
                 let name = String(cString: nameStr)
                 let serviceType = String(cString: typeStr)
                 let date = formatter.date(from: String(cString: dateStr)) ?? Date()
-                // Note: startTime/endTime are auto-set by ServiceSession init
-                // We parse but don't use them since the model auto-generates
-                _ = formatter.date(from: String(cString: startStr)) // startTime (unused)
+                let startTime = formatter.date(from: String(cString: startStr)) ?? Date()
                 
                 var pastorId: UUID?
                 if let pastorStr = sqlite3_column_text(stmt, 4) {
                     pastorId = UUID(uuidString: String(cString: pastorStr))
                 }
                 
-                // Parse endTime but session model manages this
+                // Parse endTime - critical for showing duration correctly
+                var endTime: Date?
                 if let endStr = sqlite3_column_text(stmt, 6) {
-                    _ = formatter.date(from: String(cString: endStr)) // endTime (unused)
+                    endTime = formatter.date(from: String(cString: endStr))
                 }
                 
                 var snippets: [String] = []
@@ -242,29 +291,34 @@ class ServiceArchive {
                     snippets = decoded
                 }
                 
-                var session = ServiceSession(
+                // Use the full initializer to preserve startTime and endTime
+                let session = ServiceSession(
                     id: id,
                     name: name,
                     serviceType: serviceType,
                     date: date,
-                    pastorId: pastorId
+                    pastorId: pastorId,
+                    startTime: startTime,
+                    endTime: endTime,
+                    detectedScriptures: loadScriptures(for: id),
+                    transcriptSnippets: snippets
                 )
-                
-                // Load scriptures for this session
-                session.detectedScriptures = loadScriptures(for: id)
-                session.transcriptSnippets = snippets
                 
                 sessions.append(session)
             }
+        } else {
+            print("[ServiceArchive] ERROR preparing loadAll query: \(String(cString: sqlite3_errmsg(db)))")
         }
         sqlite3_finalize(stmt)
         
+        print("[ServiceArchive] Loaded \(sessions.count) sessions from database")
         return sessions
     }
     
     private func loadScriptures(for sessionId: UUID) -> [DetectedScripture] {
         var scriptures: [DetectedScripture] = []
         let formatter = ISO8601DateFormatter()
+        let sessionIdString = sessionId.uuidString
         
         let querySQL = """
             SELECT id, reference, verse_text, translation, timestamp, was_pushed, raw_transcript, confidence
@@ -276,31 +330,35 @@ class ServiceArchive {
         var stmt: OpaquePointer?
         
         if sqlite3_prepare_v2(db, querySQL, -1, &stmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, nil)
+            bindText(stmt, index: 1, value: sessionIdString)
             
             while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let refStr = sqlite3_column_text(stmt, 1),
+                guard let idStr = sqlite3_column_text(stmt, 0),
+                      let refStr = sqlite3_column_text(stmt, 1),
                       let timestampStr = sqlite3_column_text(stmt, 4) else {
                     continue
                 }
                 
+                let id = UUID(uuidString: String(cString: idStr)) ?? UUID()
                 let reference = String(cString: refStr)
                 let verseText = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
                 let translation = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? "KJV"
-                // Note: timestamp parsed but not used - DetectedScripture auto-sets it
-                _ = formatter.date(from: String(cString: timestampStr)) // stored timestamp
+                let timestamp = formatter.date(from: String(cString: timestampStr)) ?? Date()
                 let wasPushed = sqlite3_column_int(stmt, 5) == 1
                 let rawTranscript = sqlite3_column_text(stmt, 6).map { String(cString: $0) } ?? ""
                 let confidence = Float(sqlite3_column_double(stmt, 7))
                 
-                var scripture = DetectedScripture(
+                // Use the full initializer to preserve id and timestamp
+                let scripture = DetectedScripture(
+                    id: id,
                     reference: reference,
                     verseText: verseText,
                     translation: translation,
+                    timestamp: timestamp,
+                    wasPushed: wasPushed,
                     rawTranscript: rawTranscript,
                     confidence: confidence
                 )
-                scripture.wasPushed = wasPushed
                 
                 scriptures.append(scripture)
             }
@@ -327,7 +385,7 @@ class ServiceArchive {
         var deleteCount = 0
         
         if sqlite3_prepare_v2(db, countSQL, -1, &countStmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(countStmt, 1, cutoffString, -1, nil)
+            bindText(countStmt, index: 1, value: cutoffString)
             if sqlite3_step(countStmt) == SQLITE_ROW {
                 deleteCount = Int(sqlite3_column_int(countStmt, 0))
             }
@@ -342,7 +400,7 @@ class ServiceArchive {
                 """
             var scriptureStmt: OpaquePointer?
             if sqlite3_prepare_v2(db, deleteScripturesSQL, -1, &scriptureStmt, nil) == SQLITE_OK {
-                sqlite3_bind_text(scriptureStmt, 1, cutoffString, -1, nil)
+                bindText(scriptureStmt, index: 1, value: cutoffString)
                 sqlite3_step(scriptureStmt)
             }
             sqlite3_finalize(scriptureStmt)
@@ -351,7 +409,7 @@ class ServiceArchive {
             let deleteSessionsSQL = "DELETE FROM service_sessions WHERE date < ?;"
             var sessionStmt: OpaquePointer?
             if sqlite3_prepare_v2(db, deleteSessionsSQL, -1, &sessionStmt, nil) == SQLITE_OK {
-                sqlite3_bind_text(sessionStmt, 1, cutoffString, -1, nil)
+                bindText(sessionStmt, index: 1, value: cutoffString)
                 sqlite3_step(sessionStmt)
             }
             sqlite3_finalize(sessionStmt)
@@ -429,11 +487,13 @@ class ServiceArchive {
     
     /// Delete a session by ID
     func deleteSession(id: UUID) {
+        let idString = id.uuidString
+        
         // Delete scriptures first
         let deleteScripturesSQL = "DELETE FROM detected_scriptures WHERE session_id = ?;"
         var scriptureStmt: OpaquePointer?
         if sqlite3_prepare_v2(db, deleteScripturesSQL, -1, &scriptureStmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(scriptureStmt, 1, id.uuidString, -1, nil)
+            bindText(scriptureStmt, index: 1, value: idString)
             sqlite3_step(scriptureStmt)
         }
         sqlite3_finalize(scriptureStmt)
@@ -442,7 +502,7 @@ class ServiceArchive {
         let deleteSessionSQL = "DELETE FROM service_sessions WHERE id = ?;"
         var sessionStmt: OpaquePointer?
         if sqlite3_prepare_v2(db, deleteSessionSQL, -1, &sessionStmt, nil) == SQLITE_OK {
-            sqlite3_bind_text(sessionStmt, 1, id.uuidString, -1, nil)
+            bindText(sessionStmt, index: 1, value: idString)
             sqlite3_step(sessionStmt)
         }
         sqlite3_finalize(sessionStmt)

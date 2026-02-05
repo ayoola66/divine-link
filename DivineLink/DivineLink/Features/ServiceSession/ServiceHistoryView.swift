@@ -136,6 +136,7 @@ struct ServiceHistoryView: View {
     
     private func loadSessions() {
         sessions = ServiceArchive.shared.loadAll()
+        print("[ServiceHistory] Loaded \(sessions.count) sessions from archive")
     }
     
     private func deleteSession(_ session: ServiceSession) {

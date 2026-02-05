@@ -8,11 +8,13 @@ struct MainView: View {
     @StateObject private var ppClient = ProPresenterClient()
     @ObservedObject private var accessibilitySettings = AccessibilitySettings.shared
     @ObservedObject private var adManager = AdManager.shared
+    @ObservedObject private var panicService = PanicButtonService.shared
     @State private var hasPermission = true
     @State private var showStatus = false
     @State private var showNewServiceSheet = false
     @State private var selectedVerseId: UUID? = nil
     @State private var pushCoordinator: PushActionCoordinator?
+    @State private var f12EventMonitor: Any?
     
     // Bible translation selection
     @AppStorage("selectedTranslation") private var selectedTranslation: String = "KJV"
@@ -121,10 +123,13 @@ struct MainView: View {
             if let url = ppSettings.connectionURL {
                 ppClient.configure(baseURL: url)
             }
+            
+            // Configure panic button service with dependencies
+            panicService.configure(ppClient: ppClient, buffer: pipeline.buffer)
         }
         .onKeyPress(.space) {
-            // Only toggle if not editing transcript
-            guard !isEditingTranscript else { return .ignored }
+            // Only toggle if not editing transcript or in a modal sheet
+            guard !isEditingTranscript && !showNewServiceSheet else { return .ignored }
             Task {
                 await pipeline.toggle()
             }
@@ -137,6 +142,50 @@ struct MainView: View {
         .onKeyPress(.delete) {
             deleteSelectedVerse()
             return .handled
+        }
+        // Note: Cmd+Escape panic shortcut is handled in setupF12KeyHandler via NSEvent
+        // Clear feedback overlay
+        .overlay {
+            ClearFeedbackOverlay(service: panicService)
+        }
+        // F12 global shortcut handler using NSEvent monitor
+        .onAppear {
+            setupF12KeyHandler()
+        }
+        .onDisappear {
+            removeF12KeyHandler()
+        }
+    }
+    
+    // MARK: - F12 Key Handler
+    
+    private func setupF12KeyHandler() {
+        // Monitor for F12 key press and Cmd+Escape (local events when window is focused)
+        f12EventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // F12 key code is 111
+            if event.keyCode == 111 {
+                Task { @MainActor in
+                    await panicService.triggerClear()
+                }
+                return nil // Consume the event
+            }
+            
+            // Cmd+Escape: keyCode 53 is Escape
+            if event.keyCode == 53 && event.modifierFlags.contains(.command) {
+                Task { @MainActor in
+                    await panicService.triggerClear()
+                }
+                return nil // Consume the event
+            }
+            
+            return event // Pass through other events
+        }
+    }
+    
+    private func removeF12KeyHandler() {
+        if let monitor = f12EventMonitor {
+            NSEvent.removeMonitor(monitor)
+            f12EventMonitor = nil
         }
     }
     
@@ -246,6 +295,11 @@ struct MainView: View {
             .controlSize(.small)
             .disabled(!hasPermission)
             .help("Space to toggle")
+            
+            // Panic/Clear button
+            PanicButton(service: panicService) {
+                Task { await panicService.triggerClear() }
+            }
             
             Spacer()
             
@@ -704,6 +758,9 @@ struct MainView: View {
                 color: .orange
             )
             
+            // Panic button status indicator (shows clearing/cleared states)
+            ClearStatusIndicator(service: panicService)
+            
             Spacer()
             
             // Toggle status panel
@@ -810,23 +867,27 @@ struct VerseRowView: View {
     let verse: PendingVerse
     let isSelected: Bool
     let onSelect: () -> Void
-    let onPushAll: () -> Void       // Push all verses to Stage
-    let onPushOne: () -> Void       // Push current verse to Stage
-    let onPushAudience: () -> Void  // Push to Audience screen via PP Bible
+    let onPushAll: () -> Void
+    let onPushOne: () -> Void
+    let onPushAudience: () -> Void
     let onDelete: () -> Void
-    let onNextVerse: () -> Void     // Navigate to next verse
-    let onPreviousVerse: () -> Void // Navigate to previous verse
-    let onSelectVerse: (Int) -> Void // Select specific verse by index
+    let onNextVerse: () -> Void
+    let onPreviousVerse: () -> Void
+    let onSelectVerse: (Int) -> Void
     
-    @ObservedObject private var accessibilitySettings = AccessibilitySettings.shared
+    @ObservedObject private var detectionSettings = DetectionSettings.shared
     @State private var isHovering = false
     @State private var isExpanded = false
     
-    /// Background colour based on state
+    private var isLowConfidenceBySettings: Bool {
+        detectionSettings.isLowConfidence(verse.detectionConfidence)
+    }
+    
     private var backgroundColor: Color {
         if verse.isPushed {
-            // Pushed verses get a green-tinted background
             return Color.green.opacity(isSelected ? 0.2 : 0.1)
+        } else if isLowConfidenceBySettings && detectionSettings.autoHoldLowConfidence {
+            return Color.orange.opacity(isSelected ? 0.15 : 0.08)
         } else if isSelected {
             return Color.divineBlue.opacity(0.1)
         } else if isHovering {
@@ -837,258 +898,308 @@ struct VerseRowView: View {
     }
     
     var body: some View {
+        rowContent
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(backgroundColor))
+            .overlay(rowBorder)
+            .contentShape(Rectangle())
+            .onTapGesture { onSelect() }
+            .onHover { isHovering = $0 }
+    }
+    
+    private var rowContent: some View {
         HStack(spacing: 8) {
-            // Pushed indicator
-            if verse.isPushed {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.green)
-                    .help("Pushed \(verse.pushCount) time\(verse.pushCount == 1 ? "" : "s")")
+            pushedIndicator
+            mainContentStack
+            actionButtonsSection
+        }
+    }
+    
+    @ViewBuilder
+    private var pushedIndicator: some View {
+        if verse.isPushed {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+                .help("Pushed \(verse.pushCount) time\(verse.pushCount == 1 ? "" : "s")")
+        }
+    }
+    
+    private var mainContentStack: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            referenceHeader
+            verseTextContent
+            lowConfidenceWarningSection
+        }
+    }
+    
+    private var referenceHeader: some View {
+        HStack {
+            Text(verse.displayReference)
+                .scaledFont(size: 13, weight: .semibold)
+                .foregroundStyle(verse.isPushed ? .green : (isSelected ? Color.divineBlue : .primary))
+            
+            if detectionSettings.showConfidenceIndicators {
+                ConfidenceIndicatorView(confidence: verse.detectionConfidence)
             }
             
-            // Main content
-            VStack(alignment: .leading, spacing: 4) {
-                // Reference and translation
-                HStack {
-                    Text(verse.displayReference)
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundStyle(verse.isPushed ? .green : (isSelected ? Color.divineBlue : .primary))
-                    
-                    // Multi-verse indicator
-                    if verse.isMultiVerse {
-                        Text("\(verse.verses.count) verses")
-                            .font(.caption2)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.blue.opacity(0.7), in: Capsule())
-                    }
-                    
-                    // Push count badge
-                    if verse.pushCount > 1 {
-                        Text("×\(verse.pushCount)")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.green, in: Capsule())
-                    }
-                    
-                    Spacer()
-                    
-                    // Expand/collapse for multi-verse
-                    if verse.isMultiVerse {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isExpanded.toggle()
-                            }
-                        } label: {
-                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help(isExpanded ? "Collapse verses" : "Expand verses")
-                    }
-                    
-                    Text(verse.translation)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    
-                    // Timestamp
-                    Text(verse.timestamp, style: .time)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                
-                // Verse text - different display based on multi-verse and expansion
-                if verse.isMultiVerse && isExpanded {
-                    // Expanded view: show each verse individually with current highlighted
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(verse.verses.enumerated()), id: \.element.id) { index, verseItem in
-                            let isCurrent = index == verse.currentVerseIndex
-                            
-                            HStack(alignment: .top, spacing: 6) {
-                                // Verse number badge - highlighted if current
-                                Text("v\(verseItem.verseNumber)")
-                                    .font(.caption2)
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        isCurrent ? Color.divineGold : Color.divineBlue.opacity(0.8),
-                                        in: RoundedRectangle(cornerRadius: 4)
-                                    )
-                                
-                                // Verse text
-                                Text(verseItem.text)
-                                    .font(.caption)
-                                    .foregroundStyle(isCurrent ? .primary : .secondary)
-                                    .fontWeight(isCurrent ? .medium : .regular)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(.vertical, 2)
-                            .padding(.horizontal, 4)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(isCurrent ? Color.divineGold.opacity(0.1) : Color.clear)
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                onSelectVerse(index)
-                            }
-                        }
-                    }
-                    .padding(.top, 4)
-                } else if verse.isMultiVerse {
-                    // Collapsed multi-verse: show preview
-                    Text("v\(verse.verses.first?.verseNumber ?? 0): \(verse.verses.first?.text ?? "")...")
-                        .scaledBodyFont()
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    // Single verse
-                    Text(verse.fullText)
-                        .scaledBodyFont()
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            multiVerseBadge
+            pushCountBadge
+            Spacer()
+            expandCollapseButton
+            translationAndTimestamp
+        }
+    }
+    
+    @ViewBuilder
+    private var multiVerseBadge: some View {
+        if verse.isMultiVerse {
+            Text("\(verse.verses.count) verses")
+                .font(.caption2)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Color.blue.opacity(0.7), in: Capsule())
+        }
+    }
+    
+    @ViewBuilder
+    private var pushCountBadge: some View {
+        if verse.pushCount > 1 {
+            Text("×\(verse.pushCount)")
+                .font(.caption2)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.green, in: Capsule())
+        }
+    }
+    
+    @ViewBuilder
+    private var expandCollapseButton: some View {
+        if verse.isMultiVerse {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
-            
-            // Action buttons (show on hover or selection)
-            if isHovering || isSelected {
-                if verse.isMultiVerse {
-                    // Multi-verse: show navigation and push options
-                    HStack(spacing: 4) {
-                        // Previous verse button
-                        Button {
-                            onPreviousVerse()
-                        } label: {
-                            Image(systemName: "chevron.left.circle")
-                                .foregroundStyle(verse.currentVerseIndex > 0 ? Color.divineBlue : .gray.opacity(0.5))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(verse.currentVerseIndex <= 0)
-                        .help("Previous verse")
-                        
-                        // Current verse indicator
-                        Text("\(verse.currentVerseIndex + 1)/\(verse.verses.count)")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 30)
-                        
-                        // Next verse button
-                        Button {
-                            onNextVerse()
-                        } label: {
-                            Image(systemName: "chevron.right.circle")
-                                .foregroundStyle(verse.currentVerseIndex < verse.verses.count - 1 ? Color.divineBlue : .gray.opacity(0.5))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(verse.currentVerseIndex >= verse.verses.count - 1)
-                        .help("Next verse")
-                        
-                        Divider()
-                            .frame(height: 14)
-                        
-                        // Push one (current verse) to Stage
-                        Button {
-                            onPushOne()
-                        } label: {
-                            Image(systemName: "1.circle.fill")
-                                .foregroundStyle(Color.divineGold)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Push verse \(verse.currentVerse?.verseNumber ?? 0) to Stage")
-                        
-                        // Push all verses to Stage
-                        Button {
-                            onPushAll()
-                        } label: {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .foregroundStyle(Color.divineGold)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Push all \(verse.verses.count) verses to Stage")
-                        
-                        Divider()
-                            .frame(height: 14)
-                        
-                        // Push to Audience screen (via PP Bible)
-                        Button {
-                            onPushAudience()
-                        } label: {
-                            Image(systemName: "person.3.fill")
-                                .foregroundStyle(Color.divineBlue)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Push to Audience (PP Bible)")
-                        
-                        Button {
-                            onDelete()
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundStyle(.red.opacity(0.7))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Delete")
-                    }
-                } else {
-                    // Single verse: Stage + Audience push
-                    HStack(spacing: 4) {
-                        // Stage push
-                        Button {
-                            onPushAll()
-                        } label: {
-                            Image(systemName: verse.isPushed ? "arrow.up.circle" : "arrow.up.circle.fill")
-                                .foregroundStyle(Color.divineGold)
-                        }
-                        .buttonStyle(.plain)
-                        .help(verse.isPushed ? "Push to Stage again" : "Push to Stage")
-                        
-                        // Audience push
-                        Button {
-                            onPushAudience()
-                        } label: {
-                            Image(systemName: "person.3.fill")
-                                .foregroundStyle(Color.divineBlue)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Push to Audience (PP Bible)")
-                        
-                        Button {
-                            onDelete()
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundStyle(.red.opacity(0.7))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Delete")
-                    }
-                }
+            .buttonStyle(.plain)
+            .help(isExpanded ? "Collapse verses" : "Expand verses")
+        }
+    }
+    
+    private var translationAndTimestamp: some View {
+        HStack(spacing: 4) {
+            Text(verse.translation)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text(verse.timestamp, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+    
+    @ViewBuilder
+    private var verseTextContent: some View {
+        if verse.isMultiVerse && isExpanded {
+            expandedVersesView
+        } else if verse.isMultiVerse {
+            collapsedMultiVersePreview
+        } else {
+            singleVerseText
+        }
+    }
+    
+    private var expandedVersesView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(verse.verses.enumerated()), id: \.element.id) { index, verseItem in
+                ExpandedVerseItemView(
+                    verseItem: verseItem,
+                    isCurrent: index == verse.currentVerseIndex,
+                    onTap: { onSelectVerse(index) }
+                )
             }
         }
-        .padding(8)
+        .padding(.top, 4)
+    }
+    
+    private var collapsedMultiVersePreview: some View {
+        Text("v\(verse.verses.first?.verseNumber ?? 0): \(verse.verses.first?.text ?? "")...")
+            .scaledBodyFont()
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private var singleVerseText: some View {
+        let dimmed = isLowConfidenceBySettings && detectionSettings.autoHoldLowConfidence
+        return Text(verse.fullText)
+            .scaledBodyFont()
+            .foregroundStyle(Color.secondary.opacity(dimmed ? 0.7 : 1.0))
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    @ViewBuilder
+    private var lowConfidenceWarningSection: some View {
+        if isLowConfidenceBySettings && detectionSettings.autoHoldLowConfidence {
+            LowConfidenceWarning(confidence: verse.detectionConfidence)
+        }
+    }
+    
+    @ViewBuilder
+    private var actionButtonsSection: some View {
+        if isHovering || isSelected {
+            if verse.isMultiVerse {
+                multiVerseActionButtons
+            } else {
+                singleVerseActionButtons
+            }
+        }
+    }
+    
+    private var multiVerseActionButtons: some View {
+        HStack(spacing: 4) {
+            navigationButtons
+            Divider().frame(height: 14)
+            pushButtons
+            Divider().frame(height: 14)
+            audienceAndDeleteButtons
+        }
+    }
+    
+    private var navigationButtons: some View {
+        HStack(spacing: 4) {
+            Button { onPreviousVerse() } label: {
+                Image(systemName: "chevron.left.circle")
+                    .foregroundStyle(verse.currentVerseIndex > 0 ? Color.divineBlue : .gray.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .disabled(verse.currentVerseIndex <= 0)
+            .help("Previous verse")
+            
+            Text("\(verse.currentVerseIndex + 1)/\(verse.verses.count)")
+                .font(.caption2)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+                .frame(width: 30)
+            
+            Button { onNextVerse() } label: {
+                Image(systemName: "chevron.right.circle")
+                    .foregroundStyle(verse.currentVerseIndex < verse.verses.count - 1 ? Color.divineBlue : .gray.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .disabled(verse.currentVerseIndex >= verse.verses.count - 1)
+            .help("Next verse")
+        }
+    }
+    
+    private var pushButtons: some View {
+        HStack(spacing: 4) {
+            Button { onPushOne() } label: {
+                Image(systemName: "1.circle.fill").foregroundStyle(Color.divineGold)
+            }
+            .buttonStyle(.plain)
+            .help("Push verse \(verse.currentVerse?.verseNumber ?? 0) to Stage")
+            
+            Button { onPushAll() } label: {
+                Image(systemName: "arrow.up.circle.fill").foregroundStyle(Color.divineGold)
+            }
+            .buttonStyle(.plain)
+            .help("Push all \(verse.verses.count) verses to Stage")
+        }
+    }
+    
+    private var audienceAndDeleteButtons: some View {
+        HStack(spacing: 4) {
+            Button { onPushAudience() } label: {
+                Image(systemName: "person.3.fill").foregroundStyle(Color.divineBlue)
+            }
+            .buttonStyle(.plain)
+            .help("Push to Audience (PP Bible)")
+            
+            Button { onDelete() } label: {
+                Image(systemName: "trash").foregroundStyle(.red.opacity(0.7))
+            }
+            .buttonStyle(.plain)
+            .help("Delete")
+        }
+    }
+    
+    private var singleVerseActionButtons: some View {
+        HStack(spacing: 4) {
+            Button { onPushAll() } label: {
+                Image(systemName: verse.isPushed ? "arrow.up.circle" : "arrow.up.circle.fill")
+                    .foregroundStyle(Color.divineGold)
+            }
+            .buttonStyle(.plain)
+            .help(verse.isPushed ? "Push to Stage again" : "Push to Stage")
+            
+            Button { onPushAudience() } label: {
+                Image(systemName: "person.3.fill").foregroundStyle(Color.divineBlue)
+            }
+            .buttonStyle(.plain)
+            .help("Push to Audience (PP Bible)")
+            
+            Button { onDelete() } label: {
+                Image(systemName: "trash").foregroundStyle(.red.opacity(0.7))
+            }
+            .buttonStyle(.plain)
+            .help("Delete")
+        }
+    }
+    
+    private var rowBorder: some View {
+        let borderColor: Color = {
+            if isSelected {
+                return Color.divineGold.opacity(0.5)
+            } else if verse.isPushed {
+                return Color.green.opacity(0.3)
+            } else {
+                return Color.clear
+            }
+        }()
+        return RoundedRectangle(cornerRadius: 6).stroke(borderColor, lineWidth: 1)
+    }
+}
+
+// MARK: - Expanded Verse Item View (helper for VerseRowView)
+
+private struct ExpandedVerseItemView: View {
+    let verseItem: VerseItem
+    let isCurrent: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("v\(verseItem.verseNumber)")
+                .font(.caption2)
+                .fontWeight(.bold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    isCurrent ? Color.divineGold : Color.divineBlue.opacity(0.8),
+                    in: RoundedRectangle(cornerRadius: 4)
+                )
+            
+            Text(verseItem.text)
+                .font(.caption)
+                .foregroundStyle(isCurrent ? .primary : .secondary)
+                .fontWeight(isCurrent ? .medium : .regular)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(backgroundColor)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.divineGold.opacity(0.5) : (verse.isPushed ? Color.green.opacity(0.3) : Color.clear), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isCurrent ? Color.divineGold.opacity(0.1) : Color.clear)
         )
         .contentShape(Rectangle())
-        .onTapGesture {
-            onSelect()
-        }
-        .onHover { hovering in
-            isHovering = hovering
-        }
+        .onTapGesture { onTap() }
     }
 }
 

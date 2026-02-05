@@ -62,15 +62,41 @@ class ProPresenterSettings: ObservableObject {
     
     // MARK: - Published Properties
     
+    /// IP address of the ProPresenter machine
     @Published var ipAddress: String {
         didSet { save() }
     }
     
+    /// Port for the ProPresenter API (default 50233)
     @Published var port: Int {
         didSet { save() }
     }
     
+    /// Enable Stage Display output via HTTP REST API
+    @Published var stageDisplayEnabled: Bool {
+        didSet { save() }
+    }
+    
+    /// Enable Messages API output via WebSocket (Premium feature)
+    @Published var messagesAPIEnabled: Bool {
+        didSet { save() }
+    }
+    
+    /// Enable keyboard automation for Audience display (fallback when Messages API unavailable)
+    @Published var keyboardAutomationEnabled: Bool {
+        didSet { save() }
+    }
+    
+    /// Auto-fallback to keyboard automation if WebSocket fails
+    @Published var autoFallbackEnabled: Bool {
+        didSet { save() }
+    }
+    
+    /// Current connection status
     @Published var connectionStatus: ConnectionStatus = .unknown
+    
+    /// WebSocket connection status (separate from HTTP)
+    @Published var webSocketStatus: ConnectionStatus = .disconnected
     
     // MARK: - Private Properties
     
@@ -79,14 +105,26 @@ class ProPresenterSettings: ObservableObject {
     private enum Keys {
         static let ipAddress = "propresenter.ipAddress"
         static let port = "propresenter.port"
+        static let stageDisplayEnabled = "propresenter.stageDisplayEnabled"
+        static let messagesAPIEnabled = "propresenter.messagesAPIEnabled"
+        static let keyboardAutomationEnabled = "propresenter.keyboardAutomationEnabled"
+        static let autoFallbackEnabled = "propresenter.autoFallbackEnabled"
     }
     
     // MARK: - Initialisation
     
     init() {
         self.ipAddress = defaults.string(forKey: Keys.ipAddress) ?? "127.0.0.1"
-        self.port = defaults.integer(forKey: Keys.port)
-        if self.port == 0 { self.port = 50233 }  // ProPresenter 7 default API port
+        
+        // Load port with default fallback
+        let savedPort = defaults.integer(forKey: Keys.port)
+        self.port = savedPort == 0 ? 50233 : savedPort  // ProPresenter 7 default API port
+        
+        // Default to Stage Display enabled, others disabled
+        self.stageDisplayEnabled = defaults.object(forKey: Keys.stageDisplayEnabled) as? Bool ?? true
+        self.messagesAPIEnabled = defaults.bool(forKey: Keys.messagesAPIEnabled)
+        self.keyboardAutomationEnabled = defaults.object(forKey: Keys.keyboardAutomationEnabled) as? Bool ?? true
+        self.autoFallbackEnabled = defaults.object(forKey: Keys.autoFallbackEnabled) as? Bool ?? true
     }
     
     // MARK: - Persistence
@@ -94,6 +132,36 @@ class ProPresenterSettings: ObservableObject {
     private func save() {
         defaults.set(ipAddress, forKey: Keys.ipAddress)
         defaults.set(port, forKey: Keys.port)
+        defaults.set(stageDisplayEnabled, forKey: Keys.stageDisplayEnabled)
+        defaults.set(messagesAPIEnabled, forKey: Keys.messagesAPIEnabled)
+        defaults.set(keyboardAutomationEnabled, forKey: Keys.keyboardAutomationEnabled)
+        defaults.set(autoFallbackEnabled, forKey: Keys.autoFallbackEnabled)
+    }
+    
+    // MARK: - Convenience
+    
+    /// Check if any output is enabled
+    var hasEnabledOutput: Bool {
+        stageDisplayEnabled || messagesAPIEnabled || keyboardAutomationEnabled
+    }
+    
+    /// Get all enabled output types
+    var enabledOutputTypes: [ProPresenterOutputType] {
+        var types: [ProPresenterOutputType] = []
+        if stageDisplayEnabled { types.append(.stageDisplay) }
+        if messagesAPIEnabled { types.append(.audienceWebSocket) }
+        else if keyboardAutomationEnabled { types.append(.audienceKeyboard) }
+        return types
+    }
+    
+    /// WebSocket URL for Messages API
+    var webSocketURL: URL? {
+        var components = URLComponents()
+        components.scheme = "ws"
+        components.host = ipAddress
+        components.port = port
+        components.path = "/messaging"
+        return components.url
     }
     
     // MARK: - Validation

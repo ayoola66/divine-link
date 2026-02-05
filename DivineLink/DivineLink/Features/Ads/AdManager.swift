@@ -130,12 +130,10 @@ class AdManager: ObservableObject {
         shouldShowAds ? 200 : 0 // Width for square/portrait ads + padding
     }
     
-    /// Bottom banner height - always reserve space if banner ad exists
-    /// This ensures banner ads are displayed when available, regardless of subscription status
+    /// Bottom banner height - only show when ads should be displayed
     var bottomBannerHeight: CGFloat {
-        // Always show banner space if banner ad is available, even for premium users
-        let hasBannerAd = DynamicAdService.shared.bannerAd != nil
-        return (shouldShowAds || hasBannerAd) ? 80 : 0 // Full-width banner height
+        // Only show banner for free users - premium users should not see ads
+        return shouldShowAds ? 80 : 0
     }
     
     // MARK: - Initialisation
@@ -240,7 +238,10 @@ class AdManager: ObservableObject {
     func upgradeToPremium() {
         print("✅ Premium upgrade successful")
         subscriptionStatus = .premium
+        UserDefaults.standard.set("premium", forKey: "subscriptionStatus")
         showPaywall = false
+        objectWillChange.send() // Force UI refresh
+        print("📊 shouldShowAds: \(shouldShowAds), subscriptionStatus: \(subscriptionStatus)")
     }
     
     /// Upgrade to premium via debug mode (testing only)
@@ -331,6 +332,9 @@ class AdManager: ObservableObject {
     /// Reset to free (for testing)
     func resetToFree() {
         subscriptionStatus = .free
+        UserDefaults.standard.set("free", forKey: "subscriptionStatus")
+        objectWillChange.send() // Force UI refresh
+        print("📊 Reset to free - shouldShowAds: \(shouldShowAds)")
     }
     
     // MARK: - Ad Interaction

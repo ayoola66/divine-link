@@ -28,9 +28,8 @@ struct AdContainerView<Content: View>: View {
                 }
             }
             
-            // Bottom banner - always show if banner ad is available
-            // This ensures banner ads are displayed when available, regardless of subscription status
-            if adManager.bottomBannerHeight > 0 {
+            // Bottom banner - only show for free users
+            if adManager.shouldShowAds && adManager.bottomBannerHeight > 0 {
                 AdBannerView(slot: .bottomBanner)
                     .frame(height: adManager.bottomBannerHeight)
             }
@@ -793,8 +792,7 @@ struct AdBannerView: View {
             Rectangle()
                 .fill(Color(nsColor: .windowBackgroundColor))
             
-            // CRITICAL: Always show banner ad if available, regardless of subscription status
-            // This ensures banner ads are displayed when available
+            // Show banner ad if available (container already checks shouldShowAds)
             if let banner = bannerAd {
                 ZStack {
                     // Media content (video/GIF takes priority)

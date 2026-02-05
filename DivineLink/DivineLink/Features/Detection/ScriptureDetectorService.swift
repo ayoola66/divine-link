@@ -8,12 +8,47 @@ struct DetectionResult: Identifiable {
     let id = UUID()
     let reference: ScriptureReference
     let rawMatch: String
-    let confidence: Float
+    let detectionConfidence: DetectionConfidence
     let timestamp: Date
+    let patternType: String  // For debugging/analytics
+    
+    /// Legacy confidence value for backwards compatibility
+    var confidence: Float {
+        Float(detectionConfidence.overall)
+    }
     
     /// Formatted display string
     var displayReference: String {
         reference.formatted
+    }
+    
+    /// Convenience init with legacy Float confidence (for backwards compatibility)
+    init(
+        reference: ScriptureReference,
+        rawMatch: String,
+        confidence: Float,
+        timestamp: Date
+    ) {
+        self.reference = reference
+        self.rawMatch = rawMatch
+        self.detectionConfidence = DetectionConfidence.fromLegacy(confidence)
+        self.timestamp = timestamp
+        self.patternType = "legacy"
+    }
+    
+    /// Full init with DetectionConfidence
+    init(
+        reference: ScriptureReference,
+        rawMatch: String,
+        detectionConfidence: DetectionConfidence,
+        timestamp: Date,
+        patternType: String
+    ) {
+        self.reference = reference
+        self.rawMatch = rawMatch
+        self.detectionConfidence = detectionConfidence
+        self.timestamp = timestamp
+        self.patternType = patternType
     }
 }
 
@@ -410,30 +445,122 @@ class ScriptureDetectorService: ObservableObject {
             verseEnd: verseEnd
         )
         
-        // Calculate confidence based on pattern type
-        var confidence: Float = switch type {
-        case .standard: 0.95
-        case .spoken: 0.85        // Lower confidence for speech-to-text formats
-        case .spokenRange: 0.86   // Spoken format with verse range
-        case .verbal: 0.90
-        case .verbalShort: 0.88   // Natural speech without "chapter" keyword
-        case .spokenWords: 0.87   // Word numbers like "twenty one one"
-        case .chapterOnly: 0.80
+        // Calculate multi-factor confidence using DetectionConfidence model
+        // 
+        // Factors:
+        // 1. Reference Clarity - How clear and unambiguous was the reference pattern?
+        // 2. Speech Confidence - Pattern-based estimation (true speech confidence comes from Whisper)
+        // 3. Context Match - How well does the match fit expected patterns?
+        // 4. Verse Existence - Assumed valid if book is recognised (full validation done downstream)
+        
+        let referenceClarity: Double
+        let speechConfidence: Double
+        let contextMatch: Double
+        let verseExistence: Double
+        let patternTypeName: String
+        
+        switch type {
+        case .standard:
+            // "John 3:16" - clearest format with explicit colon delimiter
+            referenceClarity = 0.98
+            speechConfidence = 0.95
+            contextMatch = 0.95
+            verseExistence = 1.0  // Validated book + reasonable chapter/verse
+            patternTypeName = "standard"
+            
+        case .spoken:
+            // "John 316" - concatenated digits, more ambiguous
+            referenceClarity = 0.80
+            speechConfidence = 0.85
+            contextMatch = 0.80
+            verseExistence = 1.0
+            patternTypeName = "spoken"
+            
+        case .spokenRange:
+            // "John 316 to 18" - spoken format with range
+            referenceClarity = 0.82
+            speechConfidence = 0.86
+            contextMatch = 0.82
+            verseExistence = 1.0
+            patternTypeName = "spokenRange"
+            
+        case .verbal:
+            // "John chapter 3 verse 16" - explicit keywords, high clarity
+            referenceClarity = 0.95
+            speechConfidence = 0.92
+            contextMatch = 0.90
+            verseExistence = 1.0
+            patternTypeName = "verbal"
+            
+        case .verbalShort:
+            // "Genesis 1 verse 1" - partial verbal format
+            referenceClarity = 0.88
+            speechConfidence = 0.88
+            contextMatch = 0.85
+            verseExistence = 1.0
+            patternTypeName = "verbalShort"
+            
+        case .spokenWords:
+            // "John three sixteen" - word numbers, requires interpretation
+            referenceClarity = 0.78
+            speechConfidence = 0.85
+            contextMatch = 0.80
+            verseExistence = 1.0
+            patternTypeName = "spokenWords"
+            
+        case .chapterOnly:
+            // "Romans 8" - no verse, lowest specificity
+            referenceClarity = 0.75
+            speechConfidence = 0.80
+            contextMatch = 0.70
+            verseExistence = 1.0
+            patternTypeName = "chapterOnly"
         }
         
+        // Adjust confidence based on book name recognition quality
+        // If the book required fuzzy matching, reduce confidence
+        var adjustedReferenceClarity = referenceClarity
+        if bookNormaliser.fuzzyMatch(rawBook, maxDistance: 0) == nil {
+            // Fuzzy match was used
+            if let fuzzyResult = bookNormaliser.fuzzyMatch(rawBook, maxDistance: 2) {
+                // Reduce clarity based on edit distance
+                let penalty = Double(fuzzyResult.distance) * 0.05
+                adjustedReferenceClarity = max(0.5, referenceClarity - penalty)
+            }
+        }
+        
+        // Adjust context match based on raw match quality
+        var adjustedContextMatch = contextMatch
+        
+        // Penalise if there were stripped leading words (indicates noise in speech)
+        let bookNameLower = rawBook.lowercased()
+        if rawMatch.lowercased().hasPrefix(bookNameLower) == false {
+            adjustedContextMatch = max(0.5, contextMatch - 0.1)
+        }
+        
+        // Create the confidence object
+        let detectionConfidence = DetectionConfidence(
+            referenceClarity: adjustedReferenceClarity,
+            speechConfidence: speechConfidence,
+            contextMatch: adjustedContextMatch,
+            verseExistence: verseExistence
+        )
+        
         // CRITICAL: Apply minimum confidence threshold to prevent false detections
-        // from poor audio quality (e.g., "drop" → "Romans")
-        let minimumConfidence: Float = 0.75
-        if confidence < minimumConfidence {
-            print("⚠️ Rejected detection below minimum confidence: \(confidence) < \(minimumConfidence) for \(reference.formatted)")
+        let minimumConfidence: Double = 0.75
+        if detectionConfidence.overall < minimumConfidence {
+            print("⚠️ Rejected detection below minimum confidence: \(detectionConfidence.percentage)% < \(Int(minimumConfidence * 100))% for \(reference.formatted)")
             return nil
         }
+        
+        print("✅ Detection: \(reference.formatted) [\(patternTypeName)] - Confidence: \(detectionConfidence.percentage)% (\(detectionConfidence.level.rawValue))")
         
         return DetectionResult(
             reference: reference,
             rawMatch: rawMatch,
-            confidence: confidence,
-            timestamp: Date()
+            detectionConfidence: detectionConfidence,
+            timestamp: Date(),
+            patternType: patternTypeName
         )
     }
     

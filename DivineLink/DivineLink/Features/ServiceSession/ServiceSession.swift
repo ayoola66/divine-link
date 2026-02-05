@@ -34,7 +34,7 @@ struct ServiceSession: Identifiable, Codable {
         return "\(minutes) minutes"
     }
     
-    /// Create a new session
+    /// Create a new session (startTime defaults to now)
     init(
         id: UUID = UUID(),
         name: String,
@@ -51,6 +51,29 @@ struct ServiceSession: Identifiable, Codable {
         self.endTime = nil
         self.detectedScriptures = []
         self.transcriptSnippets = []
+    }
+    
+    /// Create a session from stored data (used when loading from database)
+    init(
+        id: UUID,
+        name: String,
+        serviceType: String,
+        date: Date,
+        pastorId: UUID?,
+        startTime: Date,
+        endTime: Date?,
+        detectedScriptures: [DetectedScripture] = [],
+        transcriptSnippets: [String] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.serviceType = serviceType
+        self.date = date
+        self.pastorId = pastorId
+        self.startTime = startTime
+        self.endTime = endTime
+        self.detectedScriptures = detectedScriptures
+        self.transcriptSnippets = transcriptSnippets
     }
     
     /// Generate default session name from type and date
@@ -74,6 +97,7 @@ struct DetectedScripture: Identifiable, Codable {
     let rawTranscript: String        // What was actually heard
     let confidence: Float            // Detection confidence 0-1
     
+    /// Create a new detected scripture (timestamp defaults to now)
     init(
         reference: String,
         verseText: String,
@@ -87,6 +111,27 @@ struct DetectedScripture: Identifiable, Codable {
         self.translation = translation
         self.timestamp = Date()
         self.wasPushed = false
+        self.rawTranscript = rawTranscript
+        self.confidence = confidence
+    }
+    
+    /// Create a detected scripture from stored data (used when loading from database)
+    init(
+        id: UUID,
+        reference: String,
+        verseText: String,
+        translation: String,
+        timestamp: Date,
+        wasPushed: Bool,
+        rawTranscript: String,
+        confidence: Float
+    ) {
+        self.id = id
+        self.reference = reference
+        self.verseText = verseText
+        self.translation = translation
+        self.timestamp = timestamp
+        self.wasPushed = wasPushed
         self.rawTranscript = rawTranscript
         self.confidence = confidence
     }

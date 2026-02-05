@@ -1,56 +1,90 @@
 import SwiftUI
 import AVFoundation
 
+// Explicit selection for Settings tabs to ensure reliable switching on macOS
+private enum SettingsTab: Hashable {
+    case account
+    case audio
+    case detection
+    case propresenter
+    case pastors
+    case display
+    case premium
+    case updates
+    case history
+    case about
+}
+
 /// Main settings view with tabbed interface
 struct SettingsView: View {
+    @State private var selection: SettingsTab = .account
+    
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             AccountSettingsTab()
                 .tabItem {
                     Label("Account", systemImage: "person.circle")
                 }
+                .tag(SettingsTab.account)
             
             AudioSettingsTab()
                 .tabItem {
                     Label("Audio", systemImage: "waveform")
                 }
+                .tag(SettingsTab.audio)
+            
+            DetectionSettingsTab()
+                .tabItem {
+                    Label("Detection", systemImage: "waveform.badge.magnifyingglass")
+                }
+                .tag(SettingsTab.detection)
             
             ProPresenterSettingsTab()
                 .tabItem {
                     Label("ProPresenter", systemImage: "tv")
                 }
+                .tag(SettingsTab.propresenter)
             
             PastorProfilesTab()
                 .tabItem {
                     Label("Pastors", systemImage: "person.2")
                 }
+                .tag(SettingsTab.pastors)
             
             AccessibilitySettingsTab()
                 .tabItem {
                     Label("Display", systemImage: "textformat.size")
                 }
+                .tag(SettingsTab.display)
             
             SubscriptionSettingsTab()
                 .tabItem {
                     Label("Premium", systemImage: "star.fill")
                 }
+                .tag(SettingsTab.premium)
             
             UpdatesSettingsTab()
                 .tabItem {
                     Label("Updates", systemImage: "arrow.down.circle")
                 }
+                .tag(SettingsTab.updates)
             
             ServiceHistoryView()
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
+                .tag(SettingsTab.history)
             
             AboutTab()
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
+                .tag(SettingsTab.about)
         }
-        .frame(width: 580, height: 540)
+        .frame(
+            minWidth: 580, idealWidth: 820, maxWidth: 1600,
+            minHeight: 540, idealHeight: 540, maxHeight: .infinity
+        )
     }
 }
 
@@ -75,6 +109,8 @@ struct AudioSettingsTab: View {
                     if let device = newValue {
                         Task {
                             await audioManager.selectDevice(device)
+                            // Configure the test audio service with the selected device
+                            let _ = audioTest.setInputDevice(device)
                             // Restart test if active
                             if isTesting {
                                 audioTest.stop()
@@ -107,6 +143,10 @@ struct AudioSettingsTab: View {
                             if isTesting {
                                 audioTest.stop()
                             } else {
+                                // Configure device before starting test
+                                if let device = audioManager.selectedDevice {
+                                    let _ = audioTest.setInputDevice(device)
+                                }
                                 audioTest.start()
                             }
                             isTesting.toggle()
@@ -228,36 +268,181 @@ struct AudioSettingsTab: View {
     }
 }
 
+// MARK: - Detection Settings Tab
+
+struct DetectionSettingsTab: View {
+    @ObservedObject private var settings = DetectionSettings.shared
+    
+    var body: some View {
+        Form {
+            // Confidence Indicators Section
+            Section {
+                Toggle("Show Confidence Indicators", isOn: $settings.showConfidenceIndicators)
+                
+                if settings.showConfidenceIndicators {
+                    Toggle("Show Detailed Breakdown on Hover", isOn: $settings.showConfidenceBreakdown)
+                }
+            } header: {
+                Text("Confidence Display")
+            } footer: {
+                Text("Confidence indicators show how certain the AI is about each scripture detection.")
+            }
+            
+            // Low Confidence Handling Section
+            Section {
+                Toggle("Hold Low-Confidence Detections", isOn: $settings.autoHoldLowConfidence)
+                
+                if settings.autoHoldLowConfidence {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Low Confidence Threshold")
+                            .font(.subheadline)
+                        
+                        HStack {
+                            Slider(
+                                value: $settings.lowConfidenceThreshold,
+                                in: 0.50...0.90,
+                                step: 0.05
+                            )
+                            
+                            Text("\(Int(settings.lowConfidenceThreshold * 100))%")
+                                .font(.caption)
+                                .monospacedDigit()
+                                .frame(width: 40, alignment: .trailing)
+                        }
+                        
+                        Text("Detections below this threshold will require manual approval before being sent to ProPresenter.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 4)
+                    
+                    Toggle("Play Sound for Low Confidence", isOn: $settings.soundOnLowConfidence)
+                }
+            } header: {
+                Text("Low Confidence Handling")
+            } footer: {
+                if settings.autoHoldLowConfidence {
+                    Text("Low-confidence detections will be highlighted in orange and held for your review.")
+                } else {
+                    Text("All detections will be processed automatically regardless of confidence level.")
+                }
+            }
+            
+            // Preview Section
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Confidence Level Preview")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    HStack(spacing: 16) {
+                        ConfidencePreviewItem(level: .high, threshold: settings.lowConfidenceThreshold)
+                        ConfidencePreviewItem(level: .medium, threshold: settings.lowConfidenceThreshold)
+                        ConfidencePreviewItem(level: .low, threshold: settings.lowConfidenceThreshold)
+                    }
+                }
+                .padding(.vertical, 8)
+            } header: {
+                Text("Preview")
+            }
+            
+            // Reset Section
+            Section {
+                Button("Reset to Defaults") {
+                    settings.resetToDefaults()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+/// Preview item for confidence level display
+private struct ConfidencePreviewItem: View {
+    let level: ConfidenceLevel
+    let threshold: Double
+    
+    private var isLow: Bool {
+        level == .low || (level == .medium && threshold > 0.75)
+    }
+    
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: level.icon)
+                .font(.title2)
+                .foregroundColor(level.colour)
+            
+            Text(level.rawValue)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(level.colour)
+            
+            if isLow {
+                Text("Held")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.2))
+                    .clipShape(Capsule())
+            } else {
+                Text("Auto")
+                    .font(.caption2)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.2))
+                    .clipShape(Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(8)
+    }
+}
+
 // MARK: - ProPresenter Settings Tab
 
 struct ProPresenterSettingsTab: View {
     @StateObject private var settings = ProPresenterSettings()
     @StateObject private var client = ProPresenterClient()
+    @ObservedObject private var panicService = PanicButtonService.shared
     
     var body: some View {
-        VStack(spacing: 0) {
-            ProPresenterSettingsView(settings: settings, client: client)
-            
-            Divider()
-            
-            // Help section
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Setup Instructions")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+        ScrollView {
+            VStack(spacing: 16) {
+                ProPresenterSettingsView(settings: settings, client: client)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("1. Open ProPresenter → Preferences → Network")
-                    Text("2. Enable \"Enable Network\" toggle")
-                    Text("3. Note the Port (default is 50233)")
-                    Text("4. Use 127.0.0.1 if on the same Mac")
-                    Text("5. Click \"Test Connection\" to verify")
+                Divider()
+                
+                // Panic Button Settings
+                PanicButtonSettingsSection(service: panicService)
+                    .padding(.horizontal)
+                
+                Divider()
+                
+                // Help section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Setup Instructions")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("1. Open ProPresenter → Preferences → Network")
+                        Text("2. Enable \"Enable Network\" toggle")
+                        Text("3. Note the Port (default is 50233)")
+                        Text("4. Use 127.0.0.1 if on the same Mac")
+                        Text("5. Click \"Test Connection\" to verify")
+                    }
                 }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
         }
     }
 }
@@ -539,3 +724,4 @@ struct AboutTab: View {
     AudioSettingsTab()
         .frame(width: 450, height: 300)
 }
+

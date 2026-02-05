@@ -10,6 +10,12 @@ enum ProPresenterError: LocalizedError {
     case httpError(Int)
     case connectionFailed
     case encodingFailed
+    case notConnected
+    case webSocketError(String)
+    case keyboardAutomationFailed
+    case invalidReference
+    case noAvailableOutput
+    case allOutputsFailed
     
     var errorDescription: String? {
         switch self {
@@ -23,6 +29,18 @@ enum ProPresenterError: LocalizedError {
             return "Failed to connect to ProPresenter"
         case .encodingFailed:
             return "Failed to encode message"
+        case .notConnected:
+            return "WebSocket not connected"
+        case .webSocketError(let message):
+            return "WebSocket error: \(message)"
+        case .keyboardAutomationFailed:
+            return "Keyboard automation failed"
+        case .invalidReference:
+            return "Invalid scripture reference format"
+        case .noAvailableOutput:
+            return "No ProPresenter output is available"
+        case .allOutputsFailed:
+            return "All ProPresenter outputs failed"
         }
     }
 }
