@@ -1,9 +1,10 @@
 # Epic 7: Advanced Detection & Personalisation
 
 **Epic ID:** 7  
-**Status:** Not Started  
+**Status:** In Progress (2/3 Complete)  
 **Priority:** High  
-**Source:** Professor BMAD Technical Review (Feb 2026)
+**Source:** Professor BMAD Technical Review (Feb 2026)  
+**Target Version:** v1.3.0
 
 ---
 
@@ -33,18 +34,33 @@ These features will put Divine Link "miles ahead of any competitor."
 | # | Story | Complexity | Status | Priority |
 |---|-------|------------|--------|----------|
 | 7.1 | [Reference Buffer (Stateful Detection)](story-7.1-reference-buffer.md) | Medium | Not Started | P0 |
-| 7.2 | [Implicit Detection (AI-Powered)](story-7.2-implicit-detection.md) | Large | Not Started | P1 |
-| 7.3 | [Pastor Profiles](story-7.3-pastor-profiles.md) | Medium | Not Started | P1 |
+| 7.2 | [Implicit Detection (AI-Powered)](story-7.2-implicit-detection.md) | Large | ⚠️ Basic (Phrase-based, not AI) | P1 |
+| 7.3 | [Pastor Profiles](story-7.3-pastor-profiles.md) | Medium | ✅ Complete | P1 |
+
+---
+
+## Implementation Notes
+
+### Story 7.2 - Current State
+- `ImplicitReferenceDetector.swift` exists with **phrase-matching** for famous verses
+- Does NOT yet use AI/MLX for true implicit detection (e.g., "the verse we just read")
+- This is a basic implementation; full AI-powered version still pending
+
+### Story 7.3 - Complete ✅
+- `PastorProfilesView.swift` - Full UI for managing pastor profiles
+- `SpeechCorrectionService.swift` - Speech learning per pastor
+- `PastorProfile` model with speech corrections, service counts
+- Profiles persist across sessions
 
 ---
 
 ## Success Criteria
 
-- [ ] "Verse 18" detected correctly after "John 3:16" mention (stateful context)
-- [ ] "The verse we just read" triggers previous scripture (implicit detection)
-- [ ] Pastor profiles save preferred translation per pastor
-- [ ] Profiles persist across sessions and app restarts
-- [ ] Zero cloud costs for AI features (local processing only)
+- [ ] "Verse 18" detected correctly after "John 3:16" mention (stateful context) - **7.1 PENDING**
+- [ ] "The verse we just read" triggers previous scripture (AI-powered) - **7.2 PENDING**
+- [x] Pastor profiles save preferred translation per pastor ✅
+- [x] Profiles persist across sessions and app restarts ✅
+- [ ] Zero cloud costs for AI features (local processing only) - **7.2 PENDING**
 - [ ] Detection accuracy improved measurably
 
 ---
@@ -90,9 +106,9 @@ All AI features use local processing to avoid cloud costs:
 ## Dependencies
 
 - Epic 2 (Scripture Detection Engine) ✅ Complete
-- Epic 6 (Operator Safety) - In Progress
-- Apple MLX Framework for local AI
-- Quantised LLM model (Llama-3 or Mistral)
+- Epic 6 (Operator Safety) ✅ Complete
+- Apple MLX Framework for local AI (for 7.2 AI upgrade)
+- Quantised LLM model (Llama-3 or Mistral) (for 7.2 AI upgrade)
 
 ---
 

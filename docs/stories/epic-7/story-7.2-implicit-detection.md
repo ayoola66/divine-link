@@ -2,9 +2,17 @@
 
 **Epic:** 7 - Advanced Detection & Personalisation  
 **Story ID:** 7.2  
-**Status:** Not Started  
+**Status:** ⚠️ Partially Complete (Basic phrase-matching only)  
 **Complexity:** Large  
 **Priority:** P1 (Love Tier Feature)
+
+**Current Implementation:**
+- `DivineLink/Features/Detection/ImplicitReferenceDetector.swift` - Basic phrase matching for famous verses
+
+**Remaining Work:**
+- MLX Framework integration for true AI-powered detection
+- Detection of phrases like "the verse we just read" using LLM context
+- Quantised model (Llama-3/Mistral) integration
 
 ---
 

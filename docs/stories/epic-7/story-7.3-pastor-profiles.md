@@ -2,9 +2,14 @@
 
 **Epic:** 7 - Advanced Detection & Personalisation  
 **Story ID:** 7.3  
-**Status:** Not Started  
+**Status:** ✅ Complete  
 **Complexity:** Medium  
 **Priority:** P1 (Sticky Feature)
+
+**Implementation Files:**
+- `DivineLink/Features/ServiceSession/PastorProfilesView.swift`
+- `DivineLink/Features/ServiceSession/SpeechCorrectionService.swift`
+- `DivineLink/Features/ServiceSession/SpeechCorrectionView.swift`
 
 ---
 
