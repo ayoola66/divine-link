@@ -5,6 +5,97 @@ All notable changes to Divine Link will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - UNRELEASED
+
+### Added
+
+- **Reference Buffer (Stateful Detection)**: Context-aware scripture detection
+  - Remembers previous book/chapter context during sermon
+  - "Verse 18" after "John 3:16" correctly resolves to "John 3:18"
+  - Handles partial references like "verses 5-7" using last mentioned book/chapter
+  - Configurable context timeout (default: 5 minutes)
+- **AI-Powered Implicit Detection**: Detect scripture references without explicit citations
+  - Detects famous verse quotes (e.g., "I can do all things through Christ...")
+  - Handles contextual references ("the verse we just read")
+  - Local AI processing using Apple MLX Framework (no cloud costs)
+  - Uses quantised Phi-3-mini model for efficiency
+- **Pastor Profiles**: Personalised settings per speaker ✅ (Already implemented)
+  - Create and switch between pastor profiles
+  - Per-pastor preferred Bible translation
+  - Speech pattern learning for improved recognition
+  - Quick profile switching during services
+
+### Changed
+
+- **Detection Pipeline**: Enhanced to support stateful context and implicit references
+- **Settings Panel**: Added Pastor Profiles management section
+
+### Technical
+
+- Added `ReferenceBuffer.swift` - Stateful context management
+- Enhanced `ImplicitReferenceDetector.swift` with MLX AI integration
+- Added `PastorProfilesView.swift` - Profile management UI
+- Added `SpeechCorrectionService.swift` - Per-pastor speech learning
+- Updated `ScriptureDetectorService.swift` with context buffer support
+
+---
+
+## [1.2.0] - 2026-02-05
+
+### Added
+
+- **Panic Button (Clear Screen)**: Instantly clear all displayed scripture from ProPresenter with a single keypress
+  - Keyboard shortcut: ⌘⇧C (Command + Shift + C)
+  - Works for both Stage Display and Audience Display
+  - Clears ProPresenter messages without affecting Divine Link's verse history
+- **Detection Confidence Indicator**: Visual feedback showing recognition confidence
+  - Real-time confidence levels displayed for each detected verse
+  - Colour-coded indicators: green (high), amber (medium), red (low)
+  - Helps identify when to manually verify scripture references
+- **WebSocket Messages API**: New ProPresenter integration method
+  - Direct WebSocket connection to ProPresenter's Messages API
+  - Faster, more reliable scripture display than keyboard automation
+  - Automatic reconnection on connection loss
+- **Hybrid Integration Manager**: Intelligent multi-path ProPresenter communication
+  - Stage Display (HTTP): Original network API integration
+  - Audience Display (WebSocket): New Messages API integration
+  - Audience Display (Keyboard): Fallback keyboard automation
+  - Auto-fallback: If primary method fails, automatically tries alternatives
+  - Premium feature: Multiple output paths require Grace or Love subscription
+- **Connection Dashboard**: Visual status for all ProPresenter output paths
+  - Real-time connection status indicators
+  - Test buttons for each output method
+  - Clear status indicators (connected/disconnected/error)
+- **Output Path Settings**: Granular control over ProPresenter integration
+  - Enable/disable individual output methods
+  - Configure auto-fallback behaviour
+  - Premium gating for advanced features
+
+### Changed
+
+- **ProPresenter Settings**: Redesigned settings panel with new output path controls
+  - Added toggles for each integration method
+  - Added connection dashboard section
+  - Premium badge on advanced features
+- **Clear Button Behaviour**: Now only clears ProPresenter displays
+  - No longer clears Divine Link's local scripture history
+  - Preserves detected verses for reference during service
+
+### Technical
+
+- Added `ProPresenterOutputProtocol.swift` - Protocol and factory for output abstraction
+- Added `StageDisplayOutput.swift` - HTTP REST output implementation
+- Added `AudienceWebSocketOutput.swift` - WebSocket Messages API implementation  
+- Added `AudienceKeyboardOutput.swift` - Keyboard automation implementation
+- Added `HybridIntegrationManager.swift` - Central coordinator for all outputs
+- Updated `ProPresenterSettings.swift` with new output path settings
+- Updated `ProPresenterSettingsView.swift` with output toggles and connection dashboard
+- Updated `ProPresenterClient.swift` with expanded error handling
+- Updated `PanicButtonService.swift` to use HybridIntegrationManager for multi-path clear
+- Added App Category (Utilities) to Info.plist
+- Fixed SQLite string binding using SQLITE_TRANSIENT
+- Fixed build warnings for deprecated APIs and actor isolation
+
 ## [1.1.0] - 2026-02-01
 
 ### Added
