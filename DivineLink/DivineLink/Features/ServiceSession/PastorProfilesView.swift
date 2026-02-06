@@ -5,15 +5,31 @@ import SwiftUI
 /// Settings tab for managing pastor profiles
 struct PastorProfilesTab: View {
     @StateObject private var sessionManager = ServiceSessionManager.shared
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
+    @ObservedObject private var adManager = AdManager.shared
     @State private var showAddSheet = false
     @State private var editingPastor: PastorProfile?
     @State private var pastorToDelete: PastorProfile?
     @State private var showDeleteConfirmation = false
     @State private var correctionsForPastor: PastorProfile?
+    @State private var showUpgradePrompt = false
+    
+    /// Whether the user has reached their pastor profile limit
+    private var isAtLimit: Bool {
+        sessionManager.pastorProfiles.count >= subscriptionService.pastorProfileLimit
+    }
+    
+    /// Whether pastor profiles are available for the current tier
+    private var canUsePastorProfiles: Bool {
+        subscriptionService.pastorProfileLimit > 0
+    }
     
     var body: some View {
         VStack(spacing: 0) {
-            if sessionManager.pastorProfiles.isEmpty {
+            if !canUsePastorProfiles {
+                // Free tier - no access to pastor profiles
+                upgradeRequiredState
+            } else if sessionManager.pastorProfiles.isEmpty {
                 emptyState
             } else {
                 profilesList
@@ -21,22 +37,49 @@ struct PastorProfilesTab: View {
             
             Divider()
             
-            // Footer with add button
+            // Footer with add button and limit info
             HStack {
-                Text("\(sessionManager.pastorProfiles.count) pastor(s)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(sessionManager.pastorProfiles.count) of \(subscriptionService.pastorProfileLimit) pastor(s)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(subscriptionService.currentTier.displayName)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
                 
                 Spacer()
                 
-                Button {
-                    showAddSheet = true
-                } label: {
-                    Label("Add Pastor", systemImage: "plus")
+                if isAtLimit {
+                    Button {
+                        showUpgradePrompt = true
+                    } label: {
+                        Label("Upgrade for More", systemImage: "arrow.up.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                } else if canUsePastorProfiles {
+                    Button {
+                        showAddSheet = true
+                    } label: {
+                        Label("Add Pastor", systemImage: "plus")
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button {
+                        showUpgradePrompt = true
+                    } label: {
+                        Label("Upgrade to Add", systemImage: "lock")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
                 }
-                .buttonStyle(.bordered)
             }
             .padding()
+        }
+        .sheet(isPresented: $showUpgradePrompt) {
+            PaywallView()
         }
         .sheet(isPresented: $showAddSheet) {
             AddPastorSheet { name in
@@ -60,6 +103,51 @@ struct PastorProfilesTab: View {
                 Text("Delete \"\(pastor.name)\"? Speech corrections will also be deleted.")
             }
         }
+    }
+    
+    // MARK: - Upgrade Required State (Free Tier)
+    
+    private var upgradeRequiredState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+            
+            Text("Pastor Profiles")
+                .font(.headline)
+            
+            Text("Upgrade to Grace or Love to unlock pastor profiles")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Grace: Up to 2 profiles")
+                        .font(.caption)
+                }
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.purple)
+                    Text("Love: Up to 5 profiles")
+                        .font(.caption)
+                }
+            }
+            .padding()
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(8)
+            
+            Button {
+                showUpgradePrompt = true
+            } label: {
+                Label("Upgrade Now", systemImage: "arrow.up.circle.fill")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
     }
     
     // MARK: - Empty State

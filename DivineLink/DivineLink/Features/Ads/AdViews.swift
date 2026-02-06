@@ -932,76 +932,336 @@ struct UpgradeButton: View {
 
 // MARK: - Paywall View
 
-/// Full paywall shown when user wants to upgrade
+/// Full paywall shown when user wants to upgrade - Modern redesign with tier benefits
 struct PaywallView: View {
     @ObservedObject private var adManager = AdManager.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var isHoveringSubscribe = false
+    @State private var selectedTier: SubscriptionTier = .grace
+    @State private var selectedPlan: PremiumPlan = .monthly
+    
+    enum PremiumPlan: String, CaseIterable {
+        case monthly = "Monthly"
+        case yearly = "Yearly"
+        
+        func price(for tier: SubscriptionTier) -> String {
+            switch (tier, self) {
+            case (.grace, .monthly): return "£9.99"
+            case (.grace, .yearly): return "£79.99"
+            case (.love, .monthly): return "£19.99"
+            case (.love, .yearly): return "£149.99"
+            case (.mercy, _): return "£0"
+            }
+        }
+        
+        var period: String {
+            switch self {
+            case .monthly: return "/month"
+            case .yearly: return "/year"
+            }
+        }
+        
+        func savings(for tier: SubscriptionTier) -> String? {
+            switch (tier, self) {
+            case (.grace, .yearly): return "Save 33%"
+            case (.love, .yearly): return "Save 37%"
+            default: return nil
+            }
+        }
+    }
     
     var body: some View {
-        VStack(spacing: 24) {
-            // Header
-            VStack(spacing: 8) {
-                Image(systemName: "star.circle.fill")
-                    .font(.system(size: 60))
-                    .foregroundStyle(.orange)
-                
-                Text("Divine Link Premium")
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Text("Remove ads and support development")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 20)
-            
-            // Benefits
-            VStack(alignment: .leading, spacing: 12) {
-                BenefitRow(icon: "xmark.circle.fill", text: "No advertisements", color: .green)
-                BenefitRow(icon: "bolt.fill", text: "Cleaner interface", color: .orange)
-                BenefitRow(icon: "heart.fill", text: "Support ongoing development", color: .pink)
-                BenefitRow(icon: "arrow.clockwise", text: "Free updates forever", color: .blue)
-            }
-            .padding()
-            .background(Color.gray.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            
-            // Pricing
-            VStack(spacing: 8) {
-                Text("£9.97/month")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Text("Cancel anytime")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            // Purchase buttons
+        VStack(spacing: 0) {
+            // Header with gradient background
             VStack(spacing: 12) {
+                // App icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.orange, Color.orange.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 80, height: 80)
+                    
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.white)
+                }
+                .shadow(color: .orange.opacity(0.3), radius: 10, x: 0, y: 4)
+                
+                VStack(spacing: 4) {
+                    Text("Upgrade to Premium")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Choose Grace or Love tier")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity)
+            .background(
+                LinearGradient(
+                    colors: [Color.orange.opacity(0.1), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            
+            // Benefits grid
+            ScrollView {
+                VStack(spacing: 16) {
+                    // What you'll get section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("What you'll get")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 10) {
+                            PremiumBenefitCard(
+                                icon: "xmark.circle.fill",
+                                title: "Ad-Free",
+                                description: "No distractions",
+                                color: .green
+                            )
+                            
+                            PremiumBenefitCard(
+                                icon: "text.book.closed.fill",
+                                title: "All Translations",
+                                description: "KJV, ASV, WEB & more",
+                                color: .blue
+                            )
+                            
+                            PremiumBenefitCard(
+                                icon: "infinity",
+                                title: "Unlimited Sessions",
+                                description: "No monthly limits",
+                                color: .purple
+                            )
+                            
+                            PremiumBenefitCard(
+                                icon: "waveform.badge.mic",
+                                title: "Smart Detection",
+                                description: "Context-aware verses",
+                                color: .orange
+                            )
+                            
+                            PremiumBenefitCard(
+                                icon: "tv.and.mediabox",
+                                title: "Audience Output",
+                                description: "Messages API support",
+                                color: .teal
+                            )
+                            
+                            PremiumBenefitCard(
+                                icon: "person.2.fill",
+                                title: "Pastor Profiles",
+                                description: "Grace: 2 / Love: 5",
+                                color: .pink
+                            )
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    // Tier selection
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Choose Tier")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        
+                        HStack(spacing: 12) {
+                            // Grace tier - selectable
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "heart.fill")
+                                        .foregroundStyle(.orange)
+                                    Text("Grace")
+                                        .fontWeight(.semibold)
+                                }
+                                .font(.callout)
+                                
+                                VStack(alignment: .leading, spacing: 3) {
+                                    tierFeatureRow("2 Pastor profiles")
+                                    tierFeatureRow("2 Devices")
+                                    tierFeatureRow("All premium features")
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(selectedTier == .grace ? Color.orange.opacity(0.2) : Color.orange.opacity(0.1))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(selectedTier == .grace ? Color.orange : Color.clear, lineWidth: 2)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedTier = .grace
+                                }
+                            }
+                            
+                            // Love tier - selectable
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "heart.circle.fill")
+                                        .foregroundStyle(.pink)
+                                    Text("Love")
+                                        .fontWeight(.semibold)
+                                }
+                                .font(.callout)
+                                
+                                VStack(alignment: .leading, spacing: 3) {
+                                    tierFeatureRow("5 Pastor profiles")
+                                    tierFeatureRow("5 Devices")
+                                    tierFeatureRow("Priority support")
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(selectedTier == .love ? Color.pink.opacity(0.2) : Color.pink.opacity(0.1))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(selectedTier == .love ? Color.pink : Color.clear, lineWidth: 2)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedTier = .love
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    
+                    // Plan selector
+                    VStack(spacing: 12) {
+                        Text("Choose billing")
+                            .font(.headline)
+                        
+                        HStack(spacing: 12) {
+                            ForEach(PremiumPlan.allCases, id: \.self) { plan in
+                                PlanSelectionCard(
+                                    plan: plan,
+                                    tier: selectedTier,
+                                    isSelected: selectedPlan == plan
+                                )
+                                .onTapGesture {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        selectedPlan = plan
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+                .padding(.vertical, 16)
+            }
+            
+            // Bottom action area
+            VStack(spacing: 12) {
+                Divider()
+                
+                // Price display
+                HStack(alignment: .lastTextBaseline, spacing: 4) {
+                    Text(selectedPlan.price(for: selectedTier))
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text(selectedPlan.period)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if let savings = selectedPlan.savings(for: selectedTier) {
+                        Text(savings)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.green.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.bottom, 4)
+                
+                // Subscribe button
                 Button {
-                    adManager.purchasePremium()
+                    let billingPeriod: SubscriptionService.BillingPeriod = selectedPlan == .monthly ? .monthly : .yearly
+                    adManager.purchasePremium(tier: selectedTier, billingPeriod: billingPeriod)
                 } label: {
-                    HStack {
+                    HStack(spacing: 8) {
                         if adManager.isPurchasing {
                             ProgressView()
                                 .scaleEffect(0.8)
                                 .tint(.white)
+                        } else {
+                            Image(systemName: "crown.fill")
                         }
-                        Text(adManager.isPurchasing ? "Processing..." : "Subscribe Now")
+                        Text(adManager.isPurchasing ? "Opening Checkout..." : "Subscribe Now")
+                            .fontWeight(.semibold)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(
+                            colors: selectedTier == .love 
+                                ? [Color.pink, Color.pink.opacity(0.85)]
+                                : [Color.orange, Color.orange.opacity(0.85)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(
+                        color: selectedTier == .love 
+                            ? Color.pink.opacity(0.3)
+                            : Color.orange.opacity(0.3),
+                        radius: 6, x: 0, y: 3
+                    )
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
+                .buttonStyle(.plain)
+                .scaleEffect(isHoveringSubscribe ? 1.02 : 1.0)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isHoveringSubscribe = hovering
+                    }
+                }
                 .disabled(adManager.isPurchasing)
                 
-                Button("Restore Purchases") {
-                    adManager.restorePurchases()
+                // Restore and close buttons
+                HStack(spacing: 16) {
+                    Button("Restore Purchase") {
+                        adManager.restorePurchases()
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .disabled(adManager.isPurchasing)
+                    
+                    Text("•")
+                        .foregroundStyle(.secondary.opacity(0.5))
+                    
+                    Button("Not Now") {
+                        dismiss()
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.bordered)
-                .disabled(adManager.isPurchasing)
+                .buttonStyle(.plain)
                 
                 // Error message
                 if let error = adManager.purchaseError {
@@ -1009,44 +1269,147 @@ struct PaywallView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
+                
+                // Security note
+                HStack(spacing: 4) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.caption2)
+                    Text("Secure payment via Stripe")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary.opacity(0.7))
+                
+                // Debug section (only in DEBUG builds)
+                #if DEBUG
+                VStack(spacing: 6) {
+                    Divider()
+                        .padding(.top, 4)
+                    
+                    Text("Debug Options")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    
+                    HStack(spacing: 12) {
+                        Toggle("Debug Mode", isOn: $adManager.debugModeEnabled)
+                            .font(.caption2)
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                        
+                        if adManager.debugModeEnabled {
+                            Button("Instant Upgrade") {
+                                adManager.debugUpgrade()
+                            }
+                            .font(.caption2)
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .tint(.purple)
+                        }
+                    }
+                }
+                #endif
+            }
+            .padding()
+            .background(.regularMaterial)
+        }
+        .frame(width: 420, height: 640)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // MARK: - Helper Views
+    
+    @ViewBuilder
+    private func tierFeatureRow(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.caption2)
+            Text(text)
+        }
+    }
+}
+
+// MARK: - Premium Benefit Card
+
+private struct PremiumBenefitCard: View {
+    let icon: String
+    let title: String
+    let description: String
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+            
+            Text(title)
+                .font(.callout)
+                .fontWeight(.semibold)
+            
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+// MARK: - Plan Selection Card
+
+private struct PlanSelectionCard: View {
+    let plan: PaywallView.PremiumPlan
+    let tier: SubscriptionTier
+    let isSelected: Bool
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            if let savings = plan.savings(for: tier) {
+                Text(savings)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.green)
+                    .clipShape(Capsule())
+            } else {
+                // Spacer for alignment
+                Text(" ")
+                    .font(.caption2)
+                    .padding(.vertical, 3)
             }
             
-            Spacer()
+            Text(plan.rawValue)
+                .font(.subheadline)
+                .fontWeight(.medium)
             
-            // Debug section (only in DEBUG builds)
-            #if DEBUG
-            VStack(spacing: 8) {
-                Divider()
-                
-                Text("Debug Options")
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                Text(plan.price(for: tier))
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Text(plan.period)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                
-                Toggle("Enable Debug Mode", isOn: $adManager.debugModeEnabled)
-                    .font(.caption)
-                
-                if adManager.debugModeEnabled {
-                    Button("DEBUG: Instant Upgrade") {
-                        adManager.debugUpgrade()
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.purple)
-                    .font(.caption)
-                }
             }
-            .padding(.horizontal)
-            #endif
-            
-            // Close button
-            Button("Not Now") {
-                dismiss()
-            }
-            .foregroundStyle(.secondary)
-            .padding(.bottom)
         }
-        .padding()
-        .frame(width: 380, height: 580)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isSelected ? Color.orange.opacity(0.15) : Color.gray.opacity(0.1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? Color.orange : Color.clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
     }
 }
 

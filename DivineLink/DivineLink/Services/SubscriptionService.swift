@@ -3,11 +3,47 @@ import Combine
 
 // MARK: - Subscription Models
 
+/// Subscription tier levels
+enum SubscriptionTier: String, Codable, CaseIterable {
+    case mercy = "free"       // Free tier
+    case grace = "grace"      // Premium tier (£9.99/month)
+    case love = "love"        // Pro tier (£19.99/month)
+    
+    /// Pastor profile limit for each tier
+    var pastorProfileLimit: Int {
+        switch self {
+        case .mercy: return 0
+        case .grace: return 2
+        case .love: return 5
+        }
+    }
+    
+    /// Display name for the tier
+    var displayName: String {
+        switch self {
+        case .mercy: return "Mercy (Free)"
+        case .grace: return "Grace (Premium)"
+        case .love: return "Love (Pro)"
+        }
+    }
+    
+    /// Device limit for each tier
+    var deviceLimit: Int {
+        switch self {
+        case .mercy: return 1
+        case .grace: return 2
+        case .love: return 5
+        }
+    }
+}
+
 /// API subscription status (simple string for Codable)
 enum APISubscriptionStatus: String, Codable {
     case free
     case trial
     case premium
+    case grace      // Grace tier specifically
+    case love       // Love tier specifically
     case cancelled
     case expired
     
@@ -18,8 +54,20 @@ enum APISubscriptionStatus: String, Codable {
             return .free
         case .trial:
             return .trial(daysLeft: 7) // Default trial days
-        case .premium:
+        case .premium, .grace, .love:
             return .premium
+        }
+    }
+    
+    /// Convert to subscription tier
+    var toTier: SubscriptionTier {
+        switch self {
+        case .love:
+            return .love
+        case .grace, .premium, .trial:
+            return .grace
+        case .free, .cancelled, .expired:
+            return .mercy
         }
     }
 }
@@ -86,8 +134,14 @@ final class SubscriptionService: ObservableObject {
     
     @Published private(set) var subscription: Subscription?
     @Published private(set) var isPremium = false
+    @Published private(set) var currentTier: SubscriptionTier = .mercy
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    
+    /// Maximum number of pastor profiles allowed for the current subscription tier
+    var pastorProfileLimit: Int {
+        return currentTier.pastorProfileLimit
+    }
     
     // MARK: - Private Properties
     
@@ -95,6 +149,7 @@ final class SubscriptionService: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let lastCheckKey = "lastSubscriptionCheck"
     private let cachedStatusKey = "cachedSubscriptionStatus"
+    private let cachedTierKey = "cachedSubscriptionTier"
     
     // MARK: - Initialization
     
@@ -138,8 +193,11 @@ final class SubscriptionService: ObservableObject {
             if let infoArray = try? decoder.decode([SubscriptionInfo].self, from: data),
                let info = infoArray.first {
                 self.isPremium = info.isPremium
-                cacheStatus(info.isPremium)
-                print("✅ Subscription status: \(info.status) (premium: \(info.isPremium))")
+                // Parse tier from status string
+                let tier = parseTierFromStatus(info.status)
+                self.currentTier = tier
+                cacheStatus(info.isPremium, tier: tier)
+                print("✅ Subscription status: \(info.status) (tier: \(tier.displayName), premium: \(info.isPremium))")
             } else {
                 // Fallback: Try direct query
                 try await fetchSubscriptionDirect()
@@ -195,16 +253,45 @@ final class SubscriptionService: ObservableObject {
     }
     
     /// Get Stripe checkout URL for subscription
-    func getCheckoutURL() -> URL? {
-        // Use Stripe Payment Link with prefilled email if available
+    /// - Parameters:
+    ///   - tier: Subscription tier (Grace or Love)
+    ///   - billingPeriod: Monthly or Yearly billing period
+    /// - Returns: Stripe checkout URL with prefilled email if available
+    func getCheckoutURL(tier: SubscriptionTier, billingPeriod: BillingPeriod) -> URL? {
+        // Get the base checkout URL for the tier and billing period
+        let baseURL: String
+        switch (tier, billingPeriod) {
+        case (.grace, .monthly):
+            baseURL = "https://buy.stripe.com/8x228raJOceGbI50hn5AQ00"
+        case (.grace, .yearly):
+            baseURL = "https://buy.stripe.com/bJe00jf04emO7rPfch5AQ03"
+        case (.love, .monthly):
+            baseURL = "https://buy.stripe.com/7sYbJ14lqemO6nL7JP5AQ01"
+        case (.love, .yearly):
+            baseURL = "https://buy.stripe.com/dRmdR98BG2E6eUh4xD5AQ02"
+        case (.mercy, _):
+            return nil // Free tier doesn't have checkout
+        }
+        
+        // Add prefilled email if available
         guard let email = AuthService.shared.currentUser?.email,
               let encodedEmail = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            // Return payment link without prefilled email
-            return SupabaseConfig.stripePaymentLink
+            return URL(string: baseURL)
         }
         
         // Stripe Payment Links support prefilled_email parameter
-        return URL(string: "https://buy.stripe.com/8x228raJOceGbI50hn5AQ00?prefilled_email=\(encodedEmail)")
+        return URL(string: "\(baseURL)?prefilled_email=\(encodedEmail)")
+    }
+    
+    /// Legacy method for backward compatibility - defaults to Grace monthly
+    func getCheckoutURL() -> URL? {
+        return getCheckoutURL(tier: .grace, billingPeriod: .monthly)
+    }
+    
+    /// Billing period options
+    enum BillingPeriod {
+        case monthly
+        case yearly
     }
     
     // MARK: - Private Methods
@@ -237,22 +324,42 @@ final class SubscriptionService: ObservableObject {
            let sub = subscriptions.first {
             self.subscription = sub
             self.isPremium = sub.isPremium && !sub.isExpired
-            cacheStatus(self.isPremium)
-            print("✅ Subscription (direct): \(sub.status) (premium: \(self.isPremium))")
+            let tier = sub.status.toTier
+            self.currentTier = tier
+            cacheStatus(self.isPremium, tier: tier)
+            print("✅ Subscription (direct): \(sub.status) (tier: \(tier.displayName), premium: \(self.isPremium))")
         } else {
             self.isPremium = false
-            cacheStatus(false)
+            self.currentTier = .mercy
+            cacheStatus(false, tier: .mercy)
         }
     }
     
-    private func cacheStatus(_ isPremium: Bool) {
+    /// Parse tier from status string returned by API
+    private func parseTierFromStatus(_ status: String) -> SubscriptionTier {
+        let lowercased = status.lowercased()
+        if lowercased.contains("love") || lowercased.contains("pro") {
+            return .love
+        } else if lowercased.contains("grace") || lowercased.contains("premium") {
+            return .grace
+        } else {
+            return .mercy
+        }
+    }
+    
+    private func cacheStatus(_ isPremium: Bool, tier: SubscriptionTier) {
         userDefaults.set(isPremium, forKey: cachedStatusKey)
+        userDefaults.set(tier.rawValue, forKey: cachedTierKey)
         userDefaults.set(Date(), forKey: lastCheckKey)
     }
     
     private func loadCachedStatus() {
         if let cached = userDefaults.object(forKey: cachedStatusKey) as? Bool {
             self.isPremium = cached
+        }
+        if let cachedTierRaw = userDefaults.string(forKey: cachedTierKey),
+           let tier = SubscriptionTier(rawValue: cachedTierRaw) {
+            self.currentTier = tier
         }
     }
 }

@@ -1,7 +1,7 @@
 # Divine Link - Comprehensive Application Context
 
-**Last Updated:** 17 January 2026  
-**Version:** 1.1.0  
+**Last Updated:** 5 February 2026  
+**Version:** 1.3.0  
 **Status:** Active Development  
 **Platform:** macOS 13.0+
 
@@ -102,18 +102,32 @@ When a verse range is detected (e.g., "John 3:16-18"):
 - **Push All:** Send all verses at once
 - Current verse is highlighted in the interface
 
-### 3.5 Pastor Profiles (Pro Tier)
+### 3.5 Pastor Profiles (Premium Feature)
 
 - Save preferred Bible translations per pastor
 - Store speech correction mappings (e.g., "Revelations" → "Revelation")
 - Quick-switch between profiles during service
 - Useful for churches with multiple speakers
+- **Tier Limits:**
+  - **Mercy (Free):** 0 profiles
+  - **Grace (Premium):** Up to 2 profiles
+  - **Love (Pro):** Up to 5 profiles
 
 ### 3.6 Session Management
 
 - **Free tier:** 8 sessions per month
 - **Paid tiers:** Unlimited sessions
 - Session history and export (Pro tier only)
+
+### 3.7 Detection Settings (Premium Feature)
+
+- **Smart Context Detection:** Stateful reference buffer for partial verse detection
+  - Remembers previous book/chapter context during sermon
+  - "Verse 18" after "John 3:16" correctly resolves to "John 3:18"
+  - Configurable context timeout (default: 5 minutes)
+- **Confidence Display:** Visual confidence indicators for detected verses
+- **Low Confidence Handling:** Options for how to handle uncertain detections
+- **Premium Gating:** All detection settings require Grace or Love subscription
 
 ---
 
@@ -134,7 +148,8 @@ When a verse range is detected (e.g., "John 3:16-18"):
 | Sidebar advertisements | Yes |
 | Push to Audience Screen (Keyboard) | ✗ |
 | Additional translations | ✗ |
-| Pastor profiles | ✗ |
+| Pastor profiles | 0 |
+| Detection Settings (Smart Context, Confidence) | ✗ |
 
 ### Grace (Premium)
 **Price:** £9.99/month or £79.99/year (save 33%)
@@ -148,6 +163,8 @@ When a verse range is detected (e.g., "John 3:16-18"):
 | Unlimited sessions | ✓ |
 | Verse-by-verse push | ✓ |
 | Verse navigation controls | ✓ |
+| Pastor profiles | 2 |
+| Detection Settings (Smart Context, Confidence) | ✓ |
 | Devices | 2 |
 | Support | Email |
 
@@ -157,15 +174,33 @@ When a verse range is detected (e.g., "John 3:16-18"):
 | Feature | Included |
 |---------|----------|
 | Everything in Grace | ✓ |
-| Pastor profiles | ✓ |
+| Pastor profiles | 5 |
 | Session history & export | ✓ |
 | Speech corrections per pastor | ✓ |
 | Implicit verse detection | ✓ |
 | Auto-advance slideshow | ✓ |
-| Devices | 3 |
+| Devices | 5 |
 | Support | Priority |
 | Early access to features | ✓ |
 | Church site licence option | ✓ |
+
+### 4.1 Payment & Subscription Management
+
+- **Payment Method:** Stripe (browser-based checkout)
+  - Secure payment processing via Stripe Checkout
+  - Opens in default browser for payment
+  - No Apple App Store commission (15-30% savings)
+  - Supports monthly and annual billing cycles
+- **Subscription Management:**
+  - Real-time subscription status sync via Supabase
+  - Offline grace period (7 days) for connectivity issues
+  - Device limits enforced per tier (Mercy: 1, Grace: 2, Love: 5)
+  - Automatic feature gating based on subscription tier
+- **Upgrade Flow:**
+  - Premium features visible but disabled for free users
+  - "Upgrade" buttons throughout the app
+  - Modern PaywallView with tier comparison
+  - Clear feature differentiation between Grace and Love tiers
 
 ---
 
@@ -318,11 +353,20 @@ The free tier (Mercy) displays sidebar advertisements to support ongoing develop
 - ✅ Story 6.4: Stage Screen Integration (REST API)
 - ✅ Story 6.5: Audience Screen Integration (Messages API) - Research Complete
 
+### Completed (Epic 7)
+- ✅ Story 7.1: Reference Buffer (Stateful Detection)
+  - Context-aware partial reference resolution
+  - "Verse 18" after "John 3:16" resolves to "John 3:18"
+  - Configurable context timeout
+- ✅ Premium Paywall UX Upgrade
+  - Detection Settings gated behind premium
+  - Pastor profile limits enforced (0/2/5)
+  - Modern PaywallView redesign with tier comparison
+  - Stripe payment integration
+
 ### Pending
-- ⏳ Story 6.5: ProPresenter Messages API Implementation (Research Complete ✅)
-- ⏳ Pastor Profile Management
+- ⏳ Story 7.2: AI-Powered Implicit Detection (MLX/Phi-3)
 - ⏳ Session History & Export
-- ⏳ Implicit Verse Detection (AI-powered)
 - ⏳ Auto-advance Slideshow Mode
 
 ---
@@ -361,6 +405,8 @@ The free tier (Mercy) displays sidebar advertisements to support ongoing develop
 | 1.0.0 | Jan 2026 | Initial release with core detection |
 | 1.0.2 | Jan 2026 | Bug fixes, improved book matching |
 | 1.1.0 | Jan 2026 | Audience screen integration, multi-verse navigation |
+| 1.2.0 | Feb 2026 | Panic button, confidence indicators, WebSocket Messages API |
+| 1.3.0 | Feb 2026 | Reference Buffer (stateful detection), Premium paywall UX, Detection Settings gating |
 
 ---
 

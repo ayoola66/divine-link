@@ -13,30 +13,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Remembers previous book/chapter context during sermon
   - "Verse 18" after "John 3:16" correctly resolves to "John 3:18"
   - Handles partial references like "verses 5-7" using last mentioned book/chapter
+  - Handles inverted verbal patterns ("verse 31 of Romans eight")
   - Configurable context timeout (default: 5 minutes)
-- **AI-Powered Implicit Detection**: Detect scripture references without explicit citations
-  - Detects famous verse quotes (e.g., "I can do all things through Christ...")
-  - Handles contextual references ("the verse we just read")
-  - Local AI processing using Apple MLX Framework (no cloud costs)
-  - Uses quantised Phi-3-mini model for efficiency
-- **Pastor Profiles**: Personalised settings per speaker ✅ (Already implemented)
-  - Create and switch between pastor profiles
-  - Per-pastor preferred Bible translation
-  - Speech pattern learning for improved recognition
-  - Quick profile switching during services
+- **Premium Feature Gating**: Detection Settings now require Grace or Love subscription
+  - Smart Context Detection settings gated
+  - Confidence Display settings gated
+  - Low Confidence Handling settings gated
+  - Features visible but disabled for free users with "Upgrade" button
+- **Pastor Profile Limits**: Tier-based profile limits enforced
+  - Mercy (Free): 0 profiles
+  - Grace (Premium): 2 profiles maximum
+  - Love (Pro): 5 profiles maximum
+  - UI clearly displays current count and limit
+  - Upgrade prompts when limit reached
+- **Modern PaywallView Redesign**: Enhanced subscription upgrade experience
+  - Tier comparison section (Grace vs Love)
+  - Explicit pastor profile limits displayed (2 vs 5)
+  - Device limits clearly stated (2 vs 5)
+  - Stripe payment integration (browser-based checkout)
+  - Modern card-based UI with tier benefits
 
 ### Changed
 
-- **Detection Pipeline**: Enhanced to support stateful context and implicit references
-- **Settings Panel**: Added Pastor Profiles management section
+- **SubscriptionService**: Enhanced tier tracking system
+  - Added `SubscriptionTier` enum (mercy, grace, love)
+  - Added `currentTier` published property
+  - Added `pastorProfileLimit` computed property
+  - Updated `APISubscriptionStatus` to include `.grace` and `.love` cases
+  - Tier-based feature gating throughout app
+- **PastorProfilesView**: Enhanced with tier-based limits
+  - Displays current profile count vs limit
+  - Shows current tier name
+  - Conditional "Add Pastor" button (disabled at limit)
+  - Upgrade prompts for free users and at-limit users
+- **SettingsView**: Detection Settings tab now premium-gated
+  - Entire `DetectionSettingsTab` wrapped with `PremiumFeatureGate`
+  - Free users see settings but cannot interact
+  - Upgrade button prominently displayed
+- **PaywallView**: Complete redesign with tier comparison
+  - Header updated: "Choose Grace or Love tier"
+  - New tier comparison section with side-by-side cards
+  - Explicit feature limits displayed (pastor profiles, devices)
+  - Plan selector relabelled as "Choose billing"
+  - Premium benefit cards updated with tier-specific limits
 
 ### Technical
 
 - Added `ReferenceBuffer.swift` - Stateful context management
-- Enhanced `ImplicitReferenceDetector.swift` with MLX AI integration
-- Added `PastorProfilesView.swift` - Profile management UI
-- Added `SpeechCorrectionService.swift` - Per-pastor speech learning
-- Updated `ScriptureDetectorService.swift` with context buffer support
+- Added `PremiumFeatureGate.swift` - View modifier for feature gating
+- Updated `SubscriptionService.swift` with tier enum and limits
+- Updated `PastorProfilesView.swift` with limit enforcement
+- Updated `SettingsView.swift` with detection settings gating
+- Updated `AdViews.swift` (PaywallView) with tier comparison UI
+- Updated marketing website (`index.html`) with correct profile limits
+
+### Documentation
+
+- Created `docs/FEATURE-MATRIX.md` - Comprehensive feature matrix (source of truth)
+- Updated `Divine-Link-Context.md` with:
+  - Pastor profile limits (0/2/5)
+  - Detection Settings premium gating
+  - Payment method (Stripe)
+  - Reference Buffer feature details
+  - Updated version to 1.3.0
+- Updated `CHANGELOG.md` with all recent changes
+
+### Pending
+
+- ⏳ **AI-Powered Implicit Detection** (Story 7.2): MLX/Phi-3 integration for implicit references
 
 ---
 

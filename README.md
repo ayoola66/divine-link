@@ -1,6 +1,6 @@
 # Divine Link
 
-**Version 1.0.2** | [Changelog](CHANGELOG.md)
+**Version 1.3.0** | [Changelog](CHANGELOG.md) | [Feature Matrix](docs/FEATURE-MATRIX.md) | [Full Context](Divine-Link-Context.md)
 
 **Real-time Scripture Detection & ProPresenter Integration for macOS**
 
@@ -405,15 +405,34 @@ The system handles these common mishearings:
 
 ---
 
+## Documentation
+
+- **[Feature Matrix](docs/FEATURE-MATRIX.md)** - Complete feature listing by tier (source of truth)
+- **[Full Context Document](Divine-Link-Context.md)** - Comprehensive application context
+- **[Changelog](CHANGELOG.md)** - Detailed version history
+
 ## Version History
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-### Version 1.0.3 (In Development)
-- Added user authentication with email OTP
-- Added device management (2-device limit per account)
-- Added subscription backend with Supabase
-- Added Stripe payment integration
+### Version 1.3.0 (In Development)
+- Reference Buffer (Stateful Detection) - Context-aware partial verse detection
+- Premium Feature Gating - Detection Settings require Grace/Love subscription
+- Pastor Profile Limits - Tier-based limits (Mercy: 0, Grace: 2, Love: 5)
+- Modern PaywallView - Redesigned with tier comparison
+- Stripe Payment Integration - Browser-based checkout
+
+### Version 1.2.0
+- Panic Button (Clear Screen) - ⌘⇧C or F12
+- Detection Confidence Indicator
+- WebSocket Messages API for ProPresenter
+- Hybrid Integration Manager
+
+### Version 1.1.0
+- Dynamic Ad System
+- Premium Subscription
+- Video Ad Support
+- User Authentication & Device Management
 
 ### Version 1.0.2
 - Added Sparkle auto-updates with secure EdDSA signing

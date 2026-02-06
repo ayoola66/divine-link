@@ -87,7 +87,14 @@ class ScriptureDetectorService: ObservableObject {
         case verbalShort    // Genesis 1 verse 1 (no "chapter" keyword)
         case spokenWords    // Genesis twenty one one → 21:1, John three sixteen → 3:16
         case chapterOnly    // Romans 8
+        case invertedVerbal // "verse 31 of Romans 8" or "verse 31 of Romans eight"
+        case partialVerse   // "verse 18" or "verses 5 to 7" (requires context)
     }
+    
+    // MARK: - Reference Buffer
+    
+    /// Reference buffer for stateful context tracking
+    private let referenceBuffer = ReferenceBuffer.shared
     
     // MARK: - Number Word Conversion
     
@@ -217,6 +224,37 @@ class ScriptureDetectorService: ObservableObject {
         ) {
             patterns.append((regex, .chapterOnly))
         }
+        
+        // 9. INVERTED VERBAL: "verse 31 of Romans 8" or "verse 31 of Romans eight"
+        // Captures: (verse_start) (verse_end optional) (book) (chapter as number or word)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?\s+(?:of|in|from)\s+((?:\d\s?)?[A-Za-z]+)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .invertedVerbal))
+            print("✅ invertedVerbal pattern compiled (verse X of Book Y)")
+        }
+        
+        // 10. PARTIAL VERSE: "verse 18" or "verses 5 to 7" (requires context buffer)
+        // This is lowest priority - only works if we have context from a previous detection
+        // Pattern captures: (verse_start) and optionally (verse_end)
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .partialVerse))
+            print("✅ partialVerse pattern compiled (priority 10 - requires context)")
+        }
+        
+        // 9b. PARTIAL VERSE with "the": "the next verse", "the following verse", or "the previous verse"
+        // Handles: "the next verse", "the following verse", "the previous verse"
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)(?:the\s+)?(?:next|following|previous)\s+verse"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .partialVerse))
+            print("✅ partialVerse (next/following/previous) pattern compiled")
+        }
     }
     
     // MARK: - Detection
@@ -259,6 +297,16 @@ class ScriptureDetectorService: ObservableObject {
     // MARK: - Parsing
     
     private func parseMatch(_ match: NSTextCheckingResult, in text: String, type: PatternType) -> DetectionResult? {
+        // Handle partial verse references (requires context buffer)
+        if type == .partialVerse {
+            return parsePartialVerseMatch(match, in: text)
+        }
+        
+        // Handle inverted verbal references: "verse X of Book Y"
+        if type == .invertedVerbal {
+            return parseInvertedVerbalMatch(match, in: text)
+        }
+        
         // Extract book name
         guard match.numberOfRanges >= 3,
               let bookRange = Range(match.range(at: 1), in: text),
@@ -515,6 +563,26 @@ class ScriptureDetectorService: ObservableObject {
             contextMatch = 0.70
             verseExistence = 1.0
             patternTypeName = "chapterOnly"
+            
+        case .invertedVerbal:
+            // "verse 31 of Romans 8" - inverted order, good specificity
+            // Note: This case should not normally be reached as invertedVerbal
+            // is handled separately in parseInvertedVerbalMatch
+            referenceClarity = 0.85
+            speechConfidence = 0.80
+            contextMatch = 1.0
+            verseExistence = 1.0
+            patternTypeName = "invertedVerbal"
+            
+        case .partialVerse:
+            // "verse 18" - requires context buffer, lower confidence
+            // Note: This case should not normally be reached as partialVerse
+            // is handled separately in parsePartialVerseMatch
+            referenceClarity = 0.70
+            speechConfidence = 0.75
+            contextMatch = 0.65
+            verseExistence = 1.0
+            patternTypeName = "partialVerse"
         }
         
         // Adjust confidence based on book name recognition quality
@@ -555,12 +623,300 @@ class ScriptureDetectorService: ObservableObject {
         
         print("✅ Detection: \(reference.formatted) [\(patternTypeName)] - Confidence: \(detectionConfidence.percentage)% (\(detectionConfidence.level.rawValue))")
         
+        // Update reference buffer context for future partial reference resolution
+        // This enables "verse 18" to resolve to "John 3:18" after detecting "John 3:16"
+        // Also enables "next verse" to resolve correctly
+        referenceBuffer.updateContext(
+            book: reference.book,
+            chapter: reference.chapter,
+            verseStart: reference.verseStart,
+            verseEnd: reference.verseEnd
+        )
+        
         return DetectionResult(
             reference: reference,
             rawMatch: rawMatch,
             detectionConfidence: detectionConfidence,
             timestamp: Date(),
             patternType: patternTypeName
+        )
+    }
+    
+    // MARK: - Inverted Verbal Parsing
+    
+    /// Parse an inverted verbal reference: "verse X of Book Y"
+    /// Pattern captures: (verseStart) (verseEnd optional) (book) (chapter)
+    private func parseInvertedVerbalMatch(_ match: NSTextCheckingResult, in text: String) -> DetectionResult? {
+        // Pattern: verse (\d+) (to \d+)? of (Book) (Chapter)
+        // Groups: 1=verseStart, 2=verseEnd (optional), 3=book, 4=chapter
+        guard match.numberOfRanges >= 5 else {
+            print("⚠️ [invertedVerbal] Not enough capture groups: \(match.numberOfRanges)")
+            return nil
+        }
+        
+        // Extract the full matched text
+        guard let fullRange = Range(match.range, in: text) else {
+            return nil
+        }
+        let rawMatch = String(text[fullRange]).trimmingCharacters(in: .whitespaces)
+        
+        // Extract verse start (group 1)
+        guard let verseStartRange = Range(match.range(at: 1), in: text) else {
+            print("⚠️ [invertedVerbal] Could not extract verse start")
+            return nil
+        }
+        let verseStartRaw = String(text[verseStartRange])
+        
+        // Parse verse start (could be number or word)
+        guard let verseStart = parseNumber(verseStartRaw) else {
+            print("⚠️ [invertedVerbal] Could not parse verse start: \(verseStartRaw)")
+            return nil
+        }
+        
+        // Extract verse end (group 2) - optional
+        var verseEnd: Int? = nil
+        if match.range(at: 2).location != NSNotFound,
+           let verseEndRange = Range(match.range(at: 2), in: text) {
+            let verseEndRaw = String(text[verseEndRange])
+            verseEnd = parseNumber(verseEndRaw)
+        }
+        
+        // Extract book name (group 3)
+        guard let bookRange = Range(match.range(at: 3), in: text) else {
+            print("⚠️ [invertedVerbal] Could not extract book name")
+            return nil
+        }
+        let rawBook = String(text[bookRange]).trimmingCharacters(in: .whitespaces)
+        
+        // Extract chapter (group 4)
+        guard let chapterRange = Range(match.range(at: 4), in: text) else {
+            print("⚠️ [invertedVerbal] Could not extract chapter")
+            return nil
+        }
+        let chapterRaw = String(text[chapterRange])
+        
+        // Parse chapter (could be number or word)
+        guard let chapter = parseNumber(chapterRaw) else {
+            print("⚠️ [invertedVerbal] Could not parse chapter: \(chapterRaw)")
+            return nil
+        }
+        
+        // Normalize the book name using the book normaliser
+        guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
+            print("⚠️ [invertedVerbal] Could not normalize book: \(rawBook)")
+            return nil
+        }
+        
+        // Validate chapter is reasonable (max 150 like Psalms)
+        if chapter > 150 {
+            print("⚠️ [invertedVerbal] Rejected invalid chapter: \(chapter)")
+            return nil
+        }
+        
+        // Validate verse is reasonable (max 176 like Psalm 119)
+        if verseStart > 176 {
+            print("⚠️ [invertedVerbal] Rejected invalid verse: \(verseStart)")
+            return nil
+        }
+        
+        // Create the scripture reference
+        let reference = ScriptureReference(
+            book: canonicalBook,
+            chapter: chapter,
+            verseStart: verseStart,
+            verseEnd: verseEnd
+        )
+        
+        // Calculate confidence
+        let confidence = DetectionConfidence(
+            referenceClarity: 0.85,
+            speechConfidence: 0.80,
+            contextMatch: 1.0,
+            verseExistence: 1.0
+        )
+        
+        // Update reference buffer context
+        referenceBuffer.updateContext(
+            book: canonicalBook,
+            chapter: chapter,
+            verseStart: verseStart,
+            verseEnd: verseEnd
+        )
+        
+        print("✅ Detection: \(reference.formatted) [invertedVerbal] - Confidence: \(confidence.percentage)%")
+        print("   Raw: '\(rawMatch)' → Book: \(canonicalBook), Chapter: \(chapter), Verse: \(verseStart)\(verseEnd.map { "-\($0)" } ?? "")")
+        
+        return DetectionResult(
+            reference: reference,
+            rawMatch: rawMatch,
+            detectionConfidence: confidence,
+            timestamp: Date(),
+            patternType: "invertedVerbal"
+        )
+    }
+    
+    // MARK: - Partial Verse Parsing
+    
+    /// Parse a partial verse reference using context buffer
+    private func parsePartialVerseMatch(_ match: NSTextCheckingResult, in text: String) -> DetectionResult? {
+        guard referenceBuffer.isEnabled else {
+            print("📚 [partialVerse] Reference buffer disabled, skipping partial reference")
+            return nil
+        }
+        
+        guard let context = referenceBuffer.getValidContext() else {
+            print("📚 [partialVerse] No valid context available for partial reference")
+            return nil
+        }
+        
+        // Extract the raw matched text
+        guard let fullRange = Range(match.range, in: text) else {
+            return nil
+        }
+        let rawMatch = String(text[fullRange]).trimmingCharacters(in: .whitespaces)
+        
+        // Check for "next verse", "following verse", or "previous verse" pattern
+        let lowercasedMatch = rawMatch.lowercased()
+        
+        if lowercasedMatch.contains("next") || lowercasedMatch.contains("following") {
+            // Resolve using the next verse from context
+            guard let reference = referenceBuffer.resolveNextVerseReference() else {
+                print("📚 [partialVerse] 'Next/following verse' detected but no verse context available")
+                return nil
+            }
+            
+            // Also update the context to the new verse for potential chained references
+            referenceBuffer.updateContext(
+                book: reference.book,
+                chapter: reference.chapter,
+                verseStart: reference.verseStart,
+                verseEnd: reference.verseEnd
+            )
+            
+            // Return the detection result
+            let confidence = DetectionConfidence(
+                referenceClarity: 0.70,
+                speechConfidence: 0.75,
+                contextMatch: 0.85, // Higher context match since we're using buffer
+                verseExistence: 1.0
+            )
+            
+            print("✅ Detection: \(reference.formatted) [partialVerse-next] - Confidence: \(confidence.percentage)%")
+            
+            return DetectionResult(
+                reference: reference,
+                rawMatch: rawMatch,
+                detectionConfidence: confidence,
+                timestamp: Date(),
+                patternType: "partialVerse-next"
+            )
+        }
+        
+        if lowercasedMatch.contains("previous") {
+            // Resolve using the previous verse from context
+            guard let reference = referenceBuffer.resolvePreviousVerseReference() else {
+                print("📚 [partialVerse] 'Previous verse' detected but no verse context available or at verse 1")
+                return nil
+            }
+            
+            // Also update the context to the new verse for potential chained references
+            referenceBuffer.updateContext(
+                book: reference.book,
+                chapter: reference.chapter,
+                verseStart: reference.verseStart,
+                verseEnd: reference.verseEnd
+            )
+            
+            // Return the detection result
+            let confidence = DetectionConfidence(
+                referenceClarity: 0.70,
+                speechConfidence: 0.75,
+                contextMatch: 0.85, // Higher context match since we're using buffer
+                verseExistence: 1.0
+            )
+            
+            print("✅ Detection: \(reference.formatted) [partialVerse-previous] - Confidence: \(confidence.percentage)%")
+            
+            return DetectionResult(
+                reference: reference,
+                rawMatch: rawMatch,
+                detectionConfidence: confidence,
+                timestamp: Date(),
+                patternType: "partialVerse-previous"
+            )
+        }
+        
+        // Extract verse numbers from the match
+        // Pattern: "verse(s) X (to Y)"
+        var verseStart: Int?
+        var verseEnd: Int?
+        
+        // Group 1 is the start verse
+        if match.numberOfRanges >= 2,
+           let verseRange = Range(match.range(at: 1), in: text) {
+            let verseStr = String(text[verseRange]).trimmingCharacters(in: .whitespaces).lowercased()
+            verseStart = parseNumber(verseStr)
+        }
+        
+        // Group 2 is the end verse (optional)
+        if match.numberOfRanges >= 3,
+           match.range(at: 2).location != NSNotFound,
+           let endRange = Range(match.range(at: 2), in: text) {
+            let endStr = String(text[endRange]).trimmingCharacters(in: .whitespaces).lowercased()
+            verseEnd = parseNumber(endStr)
+        }
+        
+        guard let startVerse = verseStart else {
+            print("📚 [partialVerse] Could not extract verse number from: '\(rawMatch)'")
+            return nil
+        }
+        
+        // Validate verse numbers
+        if startVerse > 176 {
+            print("⚠️ Rejected invalid partial verse: \(startVerse) (max: 176)")
+            return nil
+        }
+        
+        if let end = verseEnd, end > 176 {
+            print("⚠️ Rejected invalid partial end verse: \(end) (max: 176)")
+            return nil
+        }
+        
+        if let end = verseEnd, startVerse > end {
+            print("⚠️ Rejected invalid partial verse range: \(startVerse)-\(end)")
+            return nil
+        }
+        
+        // Create the resolved reference using context
+        let reference = ScriptureReference(
+            book: context.book,
+            chapter: context.chapter,
+            verseStart: startVerse,
+            verseEnd: verseEnd
+        )
+        
+        // Calculate confidence - lower because we're relying on context
+        let detectionConfidence = DetectionConfidence(
+            referenceClarity: 0.70,     // Partial reference is less clear
+            speechConfidence: 0.85,
+            contextMatch: 0.95,          // High because we're using valid context
+            verseExistence: 1.0
+        )
+        
+        // Apply minimum confidence threshold
+        if detectionConfidence.overall < 0.75 {
+            print("⚠️ [partialVerse] Below minimum confidence threshold")
+            return nil
+        }
+        
+        print("✅ [partialVerse] Resolved: '\(rawMatch)' → \(reference.formatted) using context [\(context.book) \(context.chapter)]")
+        
+        return DetectionResult(
+            reference: reference,
+            rawMatch: rawMatch,
+            detectionConfidence: detectionConfidence,
+            timestamp: Date(),
+            patternType: "partialVerse"
         )
     }
     

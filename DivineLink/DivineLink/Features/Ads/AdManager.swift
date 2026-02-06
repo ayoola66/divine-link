@@ -290,8 +290,11 @@ class AdManager: ObservableObject {
     }
     
     /// Purchase premium subscription - opens Stripe checkout
-    func purchasePremium() {
-        print("🛒 Purchase initiated")
+    /// - Parameters:
+    ///   - tier: Subscription tier (Grace or Love)
+    ///   - billingPeriod: Monthly or Yearly billing period
+    func purchasePremium(tier: SubscriptionTier = .grace, billingPeriod: SubscriptionService.BillingPeriod = .monthly) {
+        print("🛒 Purchase initiated - Tier: \(tier.displayName), Billing: \(billingPeriod == .monthly ? "Monthly" : "Yearly")")
         purchaseError = nil
         
         // Must be signed in to purchase
@@ -300,8 +303,8 @@ class AdManager: ObservableObject {
             return
         }
         
-        // Open Stripe checkout in browser
-        if let checkoutURL = SubscriptionService.shared.getCheckoutURL() {
+        // Open Stripe checkout in browser with selected tier and billing period
+        if let checkoutURL = SubscriptionService.shared.getCheckoutURL(tier: tier, billingPeriod: billingPeriod) {
             NSWorkspace.shared.open(checkoutURL)
             showPaywall = false
             

@@ -272,9 +272,77 @@ struct AudioSettingsTab: View {
 
 struct DetectionSettingsTab: View {
     @ObservedObject private var settings = DetectionSettings.shared
+    @ObservedObject private var referenceBuffer = ReferenceBuffer.shared
+    @State private var contextTimeoutMinutes: Double = 5.0
     
     var body: some View {
         Form {
+            // Reference Buffer Section (NEW - Epic 7.1)
+            Section {
+                Toggle("Enable Context Buffer", isOn: Binding(
+                    get: { referenceBuffer.isEnabled },
+                    set: { referenceBuffer.isEnabled = $0 }
+                ))
+                
+                if referenceBuffer.isEnabled {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Context Timeout")
+                            .font(.subheadline)
+                        
+                        HStack {
+                            Slider(
+                                value: $contextTimeoutMinutes,
+                                in: 1...15,
+                                step: 1
+                            )
+                            .onChange(of: contextTimeoutMinutes) { _, newValue in
+                                referenceBuffer.contextTimeout = newValue * 60
+                            }
+                            
+                            Text("\(Int(contextTimeoutMinutes)) min")
+                                .font(.caption)
+                                .monospacedDigit()
+                                .frame(width: 50, alignment: .trailing)
+                        }
+                        
+                        Text("How long context remains active after a scripture detection.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 4)
+                    
+                    // Current Context Status
+                    if referenceBuffer.hasContext {
+                        if let context = referenceBuffer.getValidContext() {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                let verseInfo = context.verseStart.map { v in
+                                    context.verseEnd.map { ":\(v)-\($0)" } ?? ":\(v)"
+                                } ?? ""
+                                Text("Active: \(context.book) \(context.chapter)\(verseInfo)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.top, 4)
+                        }
+                    } else {
+                        HStack {
+                            Image(systemName: "circle")
+                                .foregroundStyle(.secondary)
+                            Text("No active context")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            } header: {
+                Text("Smart Context Detection")
+            } footer: {
+                Text("When enabled, partial references like \"verse 18\" or \"the next verse\" will be resolved using the last detected scripture context (e.g., \"John 3:17\" for \"next verse\" if \"John 3:16\" was recently detected).")
+            }
+            
             // Confidence Indicators Section
             Section {
                 Toggle("Show Confidence Indicators", isOn: $settings.showConfidenceIndicators)
@@ -350,12 +418,20 @@ struct DetectionSettingsTab: View {
             Section {
                 Button("Reset to Defaults") {
                     settings.resetToDefaults()
+                    referenceBuffer.isEnabled = true
+                    referenceBuffer.contextTimeout = 300
+                    contextTimeoutMinutes = 5.0
                 }
                 .buttonStyle(.bordered)
             }
         }
         .formStyle(.grouped)
         .padding()
+        .premiumGated(featureName: "Detection Settings")
+        .onAppear {
+            // Load current timeout in minutes
+            contextTimeoutMinutes = referenceBuffer.contextTimeout / 60
+        }
     }
 }
 
