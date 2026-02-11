@@ -97,3 +97,6 @@ iOSInjectionProject/
 # AI/Debug logs
 .ai/
 debug-log.md
+
+# Apple authentication keys (secrets)
+AuthKey_*.p8

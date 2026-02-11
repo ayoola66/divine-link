@@ -15,7 +15,7 @@ Epic 7 focuses on enhancing the user interface with improved Settings window nav
 
 ### Story 7.1: Settings Window Redesign
 
-**Status:** 📋 Planned  
+**Status:** ✅ Complete  
 **Priority:** High
 
 **Description:**  
@@ -32,67 +32,64 @@ Redesign the Settings window with a sidebar navigation pattern for improved disc
    - Remembers size and position between launches
    
 3. **Navigation Items**
-   - ProPresenter Connection
-   - Audio Settings
-   - Bible Settings
-   - Subscription/Premium
-   - Service History
-   - About/Support
+   - All current tabs (Account, Audio, Detection, ProPresenter, Pastors, Display, Admin when applicable, Updates, History, About)
 
 **Acceptance Criteria:**
-- [ ] Sidebar displays all setting categories with icons and labels
-- [ ] Burger menu toggles sidebar collapsed/expanded state
-- [ ] Window is resizable with sensible minimum constraints
-- [ ] Window remembers size/position (using UserDefaults)
-- [ ] Navigation selection highlights current section
+- [x] Sidebar displays all setting categories with icons and labels
+- [x] Burger menu toggles sidebar collapsed/expanded state
+- [x] Window is resizable with sensible minimum constraints
+- [x] Window remembers size/position (system Settings scene)
+- [x] Navigation selection highlights current section
 
-**Technical Notes:**
-- Use `NavigationSplitView` or custom sidebar implementation
-- Store sidebar state in UserDefaults
-- Use `NSWindow` delegate for saving window frame
+**Implementation (Feb 2026):**
+- Replaced `TabView` with `NavigationSplitView` in `SettingsView.swift`
+- Sidebar uses `List(selection:)` with `.listStyle(.sidebar)`; all 10 items visible (no cropping)
+- Collapse state persisted via `@AppStorage("settingsSidebarCollapsed")`; when collapsed, sidebar shows **icons only** (44pt width); when expanded, icons + labels (min 160pt)
+- **Single collapse control:** System title-bar button toggles between expanded and icon-only; sidebar is never fully hidden. `onChange(of: columnVisibility)` intercepts `.detailOnly` and toggles `sidebarCollapsed` instead
+- Frame: minWidth 680, idealWidth 880, minHeight 540, idealHeight 600
+- **Resizable window:** `SettingsWindowResizeEnabler` (NSViewRepresentable) applies `.resizable` style mask to the Settings window so users can drag to resize
 
 ---
 
 ### Story 7.2: Subscription Theme Indicators
 
-**Status:** 📋 Planned  
+**Status:** ✅ Complete  
 **Priority:** High
 
 **Description:**  
-Implement visual theme changes based on the active subscription tier to provide immediate visual confirmation of subscription status.
+Implement visual theme changes based on the active subscription tier to provide immediate visual confirmation of subscription status (main app window only; Settings window untinted).
 
-**Theme Colours:**
-| Tier | Theme Colour | Description |
-|------|--------------|-------------|
-| Free | Default (no tint) | Standard system appearance |
-| Mercy | Very light red | `Color.red.opacity(0.05)` or similar |
-| Grace | Very light blue | `Color.blue.opacity(0.05)` or similar |
-| Love | White/light purple | `Color.purple.opacity(0.03)` or plain white |
+**Theme Colours (as implemented):**
+| Condition | Theme Colour |
+|-----------|---------------|
+| Admin | `Color.red.opacity(0.06)` |
+| Mercy / Free | `Color.gray.opacity(0.04)` |
+| Grace | `Color.orange.opacity(0.06)` |
+| Love | `Color.purple.opacity(0.06)` |
 
 **Requirements:**
 1. **Theme Application**
-   - Subtle background tint across the entire app
+   - Subtle background tint on main window only
    - Immediate visual change when subscription tier changes
    - Works in both light and dark mode
    
 2. **Implementation**
-   - Theme state managed by SubscriptionManager
-   - Applied via environment or preference key
-   - Consistent across all windows (Main, Settings)
+   - Theme derived from `SubscriptionService.currentTier` and `isAdmin`
+   - Applied via `.background()` on main window root view
 
 **Acceptance Criteria:**
-- [ ] Free tier shows default appearance (no tint)
-- [ ] Mercy tier shows very light red background tint
-- [ ] Grace tier shows very light blue background tint  
-- [ ] Love tier shows white or very light purple tint
-- [ ] Theme changes immediately when switching tiers (debug mode)
-- [ ] Theme persists across app restart
-- [ ] Ads disappear when on paid tier (verify existing logic)
+- [x] Mercy/Free tier shows very light grey background tint
+- [x] Grace tier shows very light orange background tint
+- [x] Love tier shows very light purple background tint
+- [x] Admin shows very light red background tint
+- [x] Theme changes immediately when switching tiers (debug/admin mode)
+- [x] Theme persists with subscription state across app restart
+- [x] Ads disappear when on paid tier (existing logic — Story 7.3)
 
-**Technical Notes:**
-- Create `SubscriptionTheme` enum with associated colours
-- Apply via `.background()` modifier on root view
-- Consider using `Color.accentColor` for controls
+**Implementation (Feb 2026):**
+- Added `themeTint` computed property to `SubscriptionTier` in `SubscriptionService.swift` (SwiftUI import added)
+- In `MainView.swift`: `@ObservedObject private var subscriptionService`, `.background(subscriptionBackgroundTint)`, and `subscriptionBackgroundTint` computed property (admin → red, else tier’s `themeTint`)
+- **Not signed in:** Tint is always grey when not authenticated; `loadCachedStatus()` does not apply cached tier when unauthenticated.
 
 ---
 
@@ -162,10 +159,10 @@ Ensure service history is properly saved and displayed in the History tab.
 
 ## Implementation Order
 
-1. **Story 7.3** - Fix Premium Mode ad visibility (critical bug)
-2. **Story 7.4** - Verify History persistence (bug fix)
-3. **Story 7.1** - Settings window redesign (UI enhancement)
-4. **Story 7.2** - Subscription theme indicators (visual enhancement)
+1. **Story 7.3** - Fix Premium Mode ad visibility (critical bug) ✅
+2. **Story 7.4** - Verify History persistence (bug fix) ✅
+3. **Story 7.1** - Settings window redesign (UI enhancement) ✅
+4. **Story 7.2** - Subscription theme indicators (visual enhancement) ✅
 
 ---
 
@@ -180,17 +177,17 @@ Ensure service history is properly saved and displayed in the History tab.
 
 ## Testing Checklist
 
-### Story 7.1 (Settings Redesign)
-- [ ] Sidebar navigation works on macOS 13+
-- [ ] Window resizing works correctly
-- [ ] Collapsed/expanded state persists
-- [ ] All settings sections are accessible
+### Story 7.1 (Settings Redesign) ✅
+- [x] Sidebar navigation works on macOS 13+
+- [x] Window resizing works correctly
+- [x] Collapsed/expanded state persists
+- [x] All settings sections are accessible
 
-### Story 7.2 (Subscription Themes)
-- [ ] Each tier displays correct background tint
-- [ ] Theme changes are immediate
-- [ ] Works in light and dark mode
-- [ ] Theme persists after restart
+### Story 7.2 (Subscription Themes) ✅
+- [x] Each tier displays correct background tint (Admin=red, Mercy=grey, Grace=orange, Love=purple)
+- [x] Theme changes are immediate
+- [x] Works in light and dark mode
+- [x] Theme persists after restart
 
 ### Story 7.3 (Ad Visibility) ✅
 - [x] Ads hidden on Mercy tier
@@ -207,6 +204,37 @@ Ensure service history is properly saved and displayed in the History tab.
 - [x] Database path is correct for sandboxed apps (`~/Library/Containers/com.ORekunMedia.DivineLink/Data/Library/Application Support/DivineLink/ServiceHistory.db`)
 - [x] Session data (name, type, dates) stored correctly with SQLITE_TRANSIENT binding
 - [ ] **Verification needed:** User to test by creating/ending a session and checking History tab
+
+---
+
+## Post-Implementation Refinements (Feb 2026)
+
+The following refinements were applied after the initial Epic 7.1/7.2 implementation to improve behaviour and fix edge cases.
+
+### Settings Window
+| Change | Description |
+|--------|-------------|
+| **Resizable window** | Settings scene is not resizable by default on macOS. `SettingsWindowResizeEnabler` (NSViewRepresentable wrapping an NSView that sets `window?.styleMask.insert(.resizable)` in `viewDidMoveToWindow`) is applied as `.background(SettingsWindowResizeEnabler())` on the Settings `NavigationSplitView`. |
+| **Single collapse/expand control** | Removed duplicate toolbar button. Only the system title-bar sidebar toggle remains. When the user taps it, the sidebar does not fully hide; it toggles between **expanded** (icons + labels, min 160pt) and **icon-only** (44pt). Implemented by binding `columnVisibility` and in `onChange(of: columnVisibility)` setting `columnVisibility = .all` and toggling `sidebarCollapsed` when the system tries to set `.detailOnly`. |
+| **Narrower icon-only sidebar** | Collapsed sidebar width reduced from 52pt to 44pt for a slimmer strip while keeping icons tappable. |
+
+### Subscription & Tint
+| Change | Description |
+|--------|-------------|
+| **Grey when not signed in** | Main window tint is grey when the user is not authenticated. `MainView.subscriptionBackgroundTint` returns grey when `!authService.isAuthenticated`. `SubscriptionService.loadCachedStatus()` returns early with `currentTier = .mercy` when `!AuthService.shared.isAuthenticated`, so cached tier from a previous session is not applied. |
+| **Sign-out reset** | `SubscriptionService.resetForSignOut()` (called from `AuthService.signOut()`) sets `isAdmin = false`, `currentTier = .mercy`, and clears warnings so tint and ads update immediately. |
+
+### Admin Debug: Simulate Free
+| Change | Description |
+|--------|-------------|
+| **Debug “Reset to Free”** | For admins testing the free-tier experience, “Debug: Reset to Free” in Settings → Account (Developer Options) now sets `SubscriptionService.shared.debugSimulateFreeMode = true` in addition to `AdManager.resetToFree()`. `SubscriptionService.canUsePremiumFeatures` returns `false` when `debugSimulateFreeMode` is true, so the main window shows ads and grey tint. “Debug: Set Premium” clears the flag and restores admin behaviour. |
+| **Tint and ads** | `MainView.subscriptionBackgroundTint` returns grey when `subscriptionService.debugSimulateFreeMode` is true. `resetForSignOut()` clears `debugSimulateFreeMode` so it does not persist after sign-out. |
+
+**Files touched (refinements):**
+- `SettingsView.swift` — Resize enabler, single collapse behaviour, icon-only width 44pt
+- `MainView.swift` — Grey tint when not signed in and when `debugSimulateFreeMode`
+- `SubscriptionService.swift` — `loadCachedStatus()` auth guard, `debugSimulateFreeMode`, `resetForSignOut()` clearing debug flag
+- `AdViews.swift` — Debug buttons set/clear `SubscriptionService.shared.debugSimulateFreeMode`
 
 ---
 
@@ -251,3 +279,4 @@ Ensure service history is properly saved and displayed in the History tab.
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | Feb 2026 | Initial Epic 7 planning document |
+| 1.1 | Feb 2026 | Post-implementation refinements: resizable Settings window, single sidebar collapse (icon-only vs expanded), 44pt icon width, grey tint when not signed in, loadCachedStatus auth guard, admin debug simulate Free |

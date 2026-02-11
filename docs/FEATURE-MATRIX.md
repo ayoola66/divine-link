@@ -1,7 +1,7 @@
 # Divine Link - Feature Matrix
 
-**Last Updated:** 5 February 2026  
-**Version:** 1.3.0  
+**Last Updated:** 6 February 2026  
+**Version:** 1.3.2  
 **Status:** Source of Truth Document
 
 ---
@@ -125,9 +125,11 @@ This document serves as the **definitive source of truth** for:
 | Feature | Mercy | Grace | Love | Notes |
 |---------|-------|-------|------|-------|
 | **Email Support** | ✓ | ✓ | ✓ | Basic support |
+| **In-App Contact Form** | ✗ | ✓ | ✓ | Paid/previous-paid customers only (v1.3.2) |
 | **Priority Support** | ✗ | ✗ | ✓ | Faster response |
 | **Auto-Updates (Sparkle)** | ✓ | ✓ | ✓ | Background updates |
 | **Early Access Features** | ✗ | ✗ | ✓ | Beta features |
+| **Subscription Grace Period** | — | ✓ | ✓ | 14-day grace with countdown banner (v1.3.2) |
 
 ### Advanced Features (Future)
 
@@ -208,7 +210,18 @@ This document serves as the **definitive source of truth** for:
 
 ## Version History & Feature Tracking
 
-### v1.3.0 (Current - Unreleased)
+### v1.3.2 (Current - Unreleased)
+- ✅ Admin Full-Access Bypass (designated admin email)
+- ✅ 14-Day Subscription Grace Period with countdown banner
+- ✅ Subscription Warning Banner (red bar, top of main window)
+- ✅ In-App Contact Us Form (paid/previous-paid customers only)
+- ✅ Contact Form Supabase Edge Function (server-side email relay)
+- ✅ Debug/Developer Options accessible to admin users at runtime
+- ✅ Settings Window Sidebar Redesign (Epic 7.1) — NavigationSplitView, single collapse (icon-only 44pt vs expanded), resizable window, persisted state, all tabs visible
+- ✅ Subscription Theme Indicators (Epic 7.2) — Main window only: Admin=red, Mercy=grey, Grace=orange, Love=purple (light tints); grey when not signed in
+- ✅ Admin Debug: Simulate Free — Developer option “Reset to Free” forces grey tint and ads for testing; “Set Premium” restores admin behaviour
+
+### v1.3.0 (Released)
 - ✅ Reference Buffer (Stateful Detection) - Story 7.1
 - ✅ Premium Paywall UX Upgrade
 - ✅ Detection Settings Premium Gating
@@ -251,11 +264,15 @@ This document serves as the **definitive source of truth** for:
 ## Developer Notes
 
 ### Key Files for Feature Gating
-- `SubscriptionService.swift` - Tier tracking and limits
+- `SubscriptionService.swift` - Tier tracking, limits, admin bypass, grace period logic, `SubscriptionTier.themeTint`
 - `PremiumFeatureGate.swift` - View modifier for gating
 - `PaywallView.swift` - Upgrade UI with tier comparison
 - `PastorProfilesView.swift` - Profile limit enforcement
-- `SettingsView.swift` - Detection Settings gating
+- `SettingsView.swift` - Sidebar navigation (Epic 7.1), Detection Settings gating, About tab, Contact Us form
+- `SubscriptionWarningBanner.swift` - Grace period countdown banner
+- `SupabaseConfig.swift` - Admin emails, grace period duration, Stripe config
+- `MainView.swift` - Warning banner integration, subscription background tint (Epic 7.2)
+- `supabase/functions/contact-form/index.ts` - Contact form email relay Edge Function
 
 ### Tier Enum Structure
 ```swift

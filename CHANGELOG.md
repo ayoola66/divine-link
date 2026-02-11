@@ -5,7 +5,94 @@ All notable changes to Divine Link will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - UNRELEASED
+## [1.3.5] - 2026-02-11
+
+### Fixed
+
+- **Silent audio capture (critical)**: Removed `audioEngine.reset()` from the `stop()` method. This call was corrupting the Core Audio HAL state, causing all subsequent captures to deliver zero-filled (silent) buffers — even after engine recreation. This was the root cause of the non-functioning audio meter and detection.
+- **Race condition at startup**: The device observer and pipeline startup were both calling `setInputDevice()`, causing rapid stop/start cycles that destabilised Core Audio. Added debounce (300ms) to the device observer and skip-if-already-configured logic in the pipeline.
+- **Multi-channel USB audio interfaces**: Devices such as the Focusrite Vocaster Two (14 channels) always had channel 0 read, which may be a mix/monitor bus rather than the physical microphone. Now scans all channels to find the one with the highest RMS.
+- **Settings disconnected from pipeline**: `AudioSettingsTab` created its own `AudioDeviceManager` and `AudioCaptureService` instances, completely disconnected from the detection pipeline. `AudioDeviceManager` is now a shared singleton.
+- **Spacebar shortcut bypassed permission check**: The space key could toggle capture even when microphone permission was denied. Now correctly gated.
+- **Pipeline ran without permission**: Audio capture could start and process silent buffers when microphone permission was denied. Added a permission gate in `start()` that blocks capture unless authorised.
+
+### Added
+
+- **Automatic silent-start recovery**: If the first 15 audio buffers are all silent (indicating a corrupted HAL), the engine is automatically recreated and restarted once.
+- **Clickable "No Permission" indicator**: The red "No Permission" status dot now opens System Settings directly to the Microphone privacy pane when clicked.
+- **Detailed audio diagnostics**: First-buffer logging now reports per-channel RMS for all channels, making it easy to identify which channel carries audio on multi-channel devices.
+- **Microphone permission logging**: Permission status (authorised, denied, not determined, restricted) is now explicitly logged at startup with guidance when denied.
+
+### Technical
+
+- `AudioCaptureService.swift`: Removed `reset()` from `stop()`; added permission gate in `start()`; added `performSilentStartRecovery()`; `convertToOptimalFormat()` scans all channels for best RMS; added `openMicrophonePrivacySettings()`; exposed `currentDeviceID` as `private(set)`.
+- `DetectionPipeline.swift`: Added `.debounce(for: .milliseconds(300))` to device observer; `start()` skips redundant `setInputDevice` when observer already configured it; added `CoreAudio` import and device ID lookup helper.
+- `AudioDeviceManager.swift`: Added `static let shared` singleton for app-wide consistency.
+- `SettingsView.swift`: `AudioSettingsTab` uses `AudioDeviceManager.shared` via `@ObservedObject`; "Test Audio" button only toggles if capture actually started.
+- `MainView.swift`: Spacebar shortcut gated by `hasPermission`; "No Permission" indicator is now a clickable button.
+
+---
+
+## [1.3.4] - 2026-02-10
+
+### Fixed
+
+- **In-app updates (Sparkle sandbox)**: Resolved "An error occurred while launching the installer" when updating from within the app. Sandboxed builds now have `SUEnableInstallerLauncherService` enabled in Info.plist and the required mach-lookup entitlements (`com.ORekunMedia.DivineLink-spks`, `-spki`) so Sparkle’s Installer XPC Service can run and install updates.
+
+### Technical
+
+- `Info.plist`: Added `SUEnableInstallerLauncherService` = YES.
+- `DivineLink.entitlements`: Added `com.apple.security.temporary-exception.mach-lookup.global-name` for Sparkle XPC services.
+
+---
+
+## [1.3.3] - 2026-02-07
+
+### Security & State Fixes
+
+- **Admin Tab Security**: Admin tab now only visible when user is both signed in AND an administrator. Completely hidden for unauthenticated users — airtight logic with no room for cached state leakage.
+- **Premium State Enforcement**: Premium features, settings, and UI elements strictly gated behind authentication. Cached subscription data from previous sessions can no longer leak through when not signed in.
+- **Reactive Auth Synchronisation**: `SubscriptionService` and `AdManager` now reactively observe `AuthService.$isAuthenticated` via Combine. When a session expires or user signs out, all premium/admin/subscription state resets instantly.
+- **Cache Hygiene**: Stale subscription data is now fully cleared from `UserDefaults` on sign-out or session expiry (`removeObject(forKey:)` for cached status, tier, last check, and has-been-paid keys), preventing privileged state from persisting across launches.
+
+### Changed
+
+- `SettingsView.swift`: Admin tab visibility now requires `authService.isAuthenticated && subscriptionService.isAdmin`.
+- `SubscriptionService.swift`: Added `observeAuthState()` Combine observer; `loadCachedStatus()` clears cache when not authenticated; `canUsePremiumFeatures` has auth guard; `resetForSignOut()` fully clears all cached state.
+- `AdManager.swift`: Added auth state observer; `init()` only loads cached status when authenticated; clears cached `subscriptionStatus` on sign-out.
+- `PremiumFeatureGate.swift`: `isPremium` computed property now requires `AuthService.shared.isAuthenticated` before checking subscription status.
+
+---
+
+## [1.3.1] - 2026-02-07
+
+### Added
+
+- **Admin Debug: Simulate Free**: When testing as an admin, Developer Options “Debug: Reset to Free” now correctly shows the free-tier experience (grey tint and ads sidebar). “Debug: Set Premium” restores admin behaviour. Uses `SubscriptionService.debugSimulateFreeMode` so ads and tint follow the simulated state.
+
+### Changed
+
+- **Settings window (Epic 7.1 refinements)**:
+  - Settings window is now resizable (drag edges/corners) via `SettingsWindowResizeEnabler`.
+  - Single collapse/expand control: system title-bar button toggles between expanded (icons + labels) and icon-only sidebar; sidebar is never fully hidden.
+  - Icon-only sidebar width reduced to 44pt for a slimmer strip.
+- **Subscription tint (Epic 7.2 refinements)**:
+  - Main window tint is always grey when not signed in. Cached tier from a previous session is no longer applied when unauthenticated.
+  - `SubscriptionService.loadCachedStatus()` returns early with Mercy (grey) when `!AuthService.shared.isAuthenticated`.
+  - `resetForSignOut()` clears subscription state and `debugSimulateFreeMode` so tint and ads update immediately after sign-out.
+
+### Technical
+
+- `SettingsView.swift`: Resize enabler, single collapse behaviour (columnVisibility intercept), 44pt icon-only width.
+- `MainView.swift`: Grey tint when not signed in and when `subscriptionService.debugSimulateFreeMode`.
+- `SubscriptionService.swift`: `debugSimulateFreeMode`, `loadCachedStatus()` auth guard, `canUsePremiumFeatures` debug override, `resetForSignOut()` clears debug flag.
+- `AdViews.swift`: Debug buttons set/clear `SubscriptionService.shared.debugSimulateFreeMode`.
+- `docs/epic-7-implementation-guide.md`: Post-implementation refinements and version history.
+- `docs/FEATURE-MATRIX.md`: v1.3.2 section updated with Settings and subscription refinements.
+
+---
+
+## [1.3.0] - 2026-02-06
 
 ### Added
 

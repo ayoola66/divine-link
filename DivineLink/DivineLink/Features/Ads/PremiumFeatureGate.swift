@@ -9,13 +9,14 @@ struct PremiumFeatureGate: ViewModifier {
     @ObservedObject private var adManager = AdManager.shared
     let featureName: String
     
-    /// Whether the user has premium access
+    /// Whether the user has premium access.
+    /// CRITICAL: If not authenticated, this ALWAYS returns false.
+    /// No cached AdManager status can grant premium access without a live session.
     private var isPremium: Bool {
-        // Check SubscriptionService for authenticated users, fall back to AdManager
-        if AuthService.shared.isAuthenticated {
-            return SubscriptionService.shared.canUsePremiumFeatures
+        guard AuthService.shared.isAuthenticated else {
+            return false
         }
-        return adManager.subscriptionStatus.isPaid
+        return SubscriptionService.shared.canUsePremiumFeatures
     }
     
     func body(content: Content) -> some View {

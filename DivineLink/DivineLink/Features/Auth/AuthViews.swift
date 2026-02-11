@@ -290,19 +290,19 @@ struct AccountView: View {
                         .font(.headline)
                 }
                 
-                // Subscription badge
-                HStack {
+                // Subscription badge — shows tier name + level
+                HStack(spacing: 4) {
                     Image(systemName: subscriptionService.isPremium ? "star.fill" : "star")
-                    Text(subscriptionService.isPremium ? "Premium" : "Free")
+                    Text(subscriptionBadgeText)
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
-                        .fill(subscriptionService.isPremium ? Color.orange.opacity(0.2) : Color.gray.opacity(0.2))
+                        .fill(subscriptionBadgeColour.opacity(0.2))
                 )
-                .foregroundStyle(subscriptionService.isPremium ? .orange : .secondary)
+                .foregroundStyle(subscriptionBadgeColour)
             }
             
             Divider()
@@ -315,7 +315,7 @@ struct AccountView: View {
                     
                     Spacer()
                     
-                    Text("\(deviceManager.devices.count)/2")
+                    Text("\(deviceManager.devices.count)/\(subscriptionService.currentTier.deviceLimit)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -367,6 +367,29 @@ struct AccountView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to sign out?")
+        }
+    }
+    
+    // MARK: - Badge Helpers
+    
+    /// Badge text: "Admin" for admin; otherwise "Love, Premium" / "Grace, Premium" / "Mercy, Free"
+    private var subscriptionBadgeText: String {
+        if subscriptionService.isAdmin { return "Admin" }
+        let tier = subscriptionService.currentTier
+        let level = subscriptionService.isPremium ? "Premium" : "Free"
+        return "\(tier.displayName), \(level)"
+    }
+    
+    /// Badge colour: red for Admin; otherwise tier-based
+    private var subscriptionBadgeColour: Color {
+        if subscriptionService.isAdmin { return .red }
+        switch subscriptionService.currentTier {
+        case .love:
+            return .purple
+        case .grace:
+            return .orange
+        case .mercy:
+            return .secondary
         }
     }
 }

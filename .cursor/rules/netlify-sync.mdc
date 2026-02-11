@@ -1,0 +1,72 @@
+---
+description: Automatically sync Distribution/netlify-site files to divine-link-site repository
+globs: Distribution/netlify-site/**
+alwaysApply: false
+---
+
+# Netlify Site Sync Rule
+
+## CRITICAL: Two-Repository Architecture
+
+This project uses TWO separate Git repositories:
+
+1. **divine-link** (this repo): Main macOS app code
+   - Path: `/Users/ayoogunrekun/Projects/Divine Link`
+   - Contains: Swift code, Xcode project, Distribution/netlify-site (source files)
+
+2. **divine-link-site** (separate repo): Netlify website deployment
+   - Path: `/Users/ayoogunrekun/Projects/divine-link-site`
+   - Deploys to: https://divinelink.netlify.app
+   - Files: admin.html, index.html, appcast.xml, etc.
+
+## Automatic Sync Requirement
+
+**When ANY file in `Distribution/netlify-site/` is modified:**
+
+1. ALWAYS copy the modified file(s) to `/Users/ayoogunrekun/Projects/divine-link-site/`
+2. ALWAYS commit and push from the divine-link-site directory
+3. NEVER rely on pushing from /tmp clones - use the local authenticated repo
+
+## Sync Command
+
+After modifying files in Distribution/netlify-site/, run:
+
+```bash
+# Copy all netlify-site files to the website repo
+cp -R "/Users/ayoogunrekun/Projects/Divine Link/Distribution/netlify-site/"* /Users/ayoogunrekun/Projects/divine-link-site/
+
+# Commit and push from the website repo
+cd /Users/ayoogunrekun/Projects/divine-link-site
+git add -A
+git commit -m "Sync from Divine Link: <describe changes>"
+git push origin main
+```
+
+Or use the sync script:
+```bash
+/Users/ayoogunrekun/Projects/Divine\ Link/scripts/sync-netlify-site.sh "Commit message"
+```
+
+## File Mapping
+
+| Source (Divine Link)                          | Destination (divine-link-site)     |
+|-----------------------------------------------|-------------------------------------|
+| Distribution/netlify-site/admin.html          | admin.html                          |
+| Distribution/netlify-site/index.html          | index.html                          |
+| Distribution/netlify-site/appcast.xml         | appcast.xml                         |
+| Distribution/netlify-site/netlify.toml        | netlify.toml                        |
+| Distribution/netlify-site/privacy.html        | privacy.html                        |
+| Distribution/netlify-site/terms.html          | terms.html                          |
+| Distribution/netlify-site/success.html        | success.html                        |
+| Distribution/netlify-site/releases/*          | releases/*                          |
+
+## Verification
+
+After syncing, verify deployment at:
+- Netlify Dashboard: https://app.netlify.com/projects/divinelink
+- Live Site: https://divinelink.netlify.app/admin.html
+
+Check deployment status:
+```bash
+cd /Users/ayoogunrekun/Projects/divine-link-site && netlify status
+```

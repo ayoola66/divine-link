@@ -113,16 +113,18 @@ class AdManager: ObservableObject {
     // MARK: - Private Properties
     
     private var subscriptionCancellable: AnyCancellable?
+    private var authCancellable: AnyCancellable?
     
     // MARK: - Computed Properties
     
     /// Whether to show ads in the UI
     var shouldShowAds: Bool {
-        // Use SubscriptionService as source of truth when authenticated
-        if AuthService.shared.isAuthenticated {
-            return !SubscriptionService.shared.canUsePremiumFeatures
+        // When not logged in, always show sidebar ads
+        if !AuthService.shared.isAuthenticated {
+            return true
         }
-        return subscriptionStatus.showsAds
+        // When authenticated, use subscription as source of truth
+        return !SubscriptionService.shared.canUsePremiumFeatures
     }
     
     /// Sidebar width when ads are shown
@@ -139,15 +141,21 @@ class AdManager: ObservableObject {
     // MARK: - Initialisation
     
     private init() {
-        // Load cached subscription status from UserDefaults
-        let saved = UserDefaults.standard.string(forKey: "subscriptionStatus") ?? "free"
-        
-        if saved == "premium" {
-            self.subscriptionStatus = .premium
-        } else if saved.hasPrefix("trial:"), let days = Int(saved.dropFirst(6)) {
-            self.subscriptionStatus = .trial(daysLeft: days)
+        // CRITICAL: Only use cached subscription status if the user is actually authenticated.
+        // If not authenticated, always start as free — no matter what was cached previously.
+        if AuthService.shared.isAuthenticated {
+            let saved = UserDefaults.standard.string(forKey: "subscriptionStatus") ?? "free"
+            if saved == "premium" {
+                self.subscriptionStatus = .premium
+            } else if saved.hasPrefix("trial:"), let days = Int(saved.dropFirst(6)) {
+                self.subscriptionStatus = .trial(daysLeft: days)
+            } else {
+                self.subscriptionStatus = .free
+            }
         } else {
             self.subscriptionStatus = .free
+            // Clear cached status to prevent stale data on next launch
+            UserDefaults.standard.removeObject(forKey: "subscriptionStatus")
         }
         
         // Observe SubscriptionService for real-time updates
@@ -157,6 +165,22 @@ class AdManager: ObservableObject {
                 if isPremium {
                     self?.subscriptionStatus = .premium
                     UserDefaults.standard.set("premium", forKey: "subscriptionStatus")
+                } else {
+                    self?.subscriptionStatus = .free
+                    UserDefaults.standard.set("free", forKey: "subscriptionStatus")
+                }
+            }
+        
+        // Observe auth state — when user logs out or session expires,
+        // immediately reset to free and clear cached status
+        authCancellable = AuthService.shared.$isAuthenticated
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isAuthenticated in
+                if !isAuthenticated {
+                    self?.subscriptionStatus = .free
+                    UserDefaults.standard.removeObject(forKey: "subscriptionStatus")
+                    print("🔒 AdManager: auth state false — reset to free, cache cleared")
                 }
             }
         
@@ -221,10 +245,9 @@ class AdManager: ObservableObject {
     @Published var isPurchasing = false
     @Published var purchaseError: String?
     
-    /// Debug mode - allows instant upgrade for testing (disable in production!)
-    #if DEBUG
+    /// Debug mode - allows instant upgrade for testing
+    /// Available in DEBUG builds and to admin users at runtime
     @Published var debugModeEnabled = false
-    #endif
     
     // MARK: - Subscription Management
     
@@ -244,15 +267,13 @@ class AdManager: ObservableObject {
         print("📊 shouldShowAds: \(shouldShowAds), subscriptionStatus: \(subscriptionStatus)")
     }
     
-    /// Upgrade to premium via debug mode (testing only)
-    #if DEBUG
+    /// Upgrade to premium via debug mode (testing and admin only)
     func debugUpgrade() {
         if debugModeEnabled {
             print("🔧 DEBUG: Instant upgrade activated")
             upgradeToPremium()
         }
     }
-    #endif
     
     /// Start a trial period
     func startTrial(days: Int = 7) {

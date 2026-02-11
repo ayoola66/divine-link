@@ -935,10 +935,20 @@ struct UpgradeButton: View {
 /// Full paywall shown when user wants to upgrade - Modern redesign with tier benefits
 struct PaywallView: View {
     @ObservedObject private var adManager = AdManager.shared
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
     @Environment(\.dismiss) private var dismiss
     @State private var isHoveringSubscribe = false
     @State private var selectedTier: SubscriptionTier = .grace
     @State private var selectedPlan: PremiumPlan = .monthly
+    
+    /// Show debug options for DEBUG builds or admin users
+    private var showDebugOptions: Bool {
+        #if DEBUG
+        return true
+        #else
+        return subscriptionService.isAdmin
+        #endif
+    }
     
     enum PremiumPlan: String, CaseIterable {
         case monthly = "Monthly"
@@ -1281,34 +1291,34 @@ struct PaywallView: View {
                 }
                 .foregroundStyle(.secondary.opacity(0.7))
                 
-                // Debug section (only in DEBUG builds)
-                #if DEBUG
-                VStack(spacing: 6) {
-                    Divider()
-                        .padding(.top, 4)
-                    
-                    Text("Debug Options")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    
-                    HStack(spacing: 12) {
-                        Toggle("Debug Mode", isOn: $adManager.debugModeEnabled)
-                            .font(.caption2)
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
+                // Debug section (DEBUG builds or admin users)
+                if showDebugOptions {
+                    VStack(spacing: 6) {
+                        Divider()
+                            .padding(.top, 4)
                         
-                        if adManager.debugModeEnabled {
-                            Button("Instant Upgrade") {
-                                adManager.debugUpgrade()
-                            }
+                        Text("Debug Options")
                             .font(.caption2)
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
-                            .tint(.purple)
+                            .foregroundStyle(.secondary)
+                        
+                        HStack(spacing: 12) {
+                            Toggle("Debug Mode", isOn: $adManager.debugModeEnabled)
+                                .font(.caption2)
+                                .toggleStyle(.switch)
+                                .controlSize(.mini)
+                            
+                            if adManager.debugModeEnabled {
+                                Button("Instant Upgrade") {
+                                    adManager.debugUpgrade()
+                                }
+                                .font(.caption2)
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                                .tint(.purple)
+                            }
                         }
                     }
                 }
-                #endif
             }
             .padding()
             .background(.regularMaterial)
@@ -1438,6 +1448,16 @@ struct BenefitRow: View {
 /// View for managing subscription in Settings
 struct SubscriptionSettingsView: View {
     @ObservedObject private var adManager = AdManager.shared
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
+    
+    /// Show debug options for DEBUG builds or admin users
+    private var showDebugOptions: Bool {
+        #if DEBUG
+        return true
+        #else
+        return subscriptionService.isAdmin
+        #endif
+    }
     
     var body: some View {
         Form {
@@ -1498,25 +1518,27 @@ struct SubscriptionSettingsView: View {
                 }
             }
             
-            #if DEBUG
-            Section {
-                Toggle("Debug Mode", isOn: $adManager.debugModeEnabled)
-                
-                if adManager.debugModeEnabled {
-                    Button("Debug: Set Premium") {
-                        adManager.debugUpgrade()
-                    }
-                    .foregroundStyle(.purple)
+            if showDebugOptions {
+                Section {
+                    Toggle("Debug Mode", isOn: $adManager.debugModeEnabled)
                     
-                    Button("Debug: Reset to Free") {
-                        adManager.resetToFree()
+                    if adManager.debugModeEnabled {
+                        Button("Debug: Set Premium") {
+                            SubscriptionService.shared.debugSimulateFreeMode = false
+                            adManager.debugUpgrade()
+                        }
+                        .foregroundStyle(.purple)
+                        
+                        Button("Debug: Reset to Free") {
+                            SubscriptionService.shared.debugSimulateFreeMode = true
+                            adManager.resetToFree()
+                        }
+                        .foregroundStyle(.red)
                     }
-                    .foregroundStyle(.red)
+                } header: {
+                    Text("Developer Options")
                 }
-            } header: {
-                Text("Developer Options")
             }
-            #endif
         }
         .formStyle(.grouped)
         .sheet(isPresented: $adManager.showPaywall) {

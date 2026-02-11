@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import os
 import AVFoundation
+import CoreAudio
 
 // MARK: - Loggers
 
@@ -50,16 +51,20 @@ class DetectionPipeline: ObservableObject {
         self.buffer = BufferManager()
         self.transcriptBuffer = TranscriptBuffer()
         self.correctionService = SpeechCorrectionService.shared
-        self.audioDeviceManager = AudioDeviceManager()
+        self.audioDeviceManager = AudioDeviceManager.shared
         
         setupPipeline()
         setupDeviceObserver()
     }
     
-    /// Observe device selection changes and apply to audio capture
+    /// Observe device selection changes and apply to audio capture.
+    /// Debounced to prevent rapid-fire calls at startup from corrupting the Core Audio
+    /// HAL state (observers can fire multiple times as AudioDeviceManager discovers and
+    /// loads saved devices).
     private func setupDeviceObserver() {
         audioDeviceManager.$selectedDevice
             .compactMap { $0 }
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
             .sink { [weak self] device in
                 guard let self = self else { return }
                 print("🎛️ [Pipeline] Device selection changed to: \(device.localizedName)")
@@ -119,17 +124,29 @@ class DetectionPipeline: ObservableObject {
         transcriptBuffer.clear()
         detector.clearCache()
         
-        // Ensure device list is refreshed and apply saved device
+        // Ensure device list is refreshed and apply saved device.
+        // Only call setInputDevice if the observer hasn't already configured it
+        // (the debounced observer fires on selectedDevice changes and may have
+        // already set the correct device, so calling again would be redundant and
+        // could cause a disruptive stop/start cycle).
         await audioDeviceManager.refreshDevices()
         if let selectedDevice = audioDeviceManager.selectedDevice {
-            print("🎛️ [Pipeline] Configuring input device: \(selectedDevice.localizedName)")
-            let deviceSet = audioCapture.setInputDevice(selectedDevice)
-            print("🎛️ [Pipeline] Device configured: \(deviceSet ? "✅ Success" : "⚠️ Failed, using default")")
+            // Check if device observer already configured this device
+            if let deviceID = audioCapture.currentDeviceID,
+               let selectedID = getAudioDeviceID(for: selectedDevice),
+               deviceID == selectedID {
+                print("🎛️ [Pipeline] Device already configured by observer: \(selectedDevice.localizedName) — skipping")
+            } else {
+                print("🎛️ [Pipeline] Configuring input device: \(selectedDevice.localizedName)")
+                let deviceSet = audioCapture.setInputDevice(selectedDevice)
+                print("🎛️ [Pipeline] Device configured: \(deviceSet ? "✅ Success" : "⚠️ Failed, using default")")
+            }
         } else {
             print("⚠️ [Pipeline] No device selected, using system default")
         }
         
-        // Start audio capture
+        // Start audio capture (setInputDevice may have already started it if
+        // wasCapturing was true, but the guard in start() prevents double-start)
         print("🎤 [Pipeline] Starting audio capture...")
         audioCapture.start()
         print("✅ [Pipeline] Audio capture started, isCapturing: \(audioCapture.isCapturing)")
@@ -152,6 +169,44 @@ class DetectionPipeline: ObservableObject {
         audioCapture.stop()
         
         isActive = false
+    }
+    
+    /// Helper: resolve an AVCaptureDevice to its Core Audio AudioDeviceID
+    /// so we can compare against audioCapture.currentDeviceID without triggering a set.
+    private func getAudioDeviceID(for device: AVCaptureDevice) -> AudioDeviceID? {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize
+        ) == noErr else { return nil }
+        
+        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var devices = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize, &devices
+        ) == noErr else { return nil }
+        
+        let targetUID = device.uniqueID
+        for id in devices {
+            var uidAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceUID,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var uidSize = UInt32(MemoryLayout<CFString>.size)
+            var uidPtr: Unmanaged<CFString>?
+            let status = withUnsafeMutablePointer(to: &uidPtr) { ptr in
+                AudioObjectGetPropertyData(id, &uidAddress, 0, nil, &uidSize, ptr)
+            }
+            if status == noErr, let uid = uidPtr?.takeRetainedValue() as String?, uid == targetUID {
+                return id
+            }
+        }
+        return nil
     }
     
     /// Toggle the pipeline on/off

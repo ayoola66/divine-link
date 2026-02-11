@@ -289,7 +289,7 @@ final class DeviceManager: ObservableObject {
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
             // If RPC fails, count devices manually
-            return await countDevices() < SupabaseConfig.maxDevicesPerAccount
+            return await countDevices() < SubscriptionService.shared.currentTier.deviceLimit
         }
         
         if let result = try? JSONDecoder().decode(Bool.self, from: data) {

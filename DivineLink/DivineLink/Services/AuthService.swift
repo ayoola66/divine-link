@@ -165,7 +165,7 @@ final class AuthService: ObservableObject {
         let body: [String: Any] = [
             "email": email,
             "token": code,
-            "type": "magiclink"
+            "type": "email"
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
@@ -224,6 +224,7 @@ final class AuthService: ObservableObject {
             currentUser = nil
             isAuthenticated = false
             clearStoredSession()
+            SubscriptionService.shared.resetForSignOut()
         }
         
         guard let accessToken = session?.accessToken else { return }

@@ -729,26 +729,39 @@
         .billing-selector {
             display: flex;
             justify-content: center;
-            align-items: center;
-            gap: 16px;
+            align-items: stretch;
+            gap: 0;
             margin-bottom: 40px;
-            padding: 8px;
+            padding: 6px;
             background: var(--bg-card);
-            border-radius: 12px;
-            max-width: 300px;
+            border-radius: 14px;
+            max-width: 380px;
             margin-left: auto;
             margin-right: auto;
-            border: 1px solid rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
         }
         
         .billing-selector label {
-            font-size: 0.95rem;
+            flex: 1;
+            font-size: 1rem;
             color: var(--text-muted);
             cursor: pointer;
-            padding: 8px 16px;
-            border-radius: 8px;
+            padding: 12px 20px;
+            border-radius: 10px;
             transition: all 0.3s;
             user-select: none;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+        
+        .billing-selector label .billing-save {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--mercy);
+            opacity: 0.85;
         }
         
         .billing-selector input[type="radio"] {
@@ -759,6 +772,11 @@
             background: var(--gradient-1);
             color: white;
             font-weight: 600;
+        }
+        
+        .billing-selector input[type="radio"]:checked + label .billing-save {
+            color: white;
+            opacity: 0.9;
         }
         
         .billing-selector input[type="radio"]:not(:checked) + label:hover {
@@ -1074,6 +1092,16 @@
                     <h3>Pastor Profiles</h3>
                     <p>Save preferred translations and speech corrections for each speaker. Perfect for churches with multiple ministers. <strong>Grace: 2 profiles, Love: 5 profiles</strong></p>
                 </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Secure &amp; Reliable</h3>
+                    <p>Airtight authentication with reactive state management. Your subscription, admin access, and premium features are always in sync — no stale data, no leaky permissions.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📬</div>
+                    <h3>In-App Support</h3>
+                    <p>Premium subscribers can reach our support team directly from within the app via the Contact Us form. Grace and Love tier customers receive dedicated email and priority support.</p>
+                </div>
             </div>
         </div>
     </section>
@@ -1159,7 +1187,7 @@
                 <input type="radio" id="billing-monthly" name="billing" value="monthly" checked>
                 <label for="billing-monthly">Monthly</label>
                 <input type="radio" id="billing-yearly" name="billing" value="yearly">
-                <label for="billing-yearly">Yearly <span style="color: var(--mercy); font-size: 0.85em;">(Save up to 37%)</span></label>
+                <label for="billing-yearly">Yearly<span class="billing-save">Save up to 37%</span></label>
             </div>
             
             <div class="price-cards">
@@ -1206,6 +1234,7 @@
                         <li><span class="check">✓</span> Verse navigation controls</li>
                         <li><span class="check">✓</span> Use on 2 devices</li>
                         <li><span class="check">✓</span> Email support</li>
+                        <li><span class="check">✓</span> In-app Contact Us form</li>
                         <li><span class="check">✓</span> <strong>2 Pastor profiles</strong></li>
                     </ul>
                     <a href="https://buy.stripe.com/8x228raJOceGbI50hn5AQ00" id="grace-btn" class="btn btn-grace" data-grace-monthly="https://buy.stripe.com/8x228raJOceGbI50hn5AQ00" data-grace-yearly="https://buy.stripe.com/bJe00jf04emO7rPfch5AQ03">Subscribe</a>
@@ -1375,6 +1404,18 @@
                             <td>Priority</td>
                         </tr>
                         <tr>
+                            <td>In-app Contact Support</td>
+                            <td class="cross">✗</td>
+                            <td class="check">✓</td>
+                            <td class="check">✓</td>
+                        </tr>
+                        <tr>
+                            <td>Subscription grace period</td>
+                            <td>—</td>
+                            <td>14 days</td>
+                            <td>14 days</td>
+                        </tr>
+                        <tr>
                             <td>Advertisements</td>
                             <td>Sidebar ads</td>
                             <td class="check">Ad-free</td>
@@ -1415,7 +1456,7 @@
                     <a href="mailto:support@divinelink.app">Contact Support</a>
                 </div>
                 <div class="footer-copy">
-                    © 2026 Divine Link by O'Rekun Media • <span style="background: rgba(224, 122, 43, 0.15); padding: 4px 12px; border-radius: 50px; font-size: 0.8rem; color: #F59E4C; font-weight: 600;">v1.2.0</span>
+                    © 2026 Divine Link by O'Rekun Media • <span style="background: rgba(224, 122, 43, 0.15); padding: 4px 12px; border-radius: 50px; font-size: 0.8rem; color: #F59E4C; font-weight: 600;">v1.3.5</span>
                 </div>
             </div>
         </div>

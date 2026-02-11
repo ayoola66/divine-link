@@ -1,5 +1,20 @@
 import SwiftUI
 import AVFoundation
+import AppKit
+
+// MARK: - Settings Window Resize Enabler (macOS Settings scene is not resizable by default)
+
+private final class ResizeEnablerView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.styleMask.insert(.resizable)
+    }
+}
+
+private struct SettingsWindowResizeEnabler: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ResizeEnablerView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
 
 // Explicit selection for Settings tabs to ensure reliable switching on macOS
 private enum SettingsTab: Hashable {
@@ -15,83 +30,189 @@ private enum SettingsTab: Hashable {
     case about
 }
 
-/// Main settings view with tabbed interface
+// MARK: - Resizable divider for sidebar (Audio MIDI Setup–style)
+
+private let kSidebarWidthMin: CGFloat = 160
+private let kSidebarWidthMax: CGFloat = 400
+private let kSidebarWidthDefault: CGFloat = 220
+private let kSidebarCollapsedWidth: CGFloat = 44
+
+private struct ResizableDivider: View {
+    @Binding var width: CGFloat
+    var minWidth: CGFloat = kSidebarWidthMin
+    var maxWidth: CGFloat = kSidebarWidthMax
+    var isCollapsed: Bool
+    var onDragExpand: () -> Void
+
+    @State private var isDragging = false
+    @State private var widthAtDragStart: CGFloat = 0
+    @State private var expandedThisDrag = false
+
+    var body: some View {
+        Rectangle()
+            .fill(isDragging ? Color.accentColor.opacity(0.3) : Color.clear)
+            .frame(width: 6)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() }
+                else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .onChanged { value in
+                        if isCollapsed {
+                            if value.translation.width > 20, !expandedThisDrag {
+                                expandedThisDrag = true
+                                onDragExpand()
+                                widthAtDragStart = kSidebarCollapsedWidth
+                                width = min(maxWidth, max(minWidth, kSidebarCollapsedWidth + value.translation.width))
+                            }
+                            return
+                        }
+                        if !isDragging {
+                            isDragging = true
+                            widthAtDragStart = expandedThisDrag ? kSidebarCollapsedWidth : width
+                        }
+                        let newWidth = widthAtDragStart + value.translation.width
+                        width = min(maxWidth, max(minWidth, newWidth))
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                        expandedThisDrag = false
+                    }
+            )
+    }
+}
+
+/// Main settings view with sidebar navigation (Epic 7.1). Sidebar is resizable via drag and can be collapsed to icons-only.
 struct SettingsView: View {
     @State private var selection: SettingsTab = .account
-    
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
+    @ObservedObject private var authService = AuthService.shared
+    @AppStorage("settingsSidebarCollapsed") private var sidebarCollapsed = false
+    @AppStorage("settingsSidebarWidth") private var sidebarWidth: Double = Double(kSidebarWidthDefault)
+
+    private var effectiveSidebarWidth: CGFloat {
+        if sidebarCollapsed { return kSidebarCollapsedWidth }
+        return min(kSidebarWidthMax, max(kSidebarWidthMin, CGFloat(sidebarWidth)))
+    }
+
     var body: some View {
-        TabView(selection: $selection) {
-            AccountSettingsTab()
-                .tabItem {
-                    Label("Account", systemImage: "person.circle")
-                }
-                .tag(SettingsTab.account)
-            
-            AudioSettingsTab()
-                .tabItem {
-                    Label("Audio", systemImage: "waveform")
-                }
-                .tag(SettingsTab.audio)
-            
-            DetectionSettingsTab()
-                .tabItem {
-                    Label("Detection", systemImage: "waveform.badge.magnifyingglass")
-                }
-                .tag(SettingsTab.detection)
-            
-            ProPresenterSettingsTab()
-                .tabItem {
-                    Label("ProPresenter", systemImage: "tv")
-                }
-                .tag(SettingsTab.propresenter)
-            
-            PastorProfilesTab()
-                .tabItem {
-                    Label("Pastors", systemImage: "person.2")
-                }
-                .tag(SettingsTab.pastors)
-            
-            AccessibilitySettingsTab()
-                .tabItem {
-                    Label("Display", systemImage: "textformat.size")
-                }
-                .tag(SettingsTab.display)
-            
-            SubscriptionSettingsTab()
-                .tabItem {
-                    Label("Premium", systemImage: "star.fill")
-                }
-                .tag(SettingsTab.premium)
-            
-            UpdatesSettingsTab()
-                .tabItem {
-                    Label("Updates", systemImage: "arrow.down.circle")
-                }
-                .tag(SettingsTab.updates)
-            
-            ServiceHistoryView()
-                .tabItem {
-                    Label("History", systemImage: "clock.arrow.circlepath")
-                }
-                .tag(SettingsTab.history)
-            
-            AboutTab()
-                .tabItem {
-                    Label("About", systemImage: "info.circle")
-                }
-                .tag(SettingsTab.about)
+        HStack(spacing: 0) {
+            // Sidebar (resizable width when expanded)
+            sidebarList
+                .frame(width: effectiveSidebarWidth)
+                .frame(minHeight: 0, maxHeight: .infinity)
+
+            // Draggable divider: resize sidebar (or expand from collapsed when dragging right)
+            ResizableDivider(
+                width: Binding(
+                    get: { CGFloat(sidebarWidth) },
+                    set: { sidebarWidth = Double($0) }
+                ),
+                minWidth: kSidebarWidthMin,
+                maxWidth: kSidebarWidthMax,
+                isCollapsed: sidebarCollapsed,
+                onDragExpand: { sidebarCollapsed = false }
+            )
+            .frame(minHeight: 0, maxHeight: .infinity)
+
+            // Detail
+            settingsDetailView
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         }
         .frame(
-            minWidth: 580, idealWidth: 820, maxWidth: 1600,
-            minHeight: 540, idealHeight: 540, maxHeight: .infinity
+            minWidth: 680, idealWidth: 880, maxWidth: 1600,
+            minHeight: 540, idealHeight: 600, maxHeight: .infinity
         )
+        .background(SettingsWindowResizeEnabler())
+    }
+
+    /// Sidebar: when collapsed shows icons only; when expanded shows icons + labels and can be resized.
+    private var sidebarList: some View {
+        VStack(spacing: 0) {
+            Group {
+                if sidebarCollapsed {
+                    sidebarListContent
+                        .labelStyle(.iconOnly)
+                } else {
+                    sidebarListContent
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+            .frame(minWidth: sidebarCollapsed ? kSidebarCollapsedWidth : kSidebarWidthMin,
+                   maxWidth: sidebarCollapsed ? kSidebarCollapsedWidth : kSidebarWidthMax)
+
+            Spacer(minLength: 0)
+
+            // Collapse / expand button (collapses the sidebar itself to a narrow strip, not just labels)
+            Button {
+                sidebarCollapsed.toggle()
+            } label: {
+                Image(systemName: sidebarCollapsed ? "sidebar.leading" : "sidebar.trailing")
+                    .symbolVariant(.fill)
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 8)
+            .help(sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar to icons")
+        }
+        .background(.regularMaterial)
+    }
+
+    private var sidebarListContent: some View {
+        List(selection: $selection) {
+            Label("Account", systemImage: "person.circle")
+                .tag(SettingsTab.account)
+            Label("Audio", systemImage: "waveform")
+                .tag(SettingsTab.audio)
+            Label("Detection", systemImage: "waveform.badge.magnifyingglass")
+                .tag(SettingsTab.detection)
+            Label("ProPresenter", systemImage: "tv")
+                .tag(SettingsTab.propresenter)
+            Label("Pastors", systemImage: "person.2")
+                .tag(SettingsTab.pastors)
+            Label("Display", systemImage: "textformat.size")
+                .tag(SettingsTab.display)
+            // Admin tab: ONLY visible when authenticated AND user is admin.
+            if authService.isAuthenticated && subscriptionService.isAdmin {
+                Label("Admin", systemImage: "wrench.and.screwdriver")
+                    .tag(SettingsTab.premium)
+            }
+            Label("Updates", systemImage: "arrow.down.circle")
+                .tag(SettingsTab.updates)
+            Label("History", systemImage: "clock.arrow.circlepath")
+                .tag(SettingsTab.history)
+            Label("About", systemImage: "info.circle")
+                .tag(SettingsTab.about)
+        }
+        .listStyle(.sidebar)
+    }
+
+    private var settingsDetailView: some View {
+        Group {
+            switch selection {
+            case .account: AccountSettingsTab()
+            case .audio: AudioSettingsTab()
+            case .detection: DetectionSettingsTab()
+            case .propresenter: ProPresenterSettingsTab()
+            case .pastors: PastorProfilesTab()
+            case .display: AccessibilitySettingsTab()
+            case .premium: SubscriptionSettingsTab()
+            case .updates: UpdatesSettingsTab()
+            case .history: ServiceHistoryView()
+            case .about: AboutTab()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 // MARK: - Audio Settings Tab
 
 struct AudioSettingsTab: View {
-    @StateObject private var audioManager = AudioDeviceManager()
+    /// Use the shared AudioDeviceManager so device selection stays in sync
+    /// with the main DetectionPipeline (previously created a separate instance).
+    @ObservedObject private var audioManager = AudioDeviceManager.shared
     @StateObject private var audioTest = AudioCaptureService()
     @State private var isTesting = false
     
@@ -142,14 +263,17 @@ struct AudioSettingsTab: View {
                         Button(isTesting ? "Stop Test" : "Test Audio") {
                             if isTesting {
                                 audioTest.stop()
+                                isTesting = false
                             } else {
                                 // Configure device before starting test
                                 if let device = audioManager.selectedDevice {
                                     let _ = audioTest.setInputDevice(device)
                                 }
                                 audioTest.start()
+                                // Only mark as testing if capture actually started
+                                // (start() blocks if microphone permission is denied)
+                                isTesting = audioTest.isCapturing
                             }
-                            isTesting.toggle()
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(isTesting ? .red : .blue)
@@ -200,6 +324,16 @@ struct AudioSettingsTab: View {
                             Text(error.localizedDescription)
                                 .font(.caption)
                                 .foregroundStyle(.red)
+                        }
+                    }
+                    
+                    if let message = audioTest.fallbackToDefaultDeviceMessage {
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundStyle(.blue)
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -670,25 +804,35 @@ struct AccessibilitySettingsTab: View {
 
 struct AboutTab: View {
     @ObservedObject private var cleanup = ArchiveCleanupService.shared
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
     @State private var showCleanupConfirmation = false
+    @State private var showContactForm = false
     
     var body: some View {
-        VStack(spacing: 16) {
-            // App info section
-            appInfoSection
-            
-            Divider()
-            
-            // Storage section
-            storageSection
-            
-            Spacer()
-            
-            Text("© 2026 Divine Link. All rights reserved.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+        ScrollView {
+            VStack(spacing: 16) {
+                // App info section
+                appInfoSection
+                
+                Divider()
+                
+                // Storage section
+                storageSection
+                
+                // Contact Us button - only for paid/previous-paid customers
+                if subscriptionService.isPremium || subscriptionService.hasBeenPaidCustomer || subscriptionService.isAdmin {
+                    Divider()
+                    contactUsSection
+                }
+                
+                Spacer()
+                
+                Text("© 2026 Divine Link. All rights reserved.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding()
         }
-        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .alert("Clean Up Storage?", isPresented: $showCleanupConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -697,6 +841,9 @@ struct AboutTab: View {
             }
         } message: {
             Text("This will delete all services older than 90 days.")
+        }
+        .sheet(isPresented: $showContactForm) {
+            ContactUsFormView()
         }
     }
     
@@ -730,6 +877,33 @@ struct AboutTab: View {
     
     private var buildNumber: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+    }
+    
+    private var contactUsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Support")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            
+            Text("As a valued customer, you can contact us directly for assistance.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Button {
+                showContactForm = true
+            } label: {
+                HStack {
+                    Image(systemName: "envelope.fill")
+                    Text("Contact Us")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .controlSize(.regular)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.05))
+        .cornerRadius(8)
     }
     
     private var storageSection: some View {
@@ -790,6 +964,245 @@ struct AboutTab: View {
     }
 }
 
+// MARK: - Contact Us Form View
+
+/// Form shown to paid/previous-paid customers to contact support
+struct ContactUsFormView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var authService = AuthService.shared
+    
+    @State private var title = ""
+    @State private var fullName = ""
+    @State private var email = ""
+    @State private var phone = ""
+    @State private var message = ""
+    @State private var agreedToContact = false
+    @State private var isSending = false
+    @State private var showConfirmation = false
+    @State private var sendError: String?
+    
+    private let titleOptions = ["Mr", "Mrs", "Ms", "Dr", "Rev", "Pastor", "Other"]
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Contact Us")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+            
+            Divider()
+            
+            // Form content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Title
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Title")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Picker("Title", selection: $title) {
+                            Text("Select...").tag("")
+                            ForEach(titleOptions, id: \.self) { option in
+                                Text(option).tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                    
+                    // Name
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Full Name")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("Enter your full name", text: $fullName)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    
+                    // Email
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Email Address")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("Enter your email address", text: $email)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    
+                    // Phone (optional)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Phone Number")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("(optional)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        TextField("Enter your phone number", text: $phone)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    
+                    // Message
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your Message")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextEditor(text: $message)
+                            .frame(minHeight: 120)
+                            .padding(4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                    }
+                    
+                    // Consent checkbox
+                    Toggle(isOn: $agreedToContact) {
+                        Text("I agree that Divine Link may contact me regarding this enquiry")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.checkbox)
+                    
+                    // Error message
+                    if let error = sendError {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    
+                    // Submit button
+                    HStack {
+                        Spacer()
+                        Button {
+                            submitForm()
+                        } label: {
+                            HStack {
+                                if isSending {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                        .frame(width: 14, height: 14)
+                                }
+                                Text(isSending ? "Sending..." : "Send Message")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                        .disabled(!isFormValid || isSending)
+                        Spacer()
+                    }
+                }
+                .padding()
+            }
+        }
+        .frame(width: 440, height: 560)
+        .onAppear {
+            // Pre-fill email from account
+            if let userEmail = authService.currentUser?.email {
+                email = userEmail
+            }
+        }
+        .alert("Message Sent", isPresented: $showConfirmation) {
+            Button("OK") { dismiss() }
+        } message: {
+            Text("Thank you for contacting us. We shall respond to your enquiry as soon as possible.")
+        }
+    }
+    
+    private var isFormValid: Bool {
+        !fullName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !email.trimmingCharacters(in: .whitespaces).isEmpty &&
+        email.contains("@") &&
+        !message.trimmingCharacters(in: .whitespaces).isEmpty &&
+        agreedToContact
+    }
+    
+    private func submitForm() {
+        sendError = nil
+        isSending = true
+        
+        // Send via Supabase Edge Function
+        Task {
+            do {
+                let payload: [String: Any] = [
+                    "title": title,
+                    "name": fullName,
+                    "email": email,
+                    "phone": phone,
+                    "message": message,
+                    "user_id": authService.currentUser?.id ?? "unknown",
+                    "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+                    "tier": SubscriptionService.shared.currentTier.rawValue,
+                    "timestamp": ISO8601DateFormatter().string(from: Date())
+                ]
+                
+                let url = SupabaseConfig.functionsURL.appendingPathComponent("contact-form")
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+                
+                if let token = AuthService.shared.accessToken {
+                    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                }
+                
+                request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+                
+                let (_, response) = try await URLSession.shared.data(for: request)
+                
+                if let httpResponse = response as? HTTPURLResponse,
+                   httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                    showConfirmation = true
+                } else {
+                    // Fallback: open mailto link
+                    openMailtoFallback()
+                    showConfirmation = true
+                }
+            } catch {
+                // Fallback: open mailto link
+                openMailtoFallback()
+                showConfirmation = true
+            }
+            
+            isSending = false
+        }
+    }
+    
+    /// Fallback to system email client if Edge Function is unavailable
+    private func openMailtoFallback() {
+        let subject = "Divine Link Support Enquiry"
+        let body = """
+        Title: \(title)
+        Name: \(fullName)
+        Email: \(email)
+        Phone: \(phone)
+        Tier: \(SubscriptionService.shared.currentTier.displayName)
+        
+        Message:
+        \(message)
+        """
+        
+        if let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let url = URL(string: "mailto:support@divinelink.app?subject=\(encodedSubject)&body=\(encodedBody)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
 // MARK: - Previews
 
 #Preview("Settings") {
@@ -799,5 +1212,9 @@ struct AboutTab: View {
 #Preview("Audio Tab") {
     AudioSettingsTab()
         .frame(width: 450, height: 300)
+}
+
+#Preview("Contact Form") {
+    ContactUsFormView()
 }
 

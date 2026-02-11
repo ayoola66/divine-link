@@ -1,0 +1,129 @@
+# Repository Workflow Rules
+
+## ⚠️ CRITICAL: Two Separate Repositories - ALWAYS VERIFY BEFORE PUSHING
+
+This project uses TWO separate GitHub repositories. **MISTAKES HERE BREAK THE DEPLOYMENT.**
+
+1. **divine-link** (`https://github.com/ayoola66/divine-link.git`)
+   - Contains: App source code (Swift files, Xcode project)
+   - Location: Root workspace directory
+   - Remote: `origin`
+
+2. **divine-link-site** (`https://github.com/ayoola66/divine-link-site.git`)
+   - Contains: Netlify website files (admin.html, landing pages)
+   - Location: `Distribution/netlify-site/` directory
+   - Deploys to: https://divinelink.netlify.app
+   - Remote: `netlify-site` (if configured) OR clone separately
+
+## MANDATORY VERIFICATION CHECKLIST
+
+**BEFORE EVERY PUSH, YOU MUST:**
+
+1. ✅ **Identify which files changed:**
+   ```bash
+   git status --short
+   ```
+
+2. ✅ **Check file locations:**
+   - Files in `Distribution/netlify-site/` → `divine-link-site` repo
+   - All other files → `divine-link` repo
+
+3. ✅ **Verify target repository:**
+   ```bash
+   # For divine-link-site files:
+   git remote -v | grep "divine-link-site"
+   
+   # For divine-link files:
+   git remote -v | grep "divine-link.git"
+   ```
+
+4. ✅ **Confirm before pushing:**
+   - Show user: "Pushing [file list] to [repository name]"
+   - Wait for confirmation if uncertain
+
+## Rules for Pushing Changes
+
+### ALWAYS Check File Location First
+
+**Before pushing ANY changes:**
+
+1. **Check if file is in `Distribution/netlify-site/`:**
+   - ✅ YES → **MUST** push to `divine-link-site` repository
+   - ❌ NO → Push to `divine-link` repository
+
+### Files That Go to `divine-link-site`:
+
+- `Distribution/netlify-site/admin.html` ⚠️ **CRITICAL**
+- `Distribution/netlify-site/index.html`
+- `Distribution/netlify-site/appcast.xml`
+- `Distribution/netlify-site/*.html` (all HTML files)
+- `Distribution/netlify-site/netlify.toml`
+- `Distribution/netlify-site/releases/*` (app ZIP files)
+
+### Files That Go to `divine-link`:
+
+- All Swift files (`DivineLink/**/*.swift`)
+- Xcode project files
+- Documentation (`docs/`, `README.md`)
+- Database schemas (`Distribution/supabase-*.sql`)
+- All other files NOT in `Distribution/netlify-site/`
+
+## SAFE Workflow for Admin/Website Changes
+
+**When modifying files in `Distribution/netlify-site/`:**
+
+### Option 1: Use the Sync Script (RECOMMENDED)
+
+```bash
+# Run the sync script with a commit message
+"/Users/ayoogunrekun/Projects/Divine Link/scripts/sync-netlify-site.sh" "Your commit message"
+```
+
+### Option 2: Manual Sync
+
+```bash
+# STEP 1: Copy file(s) to the local divine-link-site repo
+cp "/Users/ayoogunrekun/Projects/Divine Link/Distribution/netlify-site/admin.html" \
+   /Users/ayoogunrekun/Projects/divine-link-site/
+
+# STEP 2: Commit and push from divine-link-site
+cd /Users/ayoogunrekun/Projects/divine-link-site
+git add -A
+git commit -m "Description"
+git push origin main
+```
+
+### ⚠️ NEVER use /tmp clones - they don't have your Git credentials!
+
+## Verification Before Pushing
+
+**ALWAYS verify:**
+- [ ] File location checked (`Distribution/netlify-site/`?)
+- [ ] Correct repository identified (show remote URL)
+- [ ] Changes committed
+- [ ] Pushing to correct remote (verify URL)
+- [ ] User notified of which repo is being pushed to
+
+## Error Prevention
+
+**NEVER:**
+- ❌ Push `Distribution/netlify-site/*` files to `divine-link` repo
+- ❌ Assume - always verify remote URL
+- ❌ Skip verification steps
+
+**ALWAYS:**
+- ✅ Check file location first
+- ✅ Verify remote URL before pushing
+- ✅ Use the sync script or local divine-link-site repo
+- ✅ Show user which repo you're pushing to
+
+## Quick Reference
+
+| File Location | Repository | How to Push |
+|---------------|------------|-------------|
+| `Distribution/netlify-site/*` | divine-link-site | Use sync script |
+| Everything else | divine-link | Normal git push |
+
+**Sync Script:** `scripts/sync-netlify-site.sh "message"`
+**Local Website Repo:** `/Users/ayoogunrekun/Projects/divine-link-site`
+**Documentation:** `docs/REPOSITORY_STRUCTURE.md`

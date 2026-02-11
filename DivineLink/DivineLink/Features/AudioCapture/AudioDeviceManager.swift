@@ -1,9 +1,15 @@
 import AVFoundation
 import Combine
 
-/// Manages audio input device enumeration and selection
+/// Manages audio input device enumeration and selection.
+/// Use the shared singleton (`AudioDeviceManager.shared`) so that Settings, Pipeline,
+/// and any other consumer observe the same device state and selection.
 @MainActor
 class AudioDeviceManager: ObservableObject {
+    
+    // MARK: - Shared Singleton
+    
+    static let shared = AudioDeviceManager()
     
     // MARK: - Published Properties
     
@@ -19,6 +25,8 @@ class AudioDeviceManager: ObservableObject {
     
     // MARK: - Initialisation
     
+    /// Use `AudioDeviceManager.shared` instead of creating new instances.
+    /// The init is kept internal for backward compatibility but new code should use shared.
     init() {
         Task { @MainActor in
             await refreshDevices()

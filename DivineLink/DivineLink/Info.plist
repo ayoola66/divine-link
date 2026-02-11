@@ -57,5 +57,8 @@
 	<true/>
 	<key>SUShowReleaseNotes</key>
 	<true/>
+	<!-- Required for sandboxed app: use Installer XPC Service so updates can install -->
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 </dict>
 </plist>

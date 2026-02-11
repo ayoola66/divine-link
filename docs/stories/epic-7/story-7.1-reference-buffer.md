@@ -2,9 +2,14 @@
 
 **Epic:** 7 - Advanced Detection & Personalisation  
 **Story ID:** 7.1  
-**Status:** Not Started  
+**Status:** ✅ Complete  
 **Complexity:** Medium  
 **Priority:** P0 (Key Differentiator)
+
+**Implementation Files:**
+- `DivineLink/Features/Detection/ReferenceBuffer.swift` - Core buffer logic
+- `DivineLink/Features/Detection/ScriptureDetectorService.swift` - Integration with detection pipeline
+- `DivineLink/App/SettingsView.swift` - Settings UI for buffer configuration
 
 ---
 

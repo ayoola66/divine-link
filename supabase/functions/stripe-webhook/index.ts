@@ -18,6 +18,10 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
 
+// Stripe Product IDs for tier mapping
+const GRACE_PRODUCT_ID = 'prod_TtV8U5mVO1cecV'
+const LOVE_PRODUCT_ID = 'prod_TvU0LGh7zBgIH3'
+
 serve(async (req: Request) => {
   const signature = req.headers.get('stripe-signature')
   
@@ -108,13 +112,18 @@ async function handleCheckoutComplete(supabase: any, session: Stripe.Checkout.Se
   const userId = users[0].id
   
   // Get subscription details from Stripe
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['items.data.price.product'],
+  })
+  
+  // Determine tier based on Stripe product
+  const tierStatus = determineTier(subscription)
   
   // Update subscription in database
   const { error: updateError } = await supabase
     .from('subscriptions')
     .update({
-      status: 'premium',
+      status: tierStatus,
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
       current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
@@ -146,7 +155,13 @@ async function handleSubscriptionUpdate(supabase: any, subscription: Stripe.Subs
     return
   }
   
-  const status = mapStripeStatus(subscription.status)
+  // Determine status - use tier-aware mapping for active subscriptions
+  let status: string
+  if (subscription.status === 'active' || subscription.status === 'trialing') {
+    status = determineTier(subscription)
+  } else {
+    status = mapStripeStatus(subscription.status)
+  }
   
   const { error: updateError } = await supabase
     .from('subscriptions')
@@ -187,17 +202,31 @@ async function handleSubscriptionCancelled(supabase: any, subscription: Stripe.S
 // Handle successful payment
 async function handlePaymentSucceeded(supabase: any, invoice: Stripe.Invoice) {
   const customerId = invoice.customer as string
+  const subscriptionId = invoice.subscription as string
   
-  // Ensure subscription is active after payment
+  // Determine tier from the subscription to set the correct status
+  let tierStatus = 'grace' // Default to grace if we can't determine
+  if (subscriptionId) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ['items.data.price.product'],
+      })
+      tierStatus = determineTier(subscription)
+    } catch (err) {
+      console.error('Failed to retrieve subscription for tier check:', err)
+    }
+  }
+  
+  // Ensure subscription is active with correct tier after payment
   const { error } = await supabase
     .from('subscriptions')
     .update({
-      status: 'premium',
+      status: tierStatus,
     })
     .eq('stripe_customer_id', customerId)
   
   if (!error) {
-    console.log(`✅ Payment succeeded for customer: ${customerId}`)
+    console.log(`✅ Payment succeeded for customer: ${customerId} (tier: ${tierStatus})`)
   }
 }
 
@@ -216,6 +245,32 @@ async function handlePaymentFailed(supabase: any, invoice: Stripe.Invoice) {
   if (!error) {
     console.log(`⚠️ Payment failed for customer: ${customerId}`)
   }
+}
+
+// Determine subscription tier (grace or love) from Stripe subscription product
+function determineTier(subscription: Stripe.Subscription): string {
+  try {
+    // Check subscription items for product ID
+    for (const item of subscription.items.data) {
+      const price = item.price
+      // Product may be expanded or just an ID string
+      const productId = typeof price.product === 'string' 
+        ? price.product 
+        : (price.product as any)?.id
+      
+      if (productId === LOVE_PRODUCT_ID) {
+        return 'love'
+      }
+      if (productId === GRACE_PRODUCT_ID) {
+        return 'grace'
+      }
+    }
+  } catch (err) {
+    console.error('Error determining tier from subscription:', err)
+  }
+  
+  // Default to grace for backward compatibility (existing premium subscribers)
+  return 'grace'
 }
 
 // Map Stripe subscription status to our status

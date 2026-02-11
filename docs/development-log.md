@@ -24,6 +24,27 @@ Each entry follows this format:
 
 ## Active Issues
 
+### [2026-02] - Audio capture: silent buffers, meter and detection not working
+**Type:** Bug  
+**Status:** Open (Investigating)  
+**Severity:** High  
+**Related:** `AudioCaptureService.swift`, `DetectionPipeline`, `docs/analysis/audio-capture-issues-and-fixes.md`
+
+**Problem:**  
+Audio Level Test and Audio Meter do not move; detection does nothing. Buffers are delivered from the tap but contain all-zero samples (RMS 0.0). Logs show `Source RMS (ch0): 0.0 - 🔇 SILENT/LOW`, and sometimes `throwing -10877` and `HALC_ProxyIOContext::_StartIO(): Start failed ... error 35`.
+
+**Cause:**  
+Not fully resolved. Multiple fixes have been applied (see analysis doc): format mismatch handling, avoiding redundant engine recreation for the system default device, skipping redundant `setInputDevice` calls when the device is unchanged. HAL/driver or permission/sandbox may still be preventing real I/O.
+
+**Solution:**  
+Pending. See **`docs/analysis/audio-capture-issues-and-fixes.md`** for full error codes, attempted fixes, and recommended next steps (permission check, minimal repro, entitlements, logging).
+
+**Notes:**  
+- Engine starts and tap receives buffers; only the *content* of buffers is silent.
+- Document `docs/analysis/audio-capture-issues-and-fixes.md` is the single source of detail for this issue.
+
+---
+
 ### [2026-01-22] - Bible Database Incomplete (ASV/WEB)
 **Type:** Issue  
 **Status:** Open  

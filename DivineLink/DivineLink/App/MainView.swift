@@ -9,7 +9,10 @@ struct MainView: View {
     @ObservedObject private var accessibilitySettings = AccessibilitySettings.shared
     @ObservedObject private var adManager = AdManager.shared
     @ObservedObject private var panicService = PanicButtonService.shared
+    @ObservedObject private var subscriptionService = SubscriptionService.shared
+    @ObservedObject private var authService = AuthService.shared
     @State private var hasPermission = true
+    @State private var showLoginSheet = false
     @State private var showStatus = false
     @State private var showNewServiceSheet = false
     @State private var selectedVerseId: UUID? = nil
@@ -51,14 +54,26 @@ struct MainView: View {
                minHeight: adManager.shouldShowAds ? 550 : 450, 
                idealHeight: adManager.shouldShowAds ? 650 : 550, 
                maxHeight: .infinity)
+        .background(subscriptionBackgroundTint)
         .animation(.easeInOut(duration: 0.2), value: showStatus)
         .animation(.easeInOut(duration: 0.2), value: adManager.shouldShowAds)
+    }
+
+    /// Subtle tier-based background tint for main window only (Epic 7.2). Grey when not signed in or when debug-simulating Free.
+    private var subscriptionBackgroundTint: Color {
+        guard authService.isAuthenticated else { return Color.gray.opacity(0.04) }
+        if subscriptionService.debugSimulateFreeMode { return Color.gray.opacity(0.04) }
+        if subscriptionService.isAdmin { return Color.red.opacity(0.06) }
+        return subscriptionService.currentTier.themeTint
     }
     
     // MARK: - Main Content (wrapped by AdContainerView)
     
     private var mainContent: some View {
         VStack(spacing: 8) {
+            // Subscription warning banner (grace period countdown / expired)
+            SubscriptionWarningBanner()
+            
             // Header row: Logo + Title + Listening status + Gear
             headerView
             
@@ -128,8 +143,8 @@ struct MainView: View {
             panicService.configure(ppClient: ppClient, buffer: pipeline.buffer)
         }
         .onKeyPress(.space) {
-            // Only toggle if not editing transcript or in a modal sheet
-            guard !isEditingTranscript && !showNewServiceSheet else { return .ignored }
+            // Only toggle if not editing transcript, not in a modal sheet, and has microphone permission
+            guard !isEditingTranscript && !showNewServiceSheet && !showLoginSheet && hasPermission else { return .ignored }
             Task {
                 await pipeline.toggle()
             }
@@ -236,15 +251,33 @@ struct MainView: View {
                 port: ppSettings.port
             )
             
-            // Listening status indicator
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(statusColour)
-                    .frame(width: 8, height: 8)
-                
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // Listening status indicator (clickable when permission denied)
+            if !hasPermission {
+                Button {
+                    AudioCaptureService.openMicrophonePrivacySettings()
+                } label: {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(statusColour)
+                            .frame(width: 8, height: 8)
+                        
+                        Text(statusText)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Click to open System Settings and grant microphone permission")
+            } else {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(statusColour)
+                        .frame(width: 8, height: 8)
+                    
+                    Text(statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             SettingsLink {
@@ -258,6 +291,9 @@ struct MainView: View {
             NewServiceSheet(sessionManager: sessionManager) { session in
                 print("[MainView] Session started: \(session.name)")
             }
+        }
+        .sheet(isPresented: $showLoginSheet) {
+            LoginView()
         }
     }
     
@@ -299,6 +335,22 @@ struct MainView: View {
             // Panic/Clear button
             PanicButton(service: panicService) {
                 Task { await panicService.triggerClear() }
+            }
+            
+            // Sign In (main window) — when not logged in, blue and distinct; opens login sheet on top
+            if !authService.isAuthenticated {
+                Button {
+                    showLoginSheet = true
+                } label: {
+                    HStack {
+                        Image(systemName: "person.circle.fill")
+                        Text("Sign In")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+                .controlSize(.small)
+                .help("Sign in to access premium features and sync across devices")
             }
             
             Spacer()

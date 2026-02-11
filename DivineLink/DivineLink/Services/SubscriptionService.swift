@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 // MARK: - Subscription Models
 
@@ -33,6 +34,15 @@ enum SubscriptionTier: String, Codable, CaseIterable {
         case .mercy: return 1
         case .grace: return 2
         case .love: return 5
+        }
+    }
+
+    /// Subtle background tint for main window (Epic 7.2)
+    var themeTint: Color {
+        switch self {
+        case .mercy: return Color.gray.opacity(0.04)
+        case .grace: return Color.orange.opacity(0.06)
+        case .love: return Color.purple.opacity(0.06)
         }
     }
 }
@@ -98,7 +108,7 @@ struct Subscription: Codable {
     }
     
     var isPremium: Bool {
-        status == .premium || status == .trial
+        status == .premium || status == .trial || status == .grace || status == .love
     }
     
     var isExpired: Bool {
@@ -138,6 +148,20 @@ final class SubscriptionService: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     
+    /// Admin access - grants full Love tier and debug options
+    @Published private(set) var isAdmin = false
+    
+    /// Subscription warning banner state
+    @Published var showSubscriptionWarning = false
+    @Published var subscriptionWarningMessage = ""
+    @Published var gracePeriodDaysRemaining: Int?
+    
+    /// Whether the user has ever been a paid customer (cached)
+    @Published private(set) var hasBeenPaidCustomer = false
+
+    /// When true, UI behaves as Free tier (ads, grey tint) for testing. Admin-only debug.
+    @Published var debugSimulateFreeMode = false
+
     /// Maximum number of pastor profiles allowed for the current subscription tier
     var pastorProfileLimit: Int {
         return currentTier.pastorProfileLimit
@@ -150,19 +174,50 @@ final class SubscriptionService: ObservableObject {
     private let lastCheckKey = "lastSubscriptionCheck"
     private let cachedStatusKey = "cachedSubscriptionStatus"
     private let cachedTierKey = "cachedSubscriptionTier"
+    private let hasBeenPaidKey = "hasBeenPaidCustomer"
+    private var authCancellable: AnyCancellable?
+    
+    /// Whether the current user's email is an admin email
+    var isAdminEmail: Bool {
+        guard let email = AuthService.shared.currentUser?.email.lowercased() else { return false }
+        return SupabaseConfig.adminEmails.contains(email)
+    }
     
     // MARK: - Initialization
     
     private init() {
         loadCachedStatus()
+        observeAuthState()
+    }
+    
+    /// Observe AuthService.isAuthenticated — when it transitions to false,
+    /// immediately reset all subscription/admin/premium state.
+    /// This prevents stale cached state from leaking through after
+    /// session expiry or Keychain restoration failure.
+    private func observeAuthState() {
+        authCancellable = AuthService.shared.$isAuthenticated
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isAuthenticated in
+                guard let self = self else { return }
+                if !isAuthenticated {
+                    // User is not authenticated — enforce free state immediately
+                    self.resetForSignOut()
+                    print("🔒 Auth state changed to false — subscription state force-reset to Free")
+                }
+            }
     }
     
     // MARK: - Public Methods
     
     /// Fetch current subscription status from Supabase
     func fetchSubscription() async {
+        // Check admin status first
+        checkAdminStatus()
+        
         guard let accessToken = AuthService.shared.accessToken else {
-            isPremium = false
+            isPremium = isAdmin
+            if !isAdmin { evaluateGracePeriod() }
             return
         }
         
@@ -192,12 +247,35 @@ final class SubscriptionService: ObservableObject {
             // Response is an array with one item
             if let infoArray = try? decoder.decode([SubscriptionInfo].self, from: data),
                let info = infoArray.first {
-                self.isPremium = info.isPremium
-                // Parse tier from status string
-                let tier = parseTierFromStatus(info.status)
-                self.currentTier = tier
-                cacheStatus(info.isPremium, tier: tier)
-                print("✅ Subscription status: \(info.status) (tier: \(tier.displayName), premium: \(info.isPremium))")
+                
+                // Admin always gets Love tier — never let the API downgrade them
+                if isAdmin {
+                    self.isPremium = true
+                    self.currentTier = .love
+                    clearWarnings()
+                    print("👑 Admin override — ignoring API status (\(info.status))")
+                } else {
+                    self.isPremium = info.isPremium
+                    // Parse tier from status string
+                    let tier = parseTierFromStatus(info.status)
+                    self.currentTier = tier
+                    cacheStatus(info.isPremium, tier: tier)
+                    
+                    // Track if user has ever been paid
+                    if info.isPremium {
+                        markAsPaidCustomer()
+                    }
+                    
+                    // Clear warnings on successful premium verification
+                    if info.isPremium {
+                        clearWarnings()
+                    } else {
+                        // Subscription lapsed or cancelled - start grace period evaluation
+                        evaluateGracePeriod()
+                    }
+                }
+                
+                print("✅ Subscription status: \(info.status) (tier: \(currentTier.displayName), premium: \(isPremium), admin: \(isAdmin))")
             } else {
                 // Fallback: Try direct query
                 try await fetchSubscriptionDirect()
@@ -207,6 +285,8 @@ final class SubscriptionService: ObservableObject {
             print("❌ Failed to fetch subscription: \(error)")
             // Use cached status if available
             loadCachedStatus()
+            // Evaluate grace period when we can't reach the server
+            if !isAdmin { evaluateGracePeriod() }
         }
     }
     
@@ -233,18 +313,26 @@ final class SubscriptionService: ObservableObject {
         checkTimer = nil
     }
     
-    /// Check if user can use premium features (with offline grace period)
+    /// Check if user can use premium features (with admin bypass and grace period)
     var canUsePremiumFeatures: Bool {
-        if isPremium {
-            return true
-        }
+        // CRITICAL: If not authenticated, no premium features — period.
+        guard AuthService.shared.isAuthenticated else { return false }
         
-        // Check offline grace period
+        // Debug: simulate Free so admins can test ads and grey tint
+        if debugSimulateFreeMode { return false }
+
+        // Admin always has full access
+        if isAdmin { return true }
+
+        if isPremium { return true }
+        
+        // Check grace period - allow premium during countdown
         if let lastCheck = userDefaults.object(forKey: lastCheckKey) as? Date,
            let cachedPremium = userDefaults.object(forKey: cachedStatusKey) as? Bool,
            cachedPremium {
             let gracePeriod = TimeInterval(SupabaseConfig.offlineGracePeriodDays * 24 * 60 * 60)
-            if Date().timeIntervalSince(lastCheck) < gracePeriod {
+            let elapsed = Date().timeIntervalSince(lastCheck)
+            if elapsed < gracePeriod {
                 return true
             }
         }
@@ -323,15 +411,30 @@ final class SubscriptionService: ObservableObject {
         if let subscriptions = try? decoder.decode([Subscription].self, from: data),
            let sub = subscriptions.first {
             self.subscription = sub
-            self.isPremium = sub.isPremium && !sub.isExpired
-            let tier = sub.status.toTier
-            self.currentTier = tier
-            cacheStatus(self.isPremium, tier: tier)
-            print("✅ Subscription (direct): \(sub.status) (tier: \(tier.displayName), premium: \(self.isPremium))")
+            
+            // Admin always keeps Love tier — never let the API downgrade them
+            if isAdmin {
+                self.isPremium = true
+                self.currentTier = .love
+                print("👑 Admin override (direct) — ignoring API status (\(sub.status))")
+            } else {
+                self.isPremium = sub.isPremium && !sub.isExpired
+                let tier = sub.status.toTier
+                self.currentTier = tier
+                cacheStatus(self.isPremium, tier: tier)
+                print("✅ Subscription (direct): \(sub.status) (tier: \(tier.displayName), premium: \(self.isPremium))")
+            }
         } else {
-            self.isPremium = false
-            self.currentTier = .mercy
-            cacheStatus(false, tier: .mercy)
+            // No subscription record found — admin still keeps full access
+            if isAdmin {
+                self.isPremium = true
+                self.currentTier = .love
+                print("👑 Admin override — no subscription record, full access granted")
+            } else {
+                self.isPremium = false
+                self.currentTier = .mercy
+                cacheStatus(false, tier: .mercy)
+            }
         }
     }
     
@@ -354,6 +457,33 @@ final class SubscriptionService: ObservableObject {
     }
     
     private func loadCachedStatus() {
+        // When not signed in, always enforce free tier — no exceptions.
+        // Also clear any cached subscription data so it cannot leak
+        // on a subsequent launch where the session might briefly appear valid.
+        guard AuthService.shared.isAuthenticated else {
+            self.isAdmin = false
+            self.isPremium = false
+            self.currentTier = .mercy
+            self.hasBeenPaidCustomer = false
+            // Clear cached subscription data to prevent stale state leaking
+            userDefaults.removeObject(forKey: cachedStatusKey)
+            userDefaults.removeObject(forKey: cachedTierKey)
+            userDefaults.removeObject(forKey: lastCheckKey)
+            print("🔒 Not signed in — subscription state reset and cache cleared (tint → grey)")
+            return
+        }
+
+        // Check admin status immediately on cold start
+        // so premium features are unlocked before the network call
+        if isAdminEmail {
+            self.isAdmin = true
+            self.isPremium = true
+            self.currentTier = .love
+            self.hasBeenPaidCustomer = true
+            print("👑 Admin detected on cold start — full access granted")
+            return
+        }
+
         if let cached = userDefaults.object(forKey: cachedStatusKey) as? Bool {
             self.isPremium = cached
         }
@@ -361,6 +491,98 @@ final class SubscriptionService: ObservableObject {
            let tier = SubscriptionTier(rawValue: cachedTierRaw) {
             self.currentTier = tier
         }
+        self.hasBeenPaidCustomer = userDefaults.bool(forKey: hasBeenPaidKey)
+    }
+    
+    // MARK: - Admin Methods
+    
+    /// Check and set admin status based on current user email
+    private func checkAdminStatus() {
+        let wasAdmin = isAdmin
+        isAdmin = isAdminEmail
+        
+        // Admin gets Love tier access
+        if isAdmin && !wasAdmin {
+            currentTier = .love
+            isPremium = true
+            print("👑 Admin access granted for: \(AuthService.shared.currentUser?.email ?? "unknown")")
+        }
+    }
+    
+    // MARK: - Grace Period & Warning Methods
+    
+    /// Mark the user as having been a paid customer (persisted)
+    private func markAsPaidCustomer() {
+        hasBeenPaidCustomer = true
+        userDefaults.set(true, forKey: hasBeenPaidKey)
+    }
+    
+    /// Clear all warning banners
+    private func clearWarnings() {
+        showSubscriptionWarning = false
+        subscriptionWarningMessage = ""
+        gracePeriodDaysRemaining = nil
+    }
+    
+    /// Evaluate grace period and show countdown warning or revert to free
+    private func evaluateGracePeriod() {
+        guard let lastCheck = userDefaults.object(forKey: lastCheckKey) as? Date,
+              let cachedPremium = userDefaults.object(forKey: cachedStatusKey) as? Bool,
+              cachedPremium else {
+            // Never had premium or no cached state - nothing to grace
+            return
+        }
+        
+        let gracePeriodSeconds = TimeInterval(SupabaseConfig.offlineGracePeriodDays * 24 * 60 * 60)
+        let elapsed = Date().timeIntervalSince(lastCheck)
+        let remainingSeconds = gracePeriodSeconds - elapsed
+        let remainingDays = Int(ceil(remainingSeconds / (24 * 60 * 60)))
+        
+        if remainingSeconds <= 0 {
+            // Grace period expired - revert to Free
+            revertToFreeTier()
+        } else {
+            // Still in grace period - show warning with countdown
+            gracePeriodDaysRemaining = max(0, remainingDays)
+            showSubscriptionWarning = true
+            
+            if remainingDays == 1 {
+                subscriptionWarningMessage = "Your premium access expires tomorrow. Please reconnect or update your payment to keep your features."
+            } else {
+                subscriptionWarningMessage = "Premium access expires in \(remainingDays) days. Please reconnect or update your payment."
+            }
+            
+            print("⚠️ Grace period: \(remainingDays) days remaining")
+        }
+    }
+    
+    /// Revert the user to Free (Mercy) tier
+    private func revertToFreeTier() {
+        isPremium = false
+        currentTier = .mercy
+        cacheStatus(false, tier: .mercy)
+        gracePeriodDaysRemaining = 0
+        showSubscriptionWarning = true
+        subscriptionWarningMessage = "Your premium access has expired. Please subscribe to regain premium features."
+        print("🔒 Reverted to Free tier - grace period expired")
+    }
+
+    /// Call when user signs out — reset to free tier and clear admin state so UI (e.g. tint and ads) updates immediately.
+    /// Also clears all cached subscription data from UserDefaults to prevent stale state on next launch.
+    func resetForSignOut() {
+        debugSimulateFreeMode = false
+        isAdmin = false
+        isPremium = false
+        currentTier = .mercy
+        hasBeenPaidCustomer = false
+        subscription = nil
+        clearWarnings()
+        // Clear all cached subscription data — not just overwrite with free values
+        userDefaults.removeObject(forKey: cachedStatusKey)
+        userDefaults.removeObject(forKey: cachedTierKey)
+        userDefaults.removeObject(forKey: lastCheckKey)
+        userDefaults.removeObject(forKey: hasBeenPaidKey)
+        print("🔒 Subscription state reset for sign out — all cache cleared (tint → Free/grey)")
     }
 }
 

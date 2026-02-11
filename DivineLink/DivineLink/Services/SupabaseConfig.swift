@@ -40,22 +40,39 @@ enum SupabaseConfig {
     
     // MARK: - Stripe Configuration
     
-    /// Stripe Product ID for Divine Link Premium
-    static let stripeProductID = "prod_TtV8U5mVO1cecV"
+    /// Stripe Product ID for Grace tier
+    static let graceProductID = "prod_TtV8U5mVO1cecV"
     
-    /// Stripe Price ID for monthly subscription (£9.97/month)
+    /// Stripe Product ID for Love tier
+    /// NOTE: Update this with the actual Love product ID from your Stripe dashboard
+    static let loveProductID = "prod_TvU0LGh7zBgIH3"
+    
+    /// Legacy alias for backward compatibility
+    static let stripeProductID = graceProductID
+    
+    /// Stripe Price ID for monthly subscription (£9.99/month)
     static let stripePriceID = "price_1Svi8dDyhT7xGc8kvz7qIrk6"
     
-    /// Stripe Payment Link URL for Premium subscription
+    /// Legacy Stripe Payment Link URL (defaults to Grace monthly)
     static let stripePaymentLink = URL(string: "https://buy.stripe.com/8x228raJOceGbI50hn5AQ00")!
+    
+    // MARK: - Admin Configuration
+    
+    /// Admin emails that get full Love-tier access and debug options
+    static let adminEmails: Set<String> = [
+        "ogunrekun66@hotmail.com"
+    ]
     
     // MARK: - App Configuration
     
-    /// Maximum devices allowed per subscription
+    /// Maximum devices allowed per subscription (legacy - use SubscriptionTier.deviceLimit instead)
+    @available(*, deprecated, message: "Use SubscriptionTier.deviceLimit for tier-specific limits")
     static let maxDevicesPerAccount = 2
     
-    /// Grace period for offline usage (in days)
-    static let offlineGracePeriodDays = 7
+    /// Grace period for subscription verification (in days)
+    /// After Stripe retries exhaust (1+3+9 = 13 days), the app gives an additional day
+    /// for a total of 14 days before reverting to Free tier
+    static let offlineGracePeriodDays = 14
     
     /// Subscription check interval (in seconds)
     static let subscriptionCheckInterval: TimeInterval = 3600 // 1 hour
