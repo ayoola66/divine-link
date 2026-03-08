@@ -62,6 +62,11 @@ class TranscriptionService: ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var lastTranscript: String = ""
     private var restartTimer: Timer?
+
+    /// Weak reference to audio capture — stored at start() so scheduleRestart can rebuild the session
+    private weak var audioCaptureService: AudioCaptureService?
+    /// Guards against re-entrant restart loops (rapid error sequences)
+    private var isRestarting = false
     
     // Configuration
     private let locale: Locale
@@ -107,6 +112,7 @@ class TranscriptionService: ObservableObject {
     
     /// Start transcribing audio from the given audio capture service
     func start(with audioCapture: AudioCaptureService) {
+        audioCaptureService = audioCapture
         print("🎙️ [Transcription] Starting transcription service...")
         
         guard authorizationStatus == .authorized else {
@@ -163,13 +169,15 @@ class TranscriptionService: ObservableObject {
     func stop() {
         restartTimer?.invalidate()
         restartTimer = nil
-        
+
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = nil
-        
+
         isTranscribing = false
+        isRestarting = false
+        audioCaptureService = nil
     }
     
     // MARK: - Audio Buffer Handling
@@ -289,11 +297,18 @@ class TranscriptionService: ObservableObject {
     }
     
     private func scheduleRestart() {
-        // Schedule restart after a brief delay
         restartTimer?.invalidate()
-        restartTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
-            // Placeholder for restart logic
-            // The caller (DetectionPipeline) handles restart if needed
+        restartTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      !self.isRestarting,
+                      let audioCapture = self.audioCaptureService else { return }
+                self.isRestarting = true
+                self.stop()
+                self.start(with: audioCapture)
+                self.isRestarting = false
+                print("🔄 [Transcription] Session restarted after isFinal/error")
+            }
         }
     }
     

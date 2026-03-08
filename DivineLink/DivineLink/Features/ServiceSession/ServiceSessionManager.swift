@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 // MARK: - Service Session Manager
 
@@ -33,6 +34,24 @@ class ServiceSessionManager: ObservableObject {
     
     private init() {
         loadData()
+        observeAppTermination()
+    }
+
+    /// Saves the current session to the archive if the app is about to quit without an explicit End.
+    /// This prevents transcript data loss on force-quit, window close, or unexpected shutdown.
+    private func observeAppTermination() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, var session = self.currentSession else { return }
+                session.endTime = Date()
+                ServiceArchive.shared.save(session)
+                print("[Session] Auto-saved on app terminate: \(session.name)")
+            }
+        }
     }
     
     // MARK: - Session Management

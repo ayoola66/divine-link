@@ -84,11 +84,28 @@ class DetectionPipeline: ObservableObject {
             }
             .store(in: &cancellables)
         
+        // Finalize in-progress text the moment an STT session stops.
+        // This fires BEFORE the new session's first update() can overwrite it,
+        // so no spoken text is lost when Apple's recognizer restarts mid-sentence.
+        transcription.$isTranscribing
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isTranscribing in
+                guard let self, !isTranscribing else { return }
+                transcriptBuffer.finalizeInProgressText()
+            }
+            .store(in: &cancellables)
+
         // Update transcript buffer from transcription
         transcription.transcriptPublisher
             .receive(on: RunLoop.main)
             .sink { [weak self] segment in
-                self?.transcriptBuffer.update(segment.text)
+                guard let self else { return }
+                if segment.isFinal {
+                    transcriptBuffer.appendFinalLine(segment.text)
+                } else {
+                    transcriptBuffer.update(segment.text)
+                }
             }
             .store(in: &cancellables)
         
@@ -220,15 +237,37 @@ class DetectionPipeline: ObservableObject {
     
     // MARK: - Transcript Processing
     
+    /// Fixes STT artifacts where a book name and number are concatenated without a space.
+    /// e.g. "Genesis1" → "Genesis 1", "1John" → "1 John", "Romans8" → "Romans 8"
+    private func normalizeSTTOutput(_ text: String) -> String {
+        // Insert space between a letter immediately followed by a digit
+        var result = text.replacingOccurrences(
+            of: #"([A-Za-z])(\d)"#,
+            with: "$1 $2",
+            options: .regularExpression
+        )
+        // Insert space between a digit immediately followed by a letter
+        // (handles "1John" → "1 John")
+        result = result.replacingOccurrences(
+            of: #"(\d)([A-Za-z])"#,
+            with: "$1 $2",
+            options: .regularExpression
+        )
+        return result
+    }
+
     private func processTranscript(_ transcript: String) {
         guard isActive else { return }
-        
+
+        // Normalise STT output before detection (fixes concatenated book+number, e.g. "Genesis1")
+        let normalizedTranscript = normalizeSTTOutput(transcript)
+
         // Apply pastor-specific speech corrections if available
-        var correctedTranscript = transcript
+        var correctedTranscript = normalizedTranscript
         let corrections = sessionManager.currentPastorCorrections()
         
         if !corrections.isEmpty {
-            correctedTranscript = correctionService.apply(corrections: corrections, to: transcript)
+            correctedTranscript = correctionService.apply(corrections: corrections, to: normalizedTranscript)
         }
         
         // Detect explicit scripture references in corrected text
@@ -259,6 +298,25 @@ class DetectionPipeline: ObservableObject {
         processDetection(detection, rawTranscript: "manual-edit")
     }
     
+    /// When a reference has an invalid chapter number, attempt to re-interpret it as
+    /// concatenated chapter+verse digits (e.g. chapter=123 → ch=1, v=23).
+    /// This recovers from STT collapsing "James 1 23" into "James 123".
+    /// Returns the first valid split, or nil if none found.
+    private func reinterpretConcatenatedRef(_ ref: ScriptureReference) -> ScriptureReference? {
+        let chapterStr = String(ref.chapter)
+        guard chapterStr.count >= 2 else { return nil }
+        for splitAt in 1..<chapterStr.count {
+            let chPart = String(chapterStr.prefix(splitAt))
+            let vPart = String(chapterStr.suffix(chapterStr.count - splitAt))
+            guard let ch = Int(chPart), let v = Int(vPart), ch >= 1, v >= 1 else { continue }
+            let candidate = ScriptureReference(book: ref.book, chapter: ch, verseStart: v, verseEnd: nil)
+            if !bible.getVerses(from: candidate).isEmpty {
+                return candidate
+            }
+        }
+        return nil
+    }
+
     private func processDetection(_ detection: DetectionResult, rawTranscript: String = "") {
         Logger.pipeline.info("Processing detection: \(detection.displayReference)")
         
@@ -272,6 +330,21 @@ class DetectionPipeline: ObservableObject {
         let bibleVerses = bible.getVerses(from: detection.reference)
         
         guard !bibleVerses.isEmpty else {
+            // Before rejecting: if the chapter number exceeds the book's valid range, STT may
+            // have concatenated chapter+verse (e.g. "James 1 23" → "James 123" → parsed as ch=123).
+            // Try splitting the digits and retry lookup.
+            if let correctedRef = reinterpretConcatenatedRef(detection.reference) {
+                Logger.pipeline.info("♻️ Re-interpreted \(detection.displayReference) → \(correctedRef.formatted) (split concatenated chapter+verse)")
+                let corrected = DetectionResult(
+                    reference: correctedRef,
+                    rawMatch: detection.rawMatch,
+                    detectionConfidence: detection.detectionConfidence,
+                    timestamp: detection.timestamp,
+                    patternType: detection.patternType + "+split"
+                )
+                processDetection(corrected, rawTranscript: rawTranscript)
+                return
+            }
             // Verse not found - REJECT this detection (invalid chapter/verse)
             Logger.pipeline.warning("Rejected invalid detection: \(detection.displayReference) - verse not found")
             return

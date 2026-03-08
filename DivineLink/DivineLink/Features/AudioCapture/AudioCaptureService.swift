@@ -42,6 +42,8 @@ class AudioCaptureService: ObservableObject {
     @Published var fallbackToDefaultDeviceMessage: String?
     @Published var audioLevel: Float = 0.0
     @Published var peakLevel: Float = 0.0
+    /// True when Voice Processing I/O is active (AEC + noise suppression + AGC from Apple).
+    @Published var isVoiceProcessingEnabled: Bool = false
     
     // MARK: - Audio Engine
     
@@ -70,6 +72,10 @@ class AudioCaptureService: ObservableObject {
     /// redundant setInputDevice calls (observers can fire multiple times at startup).
     /// Exposed as internal(set) so the pipeline can check whether a device switch is needed.
     private(set) var currentDeviceID: AudioDeviceID?
+
+    /// Observer token for AVAudioEngineConfigurationChange notifications.
+    /// Re-registered each time the engine is recreated so it always targets the live instance.
+    private var engineConfigObserver: NSObjectProtocol?
     
     // Debug: Buffer counter to track audio flow
     // Marked nonisolated(unsafe) because it's accessed from audio processing queue
@@ -87,16 +93,63 @@ class AudioCaptureService: ObservableObject {
     
     init() {
         setupAudioEngine()
+        observeEngineConfiguration()
     }
-    
+
     deinit {
         levelUpdateTimer?.invalidate()
+        if let observer = engineConfigObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
     
     // MARK: - Setup
     
     private func setupAudioEngine() {
         audioEngine = AVAudioEngine()
+        // Voice processing is enabled in start() just before installTap,
+        // keeping it off the init/setup path to avoid QoS inversion at launch.
+    }
+
+    /// Registers a listener for AVAudioEngineConfigurationChange on the current engine instance.
+    /// Must be called after every engine creation (init and recreateAudioEngine) so the observer
+    /// always targets the live engine. When macOS changes audio routing (device plug/unplug,
+    /// Bluetooth connect, sample-rate change), the engine becomes invalid — we restart capture
+    /// automatically to recover without crashing or producing silent buffers.
+    private func observeEngineConfiguration() {
+        if let existing = engineConfigObserver {
+            NotificationCenter.default.removeObserver(existing)
+            engineConfigObserver = nil
+        }
+        guard let engine = audioEngine else { return }
+        engineConfigObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isCapturing else { return }
+                print("⚠️ [AudioCapture] Engine configuration changed (route/device change) — restarting capture")
+                self.stop()
+                self.start()
+            }
+        }
+    }
+
+    /// Enables Apple's Voice Processing I/O on the input node.
+    /// This activates AEC (acoustic echo cancellation), built-in noise suppression,
+    /// and automatic gain control — improving STT accuracy in live church environments.
+    /// Must be called after engine creation and before installing any tap.
+    private func enableVoiceProcessing() {
+        guard let audioEngine = audioEngine else { return }
+        do {
+            try audioEngine.inputNode.setVoiceProcessingEnabled(true)
+            isVoiceProcessingEnabled = true
+            print("✅ [AudioCapture] Voice Processing I/O enabled (AEC + noise suppression + AGC)")
+        } catch {
+            isVoiceProcessingEnabled = false
+            print("⚠️ [AudioCapture] Voice Processing I/O not available: \(error.localizedDescription) — using standard I/O")
+        }
     }
     
     // MARK: - Device Selection
@@ -160,6 +213,9 @@ class AudioCaptureService: ObservableObject {
         }
         
         currentDeviceID = deviceID
+        // Reset silent-start recovery so the new device gets a fresh detection window
+        hasAttemptedSilentRecovery = false
+        consecutiveSilentBuffers = 0
         print("✅ [AudioCapture] Successfully set input device: \(device.localizedName)")
         
         // Restart capture if it was running
@@ -183,7 +239,9 @@ class AudioCaptureService: ObservableObject {
         audioEngine = nil
         
         // Create a fresh engine — its inputNode will pick up the correct hardware format
+        // Voice processing is enabled in start() just before installTap.
         audioEngine = AVAudioEngine()
+        observeEngineConfiguration()
     }
     
     /// Gets the Core Audio AudioDeviceID from an AVCaptureDevice uniqueID
@@ -404,6 +462,11 @@ class AudioCaptureService: ObservableObject {
             let processingQueue = self.audioProcessingQueue
             let bufferPublisher = self.audioBufferPublisher
             
+            // Voice Processing I/O (AEC/noise suppression) is intentionally disabled.
+            // setVoiceProcessingEnabled(true) conflicts with SFSpeechRecognizer's internal
+            // audio pipeline, causing HALC overload, encoding failures, and silent transcription.
+            // SFSpeechRecognizer applies its own noise reduction; no VP IO needed here.
+
             // Install the tap. nil lets the engine use its native format (safest for
             // the default device); an explicit format is used after device switches
             // where the cached outputFormat would cause a mismatch.
@@ -548,7 +611,7 @@ class AudioCaptureService: ObservableObject {
         peakLevel = 0.0
         bufferCount = 0
         consecutiveSilentBuffers = 0
-        
+
         stopLevelUpdateTimer()
     }
     

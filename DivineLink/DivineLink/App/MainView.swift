@@ -48,11 +48,11 @@ struct MainView: View {
         AdContainerView {
             mainContent
         }
-        .frame(minWidth: adManager.shouldShowAds ? 580 : 380, 
-               idealWidth: adManager.shouldShowAds ? 680 : 450, 
-               maxWidth: 1000, 
-               minHeight: adManager.shouldShowAds ? 550 : 450, 
-               idealHeight: adManager.shouldShowAds ? 650 : 550, 
+        .frame(minWidth: adManager.shouldShowAds ? 580 : 380,
+               idealWidth: adManager.shouldShowAds ? 680 : 450,
+               maxWidth: 1000,
+               minHeight: adManager.shouldShowAds ? 550 : 450,
+               idealHeight: adManager.shouldShowAds ? 650 : 550,
                maxHeight: .infinity)
         .background(subscriptionBackgroundTint)
         .animation(.easeInOut(duration: 0.2), value: showStatus)
@@ -144,7 +144,7 @@ struct MainView: View {
         }
         .onKeyPress(.space) {
             // Only toggle if not editing transcript, not in a modal sheet, and has microphone permission
-            guard !isEditingTranscript && !showNewServiceSheet && !showLoginSheet && hasPermission else { return .ignored }
+            guard !showCorrectionPopover && !showNewServiceSheet && !showLoginSheet && hasPermission else { return .ignored }
             Task {
                 await pipeline.toggle()
             }
@@ -233,7 +233,9 @@ struct MainView: View {
                     .lineLimit(1)
                 
                 Button {
+                    saveSessionTranscript()
                     sessionManager.endCurrentSession()
+                    transcriptBuffer.clear()
                 } label: {
                     Text("End")
                         .font(.caption2)
@@ -397,69 +399,69 @@ struct MainView: View {
     }
     
     // MARK: - Transcript Section
-    
-    @State private var isEditingTranscript = false
+
+    /// Text currently selected in the NSTextView (empty = nothing selected).
+    @State private var selectedTranscriptText: String = ""
+    /// Controls the correction popover.
+    @State private var showCorrectionPopover: Bool = false
+    /// Pre-fills the replacement field in the popover.
+    @State private var correctionReplacement: String = ""
+
+    // Legacy state kept for processEditedTranscript compatibility
     @State private var editedTranscript = ""
     @State private var showCorrectionAlert = false
     @State private var suggestedCorrection: (original: String, corrected: String, book: String)?
-    
+
     private var transcriptSection: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
+        VStack(alignment: .leading, spacing: 4) {
+            // ── Header ────────────────────────────────────────────────────
+            HStack(alignment: .center, spacing: 6) {
                 Text("Live Transcript")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                
+
                 Spacer()
-                
-                if !transcriptBuffer.text.isEmpty {
-                    Button {
-                        editedTranscript = transcriptBuffer.text
-                        isEditingTranscript = true
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Edit transcript to correct misheard words")
+
+                // Hint label — only visible when there's text to select
+                if !transcriptBuffer.lines.isEmpty {
+                    Text("Select words to edit")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.quaternary)
+                }
+
+                // Pencil button — activates when text is selected
+                Button {
+                    correctionReplacement = selectedTranscriptText
+                    showCorrectionPopover = true
+                } label: {
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.system(size: 14))
+                        .symbolRenderingMode(.hierarchical)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selectedTranscriptText.isEmpty ? Color.secondary.opacity(0.3) : Color.accentColor)
+                .disabled(selectedTranscriptText.isEmpty)
+                .help(selectedTranscriptText.isEmpty
+                      ? "Select words in the transcript, then click to correct"
+                      : "Correct selected: \"\(selectedTranscriptText)\"")
+                .popover(isPresented: $showCorrectionPopover, arrowEdge: .top) {
+                    correctionPopover
                 }
             }
-            
-            if isEditingTranscript {
-                // Editable text field
-                HStack {
-                    TextField("Edit transcript...", text: $editedTranscript)
-                        .textFieldStyle(.plain)
-                        .font(.system(.caption, design: .monospaced))
-                        .onSubmit {
-                            processEditedTranscript()
-                        }
-                    
-                    Button("Detect") {
-                        processEditedTranscript()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    
-                    Button("Cancel") {
-                        isEditingTranscript = false
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+
+            // ── NSTextView transcript area ─────────────────────────────────
+            TranscriptTextView(
+                lines: transcriptBuffer.lines,
+                currentText: transcriptBuffer.text,
+                selectedText: $selectedTranscriptText,
+                onCorrection: { original, replacement in
+                    processLineCorrection(original: original, edited: replacement)
                 }
-                .padding(6)
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                Text(transcriptBuffer.text.isEmpty ? "Listening..." : transcriptBuffer.text)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            )
+            .frame(minHeight: 75, maxHeight: 140)
+            .background(Color(nsColor: .textBackgroundColor).opacity(0.25))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .frame(height: isEditingTranscript ? 50 : 36)
         .alert("Save Correction?", isPresented: $showCorrectionAlert) {
             Button("Save") {
                 if let correction = suggestedCorrection {
@@ -467,14 +469,81 @@ struct MainView: View {
                 }
             }
             Button("Just This Time", role: .cancel) { }
-            Button("Cancel", role: .destructive) {
-                suggestedCorrection = nil
-            }
+            Button("Cancel", role: .destructive) { suggestedCorrection = nil }
         } message: {
             if let correction = suggestedCorrection {
                 Text("Add '\(correction.original)' → '\(correction.book)' to learned corrections?\n\nThis will automatically correct '\(correction.original)' in future.")
             }
         }
+    }
+
+    /// Popover that appears when the user clicks the pencil with a selection.
+    private var correctionPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Correct Transcript")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Heard:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(selectedTranscriptText)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .strikethrough(true, color: .secondary)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Replace with:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Type corrected text…", text: $correctionReplacement)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .onSubmit { applyCorrection() }
+            }
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") {
+                    showCorrectionPopover = false
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
+                Button("Apply") {
+                    applyCorrection()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(correctionReplacement.trimmingCharacters(in: .whitespaces).isEmpty
+                          || correctionReplacement == selectedTranscriptText)
+                .keyboardShortcut(.return, modifiers: [])
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
+    }
+
+    private func applyCorrection() {
+        let original = selectedTranscriptText
+        let replacement = correctionReplacement.trimmingCharacters(in: .whitespaces)
+        guard !replacement.isEmpty, replacement != original else {
+            showCorrectionPopover = false
+            return
+        }
+        showCorrectionPopover = false
+        selectedTranscriptText = ""
+        processLineCorrection(original: original, edited: replacement)
+    }
+
+    private func processLineCorrection(original: String, edited: String) {
+        guard edited != original else { return }
+        editedTranscript = edited
+        processEditedTranscript()
     }
     
     private func processEditedTranscript() {
@@ -520,9 +589,97 @@ struct MainView: View {
             pipeline.processDetectionManually(detection)
         }
         
-        isEditingTranscript = false
+        showCorrectionPopover = false
     }
-    
+
+    /// Saves the full session transcript to a text file in ~/Documents/DivineLink Transcripts/.
+    /// File name format: "ServiceName_YYYY-MM-DD.txt"
+    private func saveSessionTranscript() {
+        guard let session = sessionManager.currentSession else { return }
+
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFmt.string(from: session.date)
+
+        let displayFmt = DateFormatter()
+        displayFmt.dateStyle = .long
+        displayFmt.timeStyle = .none
+        let displayDate = displayFmt.string(from: session.date)
+
+        let timeFmt = DateFormatter()
+        timeFmt.timeStyle = .short
+        timeFmt.dateStyle = .none
+
+        let safeName = session.name
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let fileName = "\(safeName)_\(dateStr).txt"
+
+        // ── Build formatted content ──────────────────────────────────────
+        var lines: [String] = []
+        let divider = String(repeating: "─", count: 56)
+        let heavyDivider = String(repeating: "═", count: 56)
+
+        lines.append(heavyDivider)
+        lines.append("  DIVINE LINK — SERVICE TRANSCRIPT")
+        lines.append(heavyDivider)
+        lines.append("  Service:   \(session.name)")
+        lines.append("  Type:      \(session.serviceType)")
+        lines.append("  Date:      \(displayDate)")
+        if let pastorId = session.pastorId,
+           let pastor = sessionManager.pastor(for: pastorId) {
+            lines.append("  Pastor:    \(pastor.name)")
+        }
+        lines.append("  Started:   \(timeFmt.string(from: session.startTime))")
+        lines.append("  Duration:  \(session.formattedDuration)")
+        lines.append(heavyDivider)
+        lines.append("")
+
+        // ── Detected Scriptures ──────────────────────────────────────────
+        let scriptures = session.detectedScriptures
+        if !scriptures.isEmpty {
+            lines.append("  DETECTED SCRIPTURES (\(scriptures.count))")
+            lines.append(divider)
+            for (i, scripture) in scriptures.enumerated() {
+                let pushed = scripture.wasPushed ? "  ✓ Sent to ProPresenter" : ""
+                lines.append("  [\(i + 1)]  \(scripture.reference)  (\(scripture.translation))\(pushed)")
+                if !scripture.verseText.isEmpty {
+                    lines.append("       \"\(scripture.verseText)\"")
+                }
+                lines.append("       Heard: \"\(scripture.rawTranscript)\"")
+                lines.append("       Time:  \(timeFmt.string(from: scripture.timestamp))")
+                lines.append("")
+            }
+            lines.append(heavyDivider)
+            lines.append("")
+        }
+
+        // ── Live Transcript ──────────────────────────────────────────────
+        let transcriptLines = transcriptBuffer.lines
+        if !transcriptLines.isEmpty {
+            lines.append("  LIVE TRANSCRIPT")
+            lines.append(divider)
+            lines.append("")
+            for line in transcriptLines {
+                lines.append("  \(line.text)")
+            }
+            lines.append("")
+            lines.append(heavyDivider)
+        }
+
+        lines.append("  Generated by Divine Link")
+        lines.append(heavyDivider)
+
+        let content = lines.joined(separator: "\n")
+
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dirURL = docsURL.appendingPathComponent("DivineLink Transcripts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
+        let fileURL = dirURL.appendingPathComponent(fileName)
+        try? content.write(to: fileURL, atomically: true, encoding: .utf8)
+        print("📄 Transcript saved: \(fileURL.path)")
+    }
+
     private func saveSpeechCorrection(original: String, corrected: String) {
         // Add to book mappings
         pipeline.detector.bookNormaliser.addMapping(original, to: corrected)

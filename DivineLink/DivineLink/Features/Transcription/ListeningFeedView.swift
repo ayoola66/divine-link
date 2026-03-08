@@ -58,38 +58,97 @@ struct ListeningFeedView: View {
 
 // MARK: - Transcript Buffer
 
-/// Manages the rolling transcript buffer with character limit
+/// A single finalised transcript chunk (one STT result marked isFinal).
+struct TranscriptLine: Identifiable {
+    let id: UUID
+    let text: String
+    let timestamp: Date
+
+    init(text: String) {
+        self.id = UUID()
+        self.text = text
+        self.timestamp = Date()
+    }
+}
+
+/// Manages the rolling transcript buffer with character limit and full-session history.
 @MainActor
 class TranscriptBuffer: ObservableObject {
+    /// Current in-progress (non-final) transcription chunk shown live.
     @Published var text: String = ""
-    
+    /// Accumulated final transcript lines for the session.
+    @Published var lines: [TranscriptLine] = []
+
     private let maxLength: Int
-    
-    init(maxLength: Int = 500) {
+    private let maxLines: Int
+    /// Seconds of silence before a non-final partial is treated as a completed sentence.
+    private let sentencePauseInterval: TimeInterval = 1.5
+    private var sentenceTimer: Timer?
+
+    init(maxLength: Int = 500, maxLines: Int = 300) {
         self.maxLength = maxLength
+        self.maxLines = maxLines
     }
-    
-    /// Update the transcript text
+
+    /// Update the rolling in-progress text (called for every STT segment).
+    /// Restarts the sentence-boundary timer — if no new update arrives within
+    /// sentencePauseInterval seconds the current partial is committed as a final line.
     func update(_ newText: String) {
         var trimmedText = newText
-        
-        // Trim to last maxLength characters
         if trimmedText.count > maxLength {
             let startIndex = trimmedText.index(trimmedText.endIndex, offsetBy: -maxLength)
             trimmedText = String(trimmedText[startIndex...])
-            
-            // Try to break at a word boundary
             if let spaceIndex = trimmedText.firstIndex(of: " ") {
                 trimmedText = String(trimmedText[trimmedText.index(after: spaceIndex)...])
             }
         }
-        
         text = trimmedText
+
+        // Restart the silence timer on every new partial
+        sentenceTimer?.invalidate()
+        guard !trimmedText.isEmpty else { return }
+        sentenceTimer = Timer.scheduledTimer(
+            withTimeInterval: sentencePauseInterval,
+            repeats: false
+        ) { [weak self] _ in
+            self?.finalizeInProgressText()
+        }
     }
-    
-    /// Clear the transcript
-    func clear() {
+
+    /// Append a finalised transcript line to the session history.
+    func appendFinalLine(_ newText: String) {
+        let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            // STT session ended with empty final (cancel/timeout) — salvage in-progress text
+            finalizeInProgressText()
+        } else {
+            lines.append(TranscriptLine(text: trimmed))
+            if lines.count > maxLines { lines.removeFirst() }
+            text = ""
+        }
+    }
+
+    /// Promotes whatever in-progress text exists to a final line.
+    /// Called when the STT session ends without producing a non-empty final result.
+    func finalizeInProgressText() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { text = ""; return }
+        lines.append(TranscriptLine(text: trimmed))
+        if lines.count > maxLines { lines.removeFirst() }
         text = ""
+    }
+
+    /// Full transcript text for the session (all finalised lines joined).
+    var fullTranscript: String {
+        lines.map(\.text).joined(separator: " ")
+    }
+
+    /// Clear all transcript state (called on Clear or new session).
+    func clear() {
+        sentenceTimer?.invalidate()
+        sentenceTimer = nil
+        text = ""
+        lines = []
     }
 }
 
