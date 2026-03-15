@@ -205,6 +205,12 @@ class AudioCaptureService: ObservableObject {
             // Recreate the engine AND set the device on the AudioUnit.
             print("🎛️ [AudioCapture] Non-default device — recreating engine and setting AudioUnit")
             recreateAudioEngine()
+            // Force-initialise the input node before setting the device.
+            // On a freshly created AVAudioEngine, inputNode.audioUnit is nil until
+            // any property on the node is accessed — AVFoundation initialises the
+            // underlying AUHAL lazily. Without this, AudioUnitSetProperty fails
+            // silently and the device is never configured.
+            _ = audioEngine?.inputNode.inputFormat(forBus: 0)
             guard setAudioEngineInputDevice(deviceID) else {
                 print("❌ [AudioCapture] Failed to set audio engine input device")
                 error = .deviceSetupFailed

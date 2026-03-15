@@ -160,9 +160,18 @@ class TranscriptionService: ObservableObject {
         // Add custom vocabulary if available
         configureCustomVocabulary(request: recognitionRequest)
         
-        // Start recognition task
+        // Start recognition task.
+        // CRITICAL: dispatch to main before calling handleRecognitionResult.
+        // The SFSpeechRecognizer callback fires on a background thread, but
+        // handleRecognitionResult / scheduleRestart() are @MainActor-isolated.
+        // Without this hop, Timer.scheduledTimer in scheduleRestart() schedules
+        // on the background RunLoop (which isn't spinning), so the restart timer
+        // never fires — transcription permanently stalls after any device switch
+        // or recognition error, even though audio buffers keep flowing.
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            self?.handleRecognitionResult(result: result, error: error)
+            DispatchQueue.main.async {
+                self?.handleRecognitionResult(result: result, error: error)
+            }
         }
         print("✅ [Transcription] Recognition task started")
         
