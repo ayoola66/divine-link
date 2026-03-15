@@ -146,8 +146,16 @@ class TranscriptionService: ObservableObject {
         
         // Configure request
         recognitionRequest.shouldReportPartialResults = true
-        recognitionRequest.requiresOnDeviceRecognition = requiresOnDevice
-        print("📝 [Transcription] Recognition request created, onDevice: \(requiresOnDevice)")
+        // Only require on-device if the recognizer actually supports it on this device.
+        // If supportsOnDeviceRecognition is false (model not downloaded or OS version gap),
+        // hard-requiring it causes the recognition task to fail silently — audio flows,
+        // meter responds, but no text is produced. Fall back to server-based in that case.
+        let canUseOnDevice = speechRecognizer.supportsOnDeviceRecognition
+        recognitionRequest.requiresOnDeviceRecognition = requiresOnDevice && canUseOnDevice
+        if requiresOnDevice && !canUseOnDevice {
+            print("⚠️ [Transcription] On-device recognition not supported on this device — falling back to server-based")
+        }
+        print("📝 [Transcription] Recognition request created, onDevice: \(requiresOnDevice && canUseOnDevice)")
         
         // Add custom vocabulary if available
         configureCustomVocabulary(request: recognitionRequest)

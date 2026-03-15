@@ -8,6 +8,31 @@
         
         <!-- Latest Version -->
         <item>
+            <title>Version 1.3.6</title>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>1.3.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sun, 15 Mar 2026 11:15:00 +0000</pubDate>
+
+            <description><![CDATA[
+                <h2>Version 1.3.6 — Transcription Reliability Fix</h2>
+
+                <h3>Bug Fix</h3>
+                <ul>
+                    <li><strong>Transcription always starts</strong> &ndash; Fixed a silent failure where the audio meter was active but no transcription text appeared. On devices where the on-device speech model is unavailable (e.g. not downloaded for this language), the app now automatically falls back to server-based recognition.</li>
+                </ul>
+            ]]></description>
+
+            <enclosure
+                url="https://divinelink.netlify.app/releases/DivineLink-1.3.6.zip"
+                length="13066987"
+                type="application/octet-stream"
+                sparkle:edSignature="ooNZL/y2PSSgBqnPjSUXBHB930jPDldSewA6WAvHdzmlol96ncaoACYTycv7grb10dAKz46Ezkh/o8NcbRQSAA=="
+            />
+        </item>
+
+        <!-- Previous Version -->
+        <item>
             <title>Version 1.3.5</title>
             <sparkle:version>11</sparkle:version>
             <sparkle:shortVersionString>1.3.5</sparkle:shortVersionString>
