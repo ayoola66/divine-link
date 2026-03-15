@@ -8,6 +8,32 @@
         
         <!-- Latest Version -->
         <item>
+            <title>Version 1.3.7</title>
+            <sparkle:version>13</sparkle:version>
+            <sparkle:shortVersionString>1.3.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sun, 15 Mar 2026 11:32:00 +0000</pubDate>
+
+            <description><![CDATA[
+                <h2>Version 1.3.7 — Audio Device Switch Fix</h2>
+
+                <h3>Bug Fixes</h3>
+                <ul>
+                    <li><strong>Audio device switching fixed</strong> &ndash; Switching the audio input device no longer freezes audio capture. Previously, changing the input required quitting and reopening the app to restore sound. Now it switches cleanly without any restart.</li>
+                    <li><strong>BlackHole wording clarified</strong> &ndash; Settings no longer says BlackHole is &ldquo;required&rdquo;. It now correctly explains it is only needed for capturing audio from another app on the same Mac.</li>
+                </ul>
+            ]]></description>
+
+            <enclosure
+                url="https://divinelink.netlify.app/releases/DivineLink-1.3.7.zip"
+                length="13066870"
+                type="application/octet-stream"
+                sparkle:edSignature="fso/IAfQ0oqfqaPLm2Ho6ivOQWBMvcuMU7SGSJatQ0j4GTufHxpsOJMVdLkjFndNGexiiI/Ko+MhTNrJ8fIhBQ=="
+            />
+        </item>
+
+        <!-- Previous Version -->
+        <item>
             <title>Version 1.3.6</title>
             <sparkle:version>12</sparkle:version>
             <sparkle:shortVersionString>1.3.6</sparkle:shortVersionString>

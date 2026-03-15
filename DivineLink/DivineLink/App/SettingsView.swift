@@ -364,7 +364,7 @@ struct AudioSettingsTab: View {
                                 .foregroundStyle(.secondary)
                         }
                         
-                        Text("BlackHole is required to capture system audio (e.g., from ProPresenter or a stream).")
+                        Text("Only needed if you want to capture audio from another app on this Mac (e.g., ProPresenter or a media player). A physical microphone or audio interface works without it.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         

@@ -232,10 +232,12 @@ class AudioCaptureService: ObservableObject {
     private func recreateAudioEngine() {
         print("🔄 [AudioCapture] Recreating audio engine for fresh format detection")
         
-        // Tear down existing engine completely
+        // Tear down existing engine completely.
+        // NOTE: Do NOT call audioEngine?.reset() here — same reason as stop():
+        // reset() corrupts Core Audio HAL state and causes the new engine to
+        // deliver silent buffers on start. Just nil out; ARC handles deallocation.
         inputNode?.removeTap(onBus: 0)
         audioEngine?.stop()
-        audioEngine?.reset()
         audioEngine = nil
         
         // Create a fresh engine — its inputNode will pick up the correct hardware format
