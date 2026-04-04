@@ -362,7 +362,7 @@ mkdir -p "$RELEASES_DIR"
 
 log_info "Creating distribution ZIP..."
 cd "$EXPORT_PATH"
-zip -r -q "$ZIP_PATH" "$PROJECT_NAME.app"
+ditto -c -k --sequesterRsrc --keepParent "$PROJECT_NAME.app" "$ZIP_PATH"
 cd "$PROJECT_ROOT"
 
 FILE_SIZE=$(stat -f%z "$ZIP_PATH")
