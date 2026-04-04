@@ -351,12 +351,14 @@ else
 fi
 
 #-------------------------------------------------------------------------------
-# Step 5: Create Distribution ZIP
+# Step 5: Create Distribution Packages
 #-------------------------------------------------------------------------------
-log_step "Step 5: Creating Distribution ZIP"
+log_step "Step 5: Creating Distribution Packages"
 
 ZIP_FILENAME="$PROJECT_NAME-$NEW_VERSION.zip"
 ZIP_PATH="$RELEASES_DIR/$ZIP_FILENAME"
+DMG_FILENAME="$PROJECT_NAME-$NEW_VERSION.dmg"
+DMG_PATH="$RELEASES_DIR/$DMG_FILENAME"
 
 mkdir -p "$RELEASES_DIR"
 
@@ -371,7 +373,16 @@ log_info "ZIP created: $ZIP_FILENAME ($FILE_SIZE bytes)"
 # Also copy to latest
 cp "$ZIP_PATH" "$RELEASES_DIR/$PROJECT_NAME-latest.zip"
 
-log_success "Distribution ZIP created"
+log_info "Creating distribution DMG..."
+hdiutil create -volname "$PROJECT_NAME" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" >/dev/null
+
+DMG_FILE_SIZE=$(stat -f%z "$DMG_PATH")
+log_info "DMG created: $DMG_FILENAME ($DMG_FILE_SIZE bytes)"
+
+# Also copy to latest
+cp "$DMG_PATH" "$RELEASES_DIR/$PROJECT_NAME-latest.dmg"
+
+log_success "Distribution ZIP and DMG created"
 
 #-------------------------------------------------------------------------------
 # Step 6: Sign with Sparkle EdDSA
