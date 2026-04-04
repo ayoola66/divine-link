@@ -1,0 +1,26 @@
+---
+description: Default to full automation for repeatable project actions
+alwaysApply: true
+---
+
+# Systematic Automation Default
+
+- Treat all repeatable and scriptable tasks as automation-first.
+- Run eligible commands directly instead of asking the user to run them.
+- Only ask the user to act when automation is blocked (for example: interactive auth, manual approval screens, external account permissions, captchas, or missing credentials).
+
+## Execution Standard
+
+1. Execute setup, deployment, sync, verification, and log queries automatically when tools/credentials are available.
+2. If blocked, report:
+   - exact blocker,
+   - exact command attempted,
+   - exact one-step user action required,
+   - immediate next command that will be run afterwards.
+3. After user request for an operational task, do not return command suggestions first—attempt execution first.
+
+## Project-Specific Notes
+
+- Prefer project scripts when available (`scripts/*`) for consistency and speed.
+- For Supabase/Stripe/Netlify operational work, run commands and provide concise outcomes.
+- Keep user interruption minimal and only for genuinely non-automatable steps.

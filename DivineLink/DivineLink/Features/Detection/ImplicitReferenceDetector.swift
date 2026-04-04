@@ -6,7 +6,10 @@ class ImplicitReferenceDetector {
     // MARK: - Properties
     
     private let famousVerses: [String: String]
-    private let minimumMatchLength = 15 // Minimum characters to consider a match
+    /// Minimum number of words a famous-verse phrase must contain to be considered.
+    /// Prevents 2-3 word fragments (e.g. "in the beginning") from firing before
+    /// the preacher has said enough context to confirm which verse they mean.
+    private let minimumPhraseWords = 5
     
     // MARK: - Initialisation
     
@@ -23,6 +26,10 @@ class ImplicitReferenceDetector {
         var matches: [ImplicitMatch] = []
         
         for (phrase, reference) in famousVerses {
+            // Skip phrases that are too short to be unambiguous
+            let wordCount = phrase.split(separator: " ").count
+            guard wordCount >= minimumPhraseWords else { continue }
+
             if lowercasedText.contains(phrase) {
                 // Calculate confidence based on how much of the phrase is matched
                 let confidence = calculateConfidence(phrase: phrase, in: lowercasedText)

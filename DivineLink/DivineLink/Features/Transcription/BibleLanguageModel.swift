@@ -3,9 +3,10 @@ import Speech
 import Combine
 import os
 
-/// Custom language model for Bible vocabulary
-/// Uses contextual strings to bias recognition toward Bible book names
-/// Note: Full SFCustomLanguageModelData requires macOS 15+, this provides fallback for macOS 14
+/// Custom language model for Bible vocabulary.
+/// On first run, compiles an SFCustomLanguageModelData model from Bible vocabulary and
+/// caches it to Application Support. Subsequent launches load from cache.
+/// Falls back to contextualStrings if compilation fails or is still in progress.
 @MainActor
 class BibleLanguageModel: ObservableObject {
     
@@ -16,6 +17,10 @@ class BibleLanguageModel: ObservableObject {
     @Published var isReady = false
     @Published var isLoading = false
     @Published var error: String?
+
+    /// URL of the compiled SFCustomLanguageModelData model, once prepared.
+    /// nil until compilation completes — applyTo falls back to contextualStrings meanwhile.
+    private var compiledModelURL: URL?
     
     // MARK: - Bible Books (All 66)
     
@@ -101,19 +106,131 @@ class BibleLanguageModel: ObservableObject {
     }
     
     // MARK: - Initialisation
-    
+
     init() {
-        // Mark as ready immediately - we provide contextual strings, not a compiled model
+        // contextualStrings are always ready immediately as the fallback path
         isReady = true
         logger.info("Bible vocabulary loaded: \(self.allPhrases.count) phrases")
+
+        // Capture vocabulary arrays on the main actor before hopping off.
+        let books = oldTestamentBooks + newTestamentBooks + numberedBookVariations
+
+        // Run model compilation entirely off the main actor (utility priority) to avoid
+        // QoS inversion: the Apple Speech / file I/O callbacks run on Default-QoS threads,
+        // and awaiting them from the main actor causes Thread Performance Checker warnings.
+        Task.detached(priority: .utility) { [weak self] in
+            await self?.prepareCustomLanguageModelDetached(books: books)
+        }
+    }
+
+    // MARK: - Custom Language Model Compilation
+
+    /// Compiles SFCustomLanguageModelData from Bible vocabulary and caches to disk.
+    /// Runs off the main actor (called via Task.detached). Hops back only to set compiledModelURL.
+    /// Falls back to contextualStrings if either step fails.
+    private nonisolated func prepareCustomLanguageModelDetached(books: [String]) async {
+        // Create a local logger — Logger is a Sendable struct, safe off the main actor.
+        let log = Logger(subsystem: "com.divinelink", category: "BibleLanguageModel")
+
+        guard let dir = modelDirectory() else {
+            log.warning("Could not determine Application Support directory for Bible language model")
+            return
+        }
+
+        let exportURL = dir.appendingPathComponent("BibleData.exported")
+        let modelURL  = dir.appendingPathComponent("BibleModel.bin")
+
+        // Load from cache if the compiled model already exists
+        if FileManager.default.fileExists(atPath: modelURL.path) {
+            await MainActor.run { [weak self] in
+                self?.compiledModelURL = modelURL
+                self?.isReady = true
+            }
+            log.info("Bible language model loaded from cache")
+            return
+        }
+
+        log.info("Compiling Bible language model (first run — will be cached)…")
+
+        do {
+            typealias Template = SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template
+
+            // Build training data using result builder syntax
+            let data = SFCustomLanguageModelData(
+                locale: Locale(identifier: "en-GB"),
+                identifier: "com.divinelink.bible",
+                version: "1.0"
+            ) {
+                SFCustomLanguageModelData.PhraseCountsFromTemplates(
+                    classes: ["BOOK": books]
+                ) {
+                    Template("{BOOK} chapter", count: 100)
+                    Template("{BOOK} verse",   count: 100)
+                    Template("in {BOOK}",      count: 100)
+                    Template("turn to {BOOK}", count: 80)
+                    Template("look at {BOOK}", count: 80)
+                    Template("open to {BOOK}", count: 80)
+                    Template("the book of {BOOK}", count: 60)
+                    Template("read from {BOOK}",   count: 60)
+                    Template("as {BOOK} says",      count: 50)
+                    Template("according to {BOOK}", count: 50)
+                }
+            }
+
+            // Step 1: Export raw training data to disk
+            try await data.export(to: exportURL)
+
+            // Step 2: Compile into a speech language model
+            let configuration = SFSpeechLanguageModel.Configuration(languageModel: modelURL)
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                SFSpeechLanguageModel.prepareCustomLanguageModel(
+                    for: exportURL,
+                    configuration: configuration
+                ) { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                }
+            }
+
+            // Hop back to the main actor only to update published state
+            await MainActor.run { [weak self] in
+                self?.compiledModelURL = modelURL
+                self?.isReady = true
+            }
+            log.info("Bible language model compiled and cached at \(modelURL.lastPathComponent)")
+
+        } catch {
+            log.error("Bible language model compilation failed: \(error.localizedDescription) — using contextualStrings fallback")
+            // isReady remains true — contextualStrings path is always active
+        }
+    }
+
+    /// Returns the Application Support/DivineLink directory, creating it if needed.
+    /// nonisolated so it can be called from the detached compilation task.
+    private nonisolated func modelDirectory() -> URL? {
+        guard let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else { return nil }
+        let dir = appSupport.appendingPathComponent("DivineLink")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
     
     // MARK: - Apply to Recognition Request
     
-    /// Apply Bible vocabulary hints to a speech recognition request
+    /// Apply Bible vocabulary to a speech recognition request.
+    /// Uses the compiled SFCustomLanguageModelData if ready, otherwise contextualStrings.
     func applyTo(request: SFSpeechAudioBufferRecognitionRequest) {
-        // Use contextual strings to bias recognition (available in macOS 14+)
-        request.contextualStrings = contextualStrings
-        logger.debug("Applied \(self.contextualStrings.count) contextual strings to recognition request")
+        if let modelURL = compiledModelURL {
+            request.customizedLanguageModel = SFSpeechLanguageModel.Configuration(languageModel: modelURL)
+            logger.debug("Applied compiled Bible language model from \(modelURL.lastPathComponent)")
+        } else {
+            request.contextualStrings = contextualStrings
+            logger.debug("Applied \(self.contextualStrings.count) contextual strings (compiled model not ready yet)")
+        }
     }
 }

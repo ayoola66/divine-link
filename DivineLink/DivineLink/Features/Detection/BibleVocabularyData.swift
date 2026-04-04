@@ -368,7 +368,8 @@ enum BibleVocabularyData {
     /// Well-known verse phrases that can be detected without explicit references
     static let famousVerses: [String: String] = [
         "for god so loved the world": "John 3:16",
-        "in the beginning": "Genesis 1:1",
+        "in the beginning god created": "Genesis 1:1",
+        "in the beginning was the word": "John 1:1",
         "the lord is my shepherd": "Psalms 23:1",
         "i can do all things through christ": "Philippians 4:13",
         "trust in the lord with all your heart": "Proverbs 3:5",

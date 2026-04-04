@@ -343,7 +343,7 @@ struct ProPresenterSettingsView: View {
     
     private func testAllConnections() async {
         isTesting = true
-        await integrationManager.testAllConnections()
+        await integrationManager.testAllConnections(with: settings)
         isTesting = false
     }
     

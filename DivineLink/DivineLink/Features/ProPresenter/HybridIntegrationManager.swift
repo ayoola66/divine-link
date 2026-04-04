@@ -124,21 +124,28 @@ class HybridIntegrationManager: ObservableObject {
     
     /// Test all enabled output connections
     func testAllConnections() async {
+        await testAllConnections(with: settings)
+    }
+
+    /// Test all connections using externally provided settings.
+    /// Called from the UI to avoid using the manager's internally cached settings instance,
+    /// which may be stale if the user changed IP/port in the same session.
+    func testAllConnections(with externalSettings: ProPresenterSettings) async {
         outputStatuses.removeAll()
-        
-        for outputType in settings.enabledOutputTypes {
+
+        for outputType in externalSettings.enabledOutputTypes {
             // Check premium requirement
             if outputType.requiresPremium && !subscriptionService.canUsePremiumFeatures {
                 outputStatuses[outputType] = .error("Premium required")
                 continue
             }
-            
+
             let output = factory.createOutput(for: outputType)
-            output.configure(with: settings)
-            
+            output.configure(with: externalSettings)
+
             let connected = await output.testConnection()
             outputStatuses[outputType] = connected ? .connected : .disconnected
-            
+
             logger.info("\(outputType.displayName) connection: \(connected ? "OK" : "Failed")")
         }
     }

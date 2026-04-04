@@ -1,0 +1,215 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - img "Divine Link" [ref=e4]
+    - heading "Divine Link" [level=1] [ref=e5]
+    - generic [ref=e6]: Marketing Playground
+    - generic [ref=e7]:
+      - generic [ref=e8]: "Presets:"
+      - button "🚀 Launch" [ref=e9] [cursor=pointer]
+      - button "⛪ Church" [ref=e10] [cursor=pointer]
+      - button "👑 Premium" [ref=e11] [cursor=pointer]
+      - button "💬 Proof" [ref=e12] [cursor=pointer]
+      - button "⚡ Feature" [ref=e13] [cursor=pointer]
+      - button "🖼 Image BG" [ref=e14] [cursor=pointer]
+      - button "↺ Reset" [ref=e15] [cursor=pointer]
+      - button "⬇ Export PNG" [ref=e16] [cursor=pointer]
+  - generic [ref=e17]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Canvas
+        - combobox [ref=e21]:
+          - option "Social Post (1:1 Square)" [selected]
+          - option "Wide Banner (16:9)"
+          - option "Story / Portrait (9:16)"
+          - option "Feature Card"
+          - option "Testimonial / Quote"
+      - generic [ref=e22]:
+        - generic [ref=e23]: Colour Scheme
+        - generic [ref=e24]:
+          - generic "Dark Orange" [ref=e25] [cursor=pointer]
+          - generic "Deep Purple" [ref=e26] [cursor=pointer]
+          - generic "Emerald" [ref=e27] [cursor=pointer]
+          - generic "Midnight" [ref=e28] [cursor=pointer]
+          - generic "Gold" [ref=e29] [cursor=pointer]
+          - generic "Light" [ref=e30] [cursor=pointer]
+      - generic [ref=e31]:
+        - generic [ref=e32]: Background
+        - combobox [ref=e33]:
+          - option "Gradient" [selected]
+          - option "Radial Glow"
+          - option "Mesh"
+          - option "Solid Dark"
+          - option "Grid Lines"
+          - option "Image Upload"
+      - generic [ref=e34]:
+        - generic [ref=e35]: Typography
+        - generic [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e38]: Headline size
+            - generic [ref=e39]: 36px
+          - slider [ref=e40] [cursor=pointer]: "36"
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]: Body size
+            - generic [ref=e44]: 15px
+          - slider [ref=e45] [cursor=pointer]: "15"
+        - combobox [ref=e46]:
+          - option "Extra Bold (800)"
+          - option "Bold (700)" [selected]
+          - option "Semi-Bold (600)"
+      - generic [ref=e47]:
+        - generic [ref=e48]: Canvas Style
+        - generic [ref=e49]:
+          - generic [ref=e50]:
+            - generic [ref=e51]: Corner radius
+            - generic [ref=e52]: 16px
+          - slider [ref=e53] [cursor=pointer]: "16"
+        - generic [ref=e54]:
+          - generic [ref=e55]:
+            - generic [ref=e56]: Logo size
+            - generic [ref=e57]: 52px
+          - slider [ref=e58] [cursor=pointer]: "52"
+      - generic [ref=e59]:
+        - generic [ref=e60]: Elements — drag to reposition
+        - generic [ref=e61]:
+          - generic [ref=e63] [cursor=pointer]:
+            - generic [ref=e64]:
+              - checkbox [checked]
+            - generic [ref=e66]: Logo
+            - generic [ref=e67]:
+              - button "⬅" [ref=e68]
+              - button "↔" [ref=e69]
+              - button "➡" [ref=e70]
+              - button "↑" [ref=e72]
+              - button "↕" [ref=e73]
+              - button "↓" [ref=e74]
+          - generic [ref=e75] [cursor=pointer]:
+            - generic [ref=e76]:
+              - generic [ref=e77]:
+                - checkbox [checked]
+              - generic [ref=e79]: Headline
+              - generic [ref=e80]:
+                - button "⬅" [ref=e81]
+                - button "↔" [ref=e82]
+                - button "➡" [ref=e83]
+                - button "↑" [ref=e85]
+                - button "↕" [ref=e86]
+                - button "↓" [ref=e87]
+            - textbox [ref=e89]: Real-time Scripture Detection
+          - generic [ref=e90] [cursor=pointer]:
+            - generic [ref=e91]:
+              - generic [ref=e92]:
+                - checkbox [checked]
+              - generic [ref=e94]: Subtext
+              - generic [ref=e95]:
+                - button "⬅" [ref=e96]
+                - button "↔" [ref=e97]
+                - button "➡" [ref=e98]
+                - button "↑" [ref=e100]
+                - button "↕" [ref=e101]
+                - button "↓" [ref=e102]
+            - textbox [ref=e104]: Detects Bible verses during preaching — automatically.
+          - generic [ref=e105] [cursor=pointer]:
+            - generic [ref=e106]:
+              - generic [ref=e107]:
+                - checkbox [checked]
+              - generic [ref=e109]: Badge
+              - generic [ref=e110]:
+                - button "⬅" [ref=e111]
+                - button "↔" [ref=e112]
+                - button "➡" [ref=e113]
+                - button "↑" [ref=e115]
+                - button "↕" [ref=e116]
+                - button "↓" [ref=e117]
+            - textbox [ref=e119]: macOS • Free to Start
+          - generic [ref=e121] [cursor=pointer]:
+            - generic [ref=e122]:
+              - checkbox [checked]
+            - generic [ref=e124]: Divider
+            - generic [ref=e125]:
+              - button "⬅" [ref=e126]
+              - button "↔" [ref=e127]
+              - button "➡" [ref=e128]
+              - button "↑" [ref=e130]
+              - button "↕" [ref=e131]
+              - button "↓" [ref=e132]
+          - generic [ref=e133] [cursor=pointer]:
+            - generic [ref=e134]:
+              - generic [ref=e135]:
+                - checkbox [checked]
+              - generic [ref=e137]: CTA Button
+              - generic [ref=e138]:
+                - button "⬅" [ref=e139]
+                - button "↔" [ref=e140]
+                - button "➡" [ref=e141]
+                - button "↑" [ref=e143]
+                - button "↕" [ref=e144]
+                - button "↓" [ref=e145]
+            - textbox [ref=e147]: Download Free →
+          - generic [ref=e149] [cursor=pointer]:
+            - generic [ref=e150]:
+              - checkbox
+            - generic [ref=e152]: Website URL
+            - generic [ref=e153]:
+              - button "⬅" [ref=e154]
+              - button "↔" [ref=e155]
+              - button "➡" [ref=e156]
+              - button "↑" [ref=e158]
+              - button "↕" [ref=e159]
+              - button "↓" [ref=e160]
+          - generic [ref=e162] [cursor=pointer]:
+            - generic [ref=e163]:
+              - checkbox
+            - generic [ref=e165]: Quote
+            - generic [ref=e166]:
+              - button "⬅" [ref=e167]
+              - button "↔" [ref=e168]
+              - button "➡" [ref=e169]
+              - button "↑" [ref=e171]
+              - button "↕" [ref=e172]
+              - button "↓" [ref=e173]
+          - generic [ref=e175] [cursor=pointer]:
+            - generic [ref=e176]:
+              - checkbox
+            - generic [ref=e178]: Attribution
+            - generic [ref=e179]:
+              - button "⬅" [ref=e180]
+              - button "↔" [ref=e181]
+              - button "➡" [ref=e182]
+              - button "↑" [ref=e184]
+              - button "↕" [ref=e185]
+              - button "↓" [ref=e186]
+          - generic [ref=e188] [cursor=pointer]:
+            - generic [ref=e189]:
+              - checkbox [checked]
+            - generic [ref=e191]: Brand mark
+            - generic [ref=e192]:
+              - button "⬅" [ref=e193]
+              - button "↔" [ref=e194]
+              - button "➡" [ref=e195]
+              - button "↑" [ref=e197]
+              - button "↕" [ref=e198]
+              - button "↓" [ref=e199]
+    - generic [ref=e200]:
+      - generic [ref=e202]:
+        - generic [ref=e203]:
+          - generic [ref=e204]:
+            - img
+          - generic [ref=e205]:
+            - generic: Real-time Scripture Detection
+          - generic [ref=e206]:
+            - generic: Detects Bible verses during preaching — automatically.
+          - generic [ref=e207]:
+            - generic: ✦ macOS • Free to Start
+          - generic [ref=e209]:
+            - generic: Download Free →
+          - generic [ref=e210]:
+            - generic:
+              - img
+              - generic: Divine Link
+        - generic: Click to select · Drag to move · ↺ Reset to restore layout
+      - generic [ref=e211]:
+        - generic [ref=e212]:
+          - generic [ref=e213]: Generated Prompt
+          - button "Copy Prompt" [ref=e214] [cursor=pointer]
+        - generic [ref=e215]: "Create a 1:1 square social post marketing graphic for Divine Link (macOS app — real-time Bible verse detection for churches using ProPresenter). Style: dark navy + orange colour scheme, gradient. Brand logo: use https://divinelink.netlify.app/logo.png — 52px, positioned at 50% x 17% of canvas. Headline: \"Real-time Scripture Detection\" — 36px, weight 700. Subtext: \"Detects Bible verses during preaching — automatically.\" — 15px, muted. Badge: \"macOS • Free to Start\" accent pill. Accent divider line. CTA: \"Download Free →\" gradient button with glow shadow. Small brand watermark at 50% x 95% using logo from https://divinelink.netlify.app/logo.png. 16px corners."

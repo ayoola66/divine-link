@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Divine Link — Marketing Graphics Playground</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f1a; --surface: #141428; --card: #1a1a32;
+    --border: rgba(255,255,255,0.07); --text: #f0f0f5; --muted: #7b7b9a;
+    --accent: #E07A2B; --al: #F59E4C; --green: #10B981;
+  }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* TOPBAR */
+  .topbar { display:flex; align-items:center; gap:9px; padding:9px 16px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:nowrap; }
+  .topbar-logo { width:26px; height:26px; border-radius:7px; overflow:hidden; flex-shrink:0; }
+  .topbar-logo img { width:100%; height:100%; object-fit:contain; }
+  .topbar h1 { font-size:14px; font-weight:700; white-space:nowrap; }
+  .topbar h1 span { color:var(--accent); }
+  .topbar-sub { color:var(--muted); font-size:11px; white-space:nowrap; }
+  .topbar-gap { flex:1; }
+  .presets { display:flex; gap:5px; align-items:center; flex-shrink:0; }
+  .preset-label { color:var(--muted); font-size:10px; white-space:nowrap; }
+  .pbtn { padding:4px 11px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:11px; cursor:pointer; transition:all .15s; white-space:nowrap; }
+  .pbtn:hover, .pbtn.active { border-color:var(--accent); color:var(--al); background:rgba(224,122,43,0.1); }
+  .export-btn { padding:5px 14px; border-radius:7px; border:1px solid var(--green); background:rgba(16,185,129,0.12); color:var(--green); font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; white-space:nowrap; }
+  .export-btn:hover { background:rgba(16,185,129,0.22); }
+  .export-btn.exporting { opacity:.6; cursor:wait; }
+  .export-btn.done { border-color:#60A5FA; background:rgba(96,165,250,0.12); color:#60A5FA; }
+  .dir-btn { padding:5px 10px; border-radius:7px; border:1px solid var(--border); background:var(--card); color:var(--muted); font-size:11px; cursor:pointer; transition:all .15s; white-space:nowrap; }
+  .dir-btn:hover { border-color:var(--green); color:var(--green); }
+  .dir-indicator { display:none; align-items:center; gap:5px; padding:4px 10px; border-radius:7px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); font-size:11px; color:#34D399; white-space:nowrap; cursor:pointer; }
+  .dir-indicator:hover { background:rgba(16,185,129,0.14); }
+  .dir-clear { background:none; border:none; color:#34D399; cursor:pointer; font-size:12px; padding:0 0 0 2px; line-height:1; opacity:.7; }
+  .dir-clear:hover { opacity:1; }
+
+  /* LAYOUT */
+  .main { display:flex; flex:1; overflow:hidden; }
+
+  /* CONTROLS */
+  .controls { width:268px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border); overflow-y:auto; padding:13px; display:flex; flex-direction:column; gap:14px; }
+  .controls::-webkit-scrollbar { width:3px; }
+  .controls::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+  .grp { display:flex; flex-direction:column; gap:7px; }
+  .grp-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; color:var(--muted); padding-bottom:4px; border-bottom:1px solid var(--border); }
+  .ctrl-row { display:flex; flex-direction:column; gap:4px; }
+  .ctrl-label { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
+  .ctrl-val { color:var(--text); font-weight:500; font-family:monospace; font-size:11px; }
+  input[type=range] { width:100%; accent-color:var(--accent); cursor:pointer; }
+  select, input[type=text], textarea { width:100%; background:var(--card); border:1px solid var(--border); color:var(--text); padding:6px 9px; border-radius:6px; font-size:12px; outline:none; font-family:inherit; resize:none; }
+  select:focus, input[type=text]:focus, textarea:focus { border-color:var(--accent); }
+  .tog-row { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--muted); }
+  .tog { position:relative; width:32px; height:17px; flex-shrink:0; }
+  .tog input { opacity:0; width:0; height:0; }
+  .tog-s { position:absolute; inset:0; background:var(--card); border:1px solid var(--border); border-radius:17px; cursor:pointer; transition:.2s; }
+  .tog-s::before { content:''; position:absolute; width:11px; height:11px; left:2px; top:2px; background:var(--muted); border-radius:50%; transition:.2s; }
+  .tog input:checked + .tog-s { background:rgba(224,122,43,0.25); border-color:var(--accent); }
+  .tog input:checked + .tog-s::before { transform:translateX(15px); background:var(--accent); }
+  .chips { display:flex; gap:5px; flex-wrap:wrap; }
+  .chip { width:26px; height:26px; border-radius:6px; cursor:pointer; border:2px solid transparent; transition:all .15s; }
+  .chip.active { border-color:#fff; transform:scale(1.1); }
+  .chip:hover { transform:scale(1.05); }
+
+  /* IMAGE UPLOAD */
+  .upload-zone { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+  .upload-btn-wrap { display:flex; }
+  .upload-label { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; background:var(--card); border:1px dashed rgba(224,122,43,0.4); border-radius:6px; cursor:pointer; font-size:11px; color:var(--accent); transition:all .15s; width:100%; justify-content:center; }
+  .upload-label:hover { background:rgba(224,122,43,0.08); border-color:var(--accent); }
+  .upload-label input { display:none; }
+  .img-thumb-wrap { display:none; position:relative; border-radius:6px; overflow:hidden; border:1px solid var(--border); }
+  .img-thumb { width:100%; height:56px; object-fit:cover; display:block; }
+  .img-thumb-clear { position:absolute; top:4px; right:4px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,0.6); border:none; color:#fff; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+  .overlay-row { display:flex; flex-direction:column; gap:4px; }
+
+  /* ELEMENT LIST */
+  .el-list { display:flex; flex-direction:column; gap:3px; }
+  .el-row { border:1px solid transparent; border-radius:7px; padding:6px 8px; cursor:pointer; transition:all .15s; }
+  .el-row:hover { background:rgba(255,255,255,0.03); }
+  .el-row.sel { border-color:rgba(224,122,43,0.5); background:rgba(224,122,43,0.06); }
+  .el-row.off { opacity:.38; }
+  .el-hdr { display:flex; align-items:center; gap:6px; }
+  .el-name { flex:1; font-size:11px; font-weight:500; color:var(--text); white-space:nowrap; }
+  .el-snaps { display:flex; gap:2px; }
+  .sb { width:18px; height:18px; background:var(--card); border:1px solid var(--border); border-radius:4px; color:var(--muted); font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; padding:0; flex-shrink:0; }
+  .sb:hover { border-color:var(--accent); color:var(--accent); }
+  .el-sep { width:1px; height:12px; background:var(--border); margin:0 1px; flex-shrink:0; }
+  .el-txt { margin-top:5px; padding-left:26px; }
+
+  /* PREVIEW */
+  .preview-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .preview-area { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; overflow:hidden; background:repeating-conic-gradient(#1a1a2e 0% 25%,#141428 0% 50%) 0 0/18px 18px; }
+  .canvas-wrap { position:relative; }
+  #graphic-canvas { position:relative; overflow:hidden; flex-shrink:0; user-select:none; }
+  #graphic-canvas.dragging { cursor:grabbing; }
+  [data-id] { position:absolute; transform:translate(-50%,-50%); cursor:grab; transition:outline .1s; }
+  [data-id]:hover { outline:1px dashed rgba(255,255,255,0.22); outline-offset:5px; }
+  [data-id].sel-el { outline:2px solid rgba(224,122,43,0.85); outline-offset:5px; }
+  [data-id] > * { pointer-events:none; }
+  [data-id] img { pointer-events:none; user-select:none; -webkit-user-drag:none; }
+  .canvas-hint { text-align:center; margin-top:6px; font-size:10px; color:rgba(255,255,255,0.2); pointer-events:none; }
+
+  /* PROMPT */
+  .prompt-area { background:var(--surface); border-top:1px solid var(--border); padding:11px 16px; flex-shrink:0; }
+  .prompt-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .prompt-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+  .copy-btn { padding:4px 12px; background:rgba(224,122,43,0.1); border:1px solid var(--accent); color:var(--al); border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; transition:all .15s; }
+  .copy-btn:hover { background:rgba(224,122,43,0.2); }
+  .copy-btn.copied { background:rgba(16,185,129,0.1); border-color:var(--green); color:#34D399; }
+  #prompt-output { font-family:'SF Mono','Fira Code',monospace; font-size:11px; color:var(--text); line-height:1.6; background:var(--card); border:1px solid var(--border); border-radius:7px; padding:9px 12px; min-height:42px; max-height:66px; overflow-y:auto; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo"><img src="https://divinelink.netlify.app/logo.png" alt="Divine Link" crossorigin="anonymous"></div>
+  <h1>Divine <span>Link</span></h1>
+  <span class="topbar-sub">Marketing Playground</span>
+  <div class="topbar-gap"></div>
+  <div class="presets">
+    <span class="preset-label">Presets:</span>
+    <button class="pbtn active" onclick="applyPreset('launch',this)">🚀 Launch</button>
+    <button class="pbtn" onclick="applyPreset('church',this)">⛪ Church</button>
+    <button class="pbtn" onclick="applyPreset('premium',this)">👑 Premium</button>
+    <button class="pbtn" onclick="applyPreset('proof',this)">💬 Proof</button>
+    <button class="pbtn" onclick="applyPreset('feature',this)">⚡ Feature</button>
+    <button class="pbtn" onclick="applyPreset('imgbg',this)">🖼 Image BG</button>
+    <button class="pbtn" onclick="resetLayout()" style="color:var(--muted)">↺ Reset</button>
+    <div class="dir-indicator" id="dir-indicator" onclick="pickSaveDir()" title="Click to change folder">📁 <span id="dir-name"></span><button class="dir-clear" onclick="event.stopPropagation();clearSaveDir()" title="Stop auto-saving">✕</button></div>
+    <button class="dir-btn" id="dir-btn" onclick="pickSaveDir()" title="Pick a folder to auto-save exports">📁</button>
+    <button class="export-btn" id="export-btn" onclick="exportGraphic()">⬇ Export PNG</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="controls">
+
+    <div class="grp">
+      <div class="grp-label">Canvas</div>
+      <select id="ctrl-type" onchange="onTypeChange()">
+        <option value="social">Social Post (1:1 Square)</option>
+        <option value="banner">Wide Banner (16:9)</option>
+        <option value="story">Story / Portrait (9:16)</option>
+        <option value="feature">Feature Card</option>
+        <option value="testimonial">Testimonial / Quote</option>
+      </select>
+    </div>
+
+    <div class="grp">
+      <div class="grp-label">Colour Scheme</div>
+      <div class="chips" id="scheme-chips">
+        <div class="chip active" data-s="dark-orange" style="background:linear-gradient(135deg,#1e1e3a,#E07A2B)" title="Dark Orange" onclick="setScheme('dark-orange',this)"></div>
+        <div class="chip" data-s="deep-purple" style="background:linear-gradient(135deg,#1e1e3a,#8B5CF6)" title="Deep Purple" onclick="setScheme('deep-purple',this)"></div>
+        <div class="chip" data-s="emerald" style="background:linear-gradient(135deg,#0d2b1e,#10B981)" title="Emerald" onclick="setScheme('emerald',this)"></div>
+        <div class="chip" data-s="midnight" style="background:linear-gradient(135deg,#070714,#3B82F6)" title="Midnight" onclick="setScheme('midnight',this)"></div>
+        <div class="chip" data-s="gold" style="background:linear-gradient(135deg,#1a0d00,#F59E0B)" title="Gold" onclick="setScheme('gold',this)"></div>
+        <div class="chip" data-s="light" style="background:linear-gradient(135deg,#f0f0ff,#E07A2B);border:1px solid #ccc" title="Light" onclick="setScheme('light',this)"></div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-label">Background</div>
+      <select id="ctrl-bg" onchange="onBgChange()">
+        <option value="gradient">Gradient</option>
+        <option value="glow" selected>Radial Glow</option>
+        <option value="mesh">Mesh</option>
+        <option value="solid">Solid Dark</option>
+        <option value="grid">Grid Lines</option>
+        <option value="image">Image Upload</option>
+      </select>
+      <div id="img-bg-zone" class="upload-zone" style="display:none;">
+        <div class="upload-btn-wrap">
+          <label class="upload-label">
+            📁 Choose background image
+            <input type="file" accept="image/*" onchange="loadBgImage(this)">
+          </label>
+        </div>
+        <div class="img-thumb-wrap" id="img-thumb-wrap">
+          <img class="img-thumb" id="img-thumb">
+          <button class="img-thumb-clear" onclick="clearBgImage()">✕</button>
+        </div>
+        <div class="overlay-row">
+          <div class="ctrl-label"><span>Overlay darkness</span><span class="ctrl-val" id="v-overlay">50%</span></div>
+          <input type="range" id="ctrl-overlay" min="0" max="90" value="50" oninput="render()">
+        </div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-label">Typography</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>Headline size</span><span class="ctrl-val" id="v-hsize">28px</span></div>
+        <input type="range" id="ctrl-hsize" min="16" max="62" value="28" oninput="render()">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>Body size</span><span class="ctrl-val" id="v-bsize">15px</span></div>
+        <input type="range" id="ctrl-bsize" min="10" max="24" value="15" oninput="render()">
+      </div>
+      <select id="ctrl-weight" onchange="render()">
+        <option value="800" selected>Extra Bold (800)</option>
+        <option value="700">Bold (700)</option>
+        <option value="600">Semi-Bold (600)</option>
+      </select>
+    </div>
+
+    <div class="grp">
+      <div class="grp-label">Canvas Style</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>Corner radius</span><span class="ctrl-val" id="v-radius">20px</span></div>
+        <input type="range" id="ctrl-radius" min="0" max="40" value="20" oninput="render()">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>Logo size</span><span class="ctrl-val" id="v-lsize">64px</span></div>
+        <input type="range" id="ctrl-lsize" min="28" max="110" value="64" oninput="render()">
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-label">Elements — drag to reposition</div>
+      <div class="el-list" id="el-list"></div>
+    </div>
+
+  </div>
+
+  <div class="preview-panel">
+    <div class="preview-area">
+      <div class="canvas-wrap">
+        <div id="graphic-canvas"></div>
+        <div class="canvas-hint">Click to select · Drag to move · ↺ Reset to restore layout</div>
+      </div>
+    </div>
+    <div class="prompt-area">
+      <div class="prompt-hdr">
+        <span class="prompt-title">Generated Prompt</span>
+        <button class="copy-btn" id="copy-btn" onclick="copyPrompt()">Copy Prompt</button>
+      </div>
+      <div id="prompt-output"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── LOGO PRELOAD (CORS-safe for export) ───────────────────────────────────
+const LOGO_URL = 'https://divinelink.netlify.app/logo.png';
+let LOGO_SRC = LOGO_URL; // will be replaced with data URL once loaded
+
+fetch(LOGO_URL + '?_=' + Date.now())
+  .then(r => r.blob())
+  .then(blob => new Promise((res, rej) => {
+    const r2 = new FileReader(); r2.onload = e => res(e.target.result); r2.onerror = rej; r2.readAsDataURL(blob);
+  }))
+  .then(dataUrl => { LOGO_SRC = dataUrl; render(); })
+  .catch(() => {}); // silently use URL if fetch fails
+
+// ─── SCHEMES ───────────────────────────────────────────────────────────────
+const SCHEMES = {
+  'dark-orange': { bg1:'#0f0f1a', bg2:'#1e1e3a', accent:'#E07A2B', al:'#F59E4C', text:'#f0f0f5', muted:'rgba(240,240,245,0.60)', glow:'rgba(224,122,43,0.28)' },
+  'deep-purple': { bg1:'#0d0d1a', bg2:'#1c1045', accent:'#8B5CF6', al:'#A78BFA', text:'#f0f0f5', muted:'rgba(240,240,245,0.60)', glow:'rgba(139,92,246,0.2)' },
+  'emerald':     { bg1:'#040f0a', bg2:'#0d2b1e', accent:'#10B981', al:'#34D399', text:'#f0f5f2', muted:'rgba(240,245,242,0.60)', glow:'rgba(16,185,129,0.18)' },
+  'midnight':    { bg1:'#070714', bg2:'#101838', accent:'#3B82F6', al:'#60A5FA', text:'#f0f0f5', muted:'rgba(240,240,245,0.60)', glow:'rgba(59,130,246,0.18)' },
+  'gold':        { bg1:'#100900', bg2:'#1e1200', accent:'#F59E0B', al:'#FCD34D', text:'#faf5e4', muted:'rgba(250,245,228,0.60)', glow:'rgba(245,158,11,0.18)' },
+  'light':       { bg1:'#f2f2ff', bg2:'#e6e6f8', accent:'#E07A2B', al:'#C66A20', text:'#111128', muted:'rgba(17,17,40,0.55)', glow:'rgba(224,122,43,0.1)' },
+};
+
+const CANVAS_SIZES = { social:[480,480], banner:[600,338], story:[270,480], feature:[480,270], testimonial:[520,290] };
+
+// ─── DEFAULT POSITIONS ─────────────────────────────────────────────────────
+const DEFAULTS = {
+  // social 480×480: all centred, spaced to survive 2-line headline at 28px
+  social:      { logo:{x:50,y:12}, headline:{x:50,y:35}, subtext:{x:50,y:52}, badge:{x:50,y:65}, divider:{x:50,y:22}, cta:{x:50,y:78}, url:{x:50,y:88}, quote:{x:50,y:44}, attr:{x:50,y:61}, brand:{x:50,y:94} },
+  // banner 600×338: logo hard-left, content right-of-centre (x:65) — keeps text clear of logo
+  banner:      { logo:{x:10,y:50}, headline:{x:65,y:33}, subtext:{x:65,y:58}, badge:{x:65,y:12}, divider:{x:65,y:47}, cta:{x:65,y:74}, url:{x:65,y:85}, quote:{x:65,y:42}, attr:{x:65,y:60}, brand:{x:87,y:92} },
+  // story 270×480: centred, tighter vertical spacing for tall narrow canvas
+  story:       { logo:{x:50,y:11}, headline:{x:50,y:32}, subtext:{x:50,y:49}, badge:{x:50,y:61}, divider:{x:50,y:22}, cta:{x:50,y:72}, url:{x:50,y:82}, quote:{x:50,y:40}, attr:{x:50,y:56}, brand:{x:50,y:93} },
+  // feature 480×270: logo hard-left, content right-of-centre (x:58) — badge above headline
+  feature:     { logo:{x:12,y:50}, headline:{x:58,y:32}, subtext:{x:58,y:58}, badge:{x:58,y:14}, divider:{x:58,y:45}, cta:{x:58,y:75}, url:{x:58,y:87}, quote:{x:58,y:40}, attr:{x:58,y:61}, brand:{x:85,y:88} },
+  // testimonial 520×290: logo top-left, badge centred-top (separated!), quote centre
+  testimonial: { logo:{x:11,y:18}, headline:{x:50,y:12}, subtext:{x:50,y:35}, badge:{x:50,y:11}, divider:{x:50,y:26}, cta:{x:50,y:80}, url:{x:50,y:89}, quote:{x:50,y:47}, attr:{x:50,y:70}, brand:{x:87,y:91} },
+};
+
+// ─── ELEMENT DEFS ──────────────────────────────────────────────────────────
+const EL_DEFS  = { logo:{label:'Logo',hasText:false}, headline:{label:'Headline',hasText:true}, subtext:{label:'Subtext',hasText:true}, badge:{label:'Badge',hasText:true}, divider:{label:'Divider',hasText:false}, cta:{label:'CTA Button',hasText:true}, url:{label:'Website URL',hasText:true}, quote:{label:'Quote',hasText:true}, attr:{label:'Attribution',hasText:true}, brand:{label:'Brand mark',hasText:false} };
+const EL_ORDER = ['logo','headline','subtext','badge','divider','cta','url','quote','attr','brand'];
+
+// ─── STATE ─────────────────────────────────────────────────────────────────
+const state = {
+  type:'social', scheme:'dark-orange', bg:'glow',
+  hsize:28, bsize:15, weight:'800', radius:20, lsize:64, overlay:50,
+  imageBg: null,
+  elements: {
+    logo:     { visible:true,  x:50, y:12 },
+    divider:  { visible:true,  x:50, y:22 },
+    headline: { visible:true,  x:50, y:35, text:'Real-time Scripture Detection' },
+    subtext:  { visible:true,  x:50, y:52, text:'Detects every Bible verse during preaching — automatically.' },
+    badge:    { visible:true,  x:50, y:65, text:'macOS • Free to Start' },
+    cta:      { visible:true,  x:50, y:78, text:'Download Free →' },
+    url:      { visible:false, x:50, y:88, text:'divinelink.netlify.app/download' },
+    quote:    { visible:false, x:50, y:44, text:'"We used to scramble every Sunday. Divine Link changed our entire workflow."' },
+    attr:     { visible:false, x:50, y:61, text:'— AV Operator, Grace Community Church' },
+    brand:    { visible:true,  x:50, y:94 },
+  }
+};
+
+// ─── DRAG ──────────────────────────────────────────────────────────────────
+let drag = { active:false, id:null, sx:0, sy:0, ex:0, ey:0 };
+let selected = null;
+
+// ─── PRESETS ───────────────────────────────────────────────────────────────
+const PRESETS = {
+  launch: {
+    type:'social', scheme:'dark-orange', bg:'glow', hsize:28, bsize:15, weight:'800', radius:20, lsize:64, overlay:50,
+    vis:{logo:true,headline:true,subtext:true,badge:true,divider:true,cta:true,url:false,quote:false,attr:false,brand:true},
+    txt:{headline:'Real-time Scripture Detection',subtext:'Detects every Bible verse during preaching — automatically.',badge:'macOS • Free to Start',cta:'Download Free →'},
+  },
+  church: {
+    type:'banner', scheme:'deep-purple', bg:'mesh', hsize:24, bsize:13, weight:'700', radius:16, lsize:64, overlay:50,
+    vis:{logo:true,headline:true,subtext:true,badge:true,divider:true,cta:false,url:false,quote:false,attr:false,brand:true},
+    txt:{headline:'For Churches That Take Scripture Seriously',subtext:'Local-first. Private. Works with ProPresenter.',badge:'Join 500+ Churches'},
+  },
+  premium: {
+    type:'feature', scheme:'gold', bg:'gradient', hsize:27, bsize:14, weight:'700', radius:16, lsize:52, overlay:50,
+    vis:{logo:false,headline:true,subtext:true,badge:true,divider:false,cta:true,url:false,quote:false,attr:false,brand:true},
+    txt:{headline:'Go Ad-Free with Grace',subtext:'Messages API, all translations, 2 Pastor Profiles.',badge:'£9.99 / month',cta:'Upgrade Now →'},
+  },
+  proof: {
+    type:'testimonial', scheme:'dark-orange', bg:'solid', hsize:36, bsize:15, weight:'700', radius:20, lsize:44, overlay:50,
+    vis:{logo:true,headline:false,subtext:false,badge:true,divider:true,cta:false,url:false,quote:true,attr:true,brand:true},
+    txt:{badge:'Divine Link',quote:'"We used to scramble every Sunday. Divine Link changed our entire workflow."',attr:'— AV Operator, Grace Community Church'},
+  },
+  feature: {
+    type:'feature', scheme:'midnight', bg:'grid', hsize:26, bsize:13, weight:'700', radius:14, lsize:52, overlay:50,
+    vis:{logo:false,headline:true,subtext:true,badge:true,divider:true,cta:false,url:false,quote:false,attr:false,brand:true},
+    txt:{headline:'Panic Button Built In',subtext:'One click clears the screen instantly. Operators stay in control.',badge:'Operator Safety'},
+  },
+  imgbg: {
+    type:'social', scheme:'dark-orange', bg:'image', hsize:30, bsize:15, weight:'800', radius:20, lsize:60, overlay:55,
+    vis:{logo:true,headline:true,subtext:true,badge:false,divider:false,cta:true,url:false,quote:false,attr:false,brand:true},
+    txt:{headline:'Real-time Scripture Detection',subtext:'For churches that never miss a verse.',cta:'Download Free →'},
+  },
+};
+
+function applyPreset(name, btn) {
+  const p = PRESETS[name];
+  state.type=p.type; state.scheme=p.scheme; state.bg=p.bg;
+  state.hsize=p.hsize; state.bsize=p.bsize; state.weight=p.weight;
+  state.radius=p.radius; state.lsize=p.lsize; state.overlay=p.overlay;
+  for (const id of EL_ORDER) {
+    if (p.vis[id]!==undefined) state.elements[id].visible = p.vis[id];
+    if (p.txt && p.txt[id]) state.elements[id].text = p.txt[id];
+    const def = DEFAULTS[p.type][id];
+    if (def) { state.elements[id].x=def.x; state.elements[id].y=def.y; }
+  }
+  selected=null;
+  syncControls();
+  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active',c.dataset.s===p.scheme));
+  document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  onBgChange();
+  buildElPanel();
+  render();
+}
+
+function syncControls() {
+  document.getElementById('ctrl-type').value   = state.type;
+  document.getElementById('ctrl-bg').value     = state.bg;
+  document.getElementById('ctrl-hsize').value  = state.hsize;
+  document.getElementById('ctrl-bsize').value  = state.bsize;
+  document.getElementById('ctrl-weight').value = state.weight;
+  document.getElementById('ctrl-radius').value = state.radius;
+  document.getElementById('ctrl-lsize').value  = state.lsize;
+  document.getElementById('ctrl-overlay').value= state.overlay;
+}
+
+function setScheme(name, el) {
+  state.scheme=name;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); el.classList.add('active');
+  document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('active'));
+  render();
+}
+
+function onTypeChange() { state.type=document.getElementById('ctrl-type').value; resetLayout(); }
+
+function resetLayout() {
+  state.type=document.getElementById('ctrl-type').value||state.type;
+  const defs=DEFAULTS[state.type];
+  for(const id of EL_ORDER) { if(defs[id]){state.elements[id].x=defs[id].x; state.elements[id].y=defs[id].y;} }
+  selected=null; buildElPanel(); render();
+}
+
+function onBgChange() {
+  state.bg=document.getElementById('ctrl-bg').value;
+  document.getElementById('img-bg-zone').style.display = state.bg==='image' ? 'flex' : 'none';
+  document.getElementById('img-bg-zone').style.flexDirection = 'column';
+  render();
+}
+
+function loadBgImage(input) {
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    state.imageBg=e.target.result;
+    const wrap=document.getElementById('img-thumb-wrap');
+    document.getElementById('img-thumb').src=e.target.result;
+    wrap.style.display='block';
+    render();
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearBgImage() {
+  state.imageBg=null;
+  document.getElementById('img-thumb-wrap').style.display='none';
+  document.getElementById('img-thumb').src='';
+  render();
+}
+
+// ─── HELPERS ───────────────────────────────────────────────────────────────
+function rgb(hex) {
+  hex=hex.replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  return `${parseInt(hex.slice(0,2),16)},${parseInt(hex.slice(2,4),16)},${parseInt(hex.slice(4,6),16)}`;
+}
+
+function getBG(sc) {
+  switch(state.bg) {
+    case 'gradient': return `linear-gradient(135deg,${sc.bg1} 0%,${sc.bg2} 100%)`;
+    case 'glow':
+    case 'mesh':     return `linear-gradient(135deg,${sc.bg1} 0%,${sc.bg2} 50%,${sc.bg1} 100%)`;
+    case 'solid':    return sc.bg1;
+    case 'grid':     return sc.bg1;
+    case 'image':    return sc.bg1;
+    default:         return sc.bg1;
+  }
+}
+
+function getExtras(sc) {
+  let h='';
+  if(state.bg==='image' && state.imageBg) {
+    const op=(+state.overlay)/100;
+    h+=`<div style="position:absolute;inset:0;pointer-events:none;z-index:0;"><img src="${state.imageBg}" style="width:100%;height:100%;object-fit:cover;display:block;" draggable="false"><div style="position:absolute;inset:0;background:rgba(0,0,0,${op});"></div></div>`;
+  } else {
+    if(state.bg==='glow'||state.bg==='mesh') {
+      h+=`<div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 70% 70% at 72% 28%,${sc.glow},transparent 70%);z-index:0;"></div>`;
+      h+=`<div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 50% 50% at 22% 78%,${sc.glow},transparent 70%);z-index:0;"></div>`;
+      h+=`<div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 60% 55% at 50% 0%,${sc.glow},transparent 65%);z-index:0;"></div>`;
+    }
+    if(state.bg==='grid') {
+      h+=`<div style="position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.04) 1px,transparent 1px);background-size:28px 28px;z-index:0;"></div>`;
+    }
+  }
+  h+=`<div style="position:absolute;inset:0;pointer-events:none;opacity:.03;z-index:0;background-image:url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%224%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22/%3E%3C/svg%3E');"></div>`;
+  return h;
+}
+
+function csize() { return CANVAS_SIZES[state.type]||[480,480]; }
+
+// ─── ELEMENT HTML ──────────────────────────────────────────────────────────
+function elHTML(id, el, sc) {
+  const isSel = selected===id;
+  const cls   = isSel ? 'sel-el' : '';
+  const style = `left:${el.x}%;top:${el.y}%;z-index:10;`;
+  const [cw]  = csize();
+  // banner & feature have logo on the left — use 55% maxW so text doesn't bleed into logo space
+  const maxW  = (state.type==='banner'||state.type==='feature') ? Math.round(cw*0.55) : Math.round(cw*0.82);
+  const acRgb = rgb(sc.accent);
+
+  switch(id) {
+    case 'logo': {
+      const s=state.lsize, r=Math.round(s*0.24);
+      return `<div data-id="logo" class="${cls}" style="${style}"><img src="${LOGO_SRC}" style="width:${s}px;height:${s}px;border-radius:${r}px;object-fit:contain;display:block;" draggable="false"></div>`;
+    }
+    case 'headline':
+      return `<div data-id="headline" class="${cls}" style="${style}"><div style="font-size:${state.hsize}px;font-weight:${state.weight};color:${sc.text};letter-spacing:-0.4px;line-height:1.2;text-align:center;max-width:${maxW}px;">${el.text}</div></div>`;
+    case 'subtext':
+      return `<div data-id="subtext" class="${cls}" style="${style}"><div style="font-size:${state.bsize}px;color:${sc.muted};line-height:1.6;text-align:center;max-width:${maxW}px;">${el.text}</div></div>`;
+    case 'badge':
+      return `<div data-id="badge" class="${cls}" style="${style}"><div style="display:inline-flex;align-items:center;gap:7px;padding:6px 16px;border-radius:50px;background:rgba(${acRgb},0.14);border:1px solid rgba(${acRgb},0.35);color:${sc.al};font-size:13px;font-weight:600;white-space:nowrap;">✦ ${el.text}</div></div>`;
+    case 'divider':
+      return `<div data-id="divider" class="${cls}" style="${style}"><div style="width:80px;height:4px;border-radius:2px;background:linear-gradient(90deg,transparent,${sc.accent},transparent);"></div></div>`;
+    case 'cta':
+      return `<div data-id="cta" class="${cls}" style="${style}"><div style="display:inline-flex;align-items:center;gap:8px;padding:14px 34px;border-radius:50px;background:linear-gradient(135deg,${sc.accent},${sc.al});color:white;font-size:14px;font-weight:700;white-space:nowrap;box-shadow:0 6px 28px rgba(${acRgb},0.45);">${el.text}</div></div>`;
+    case 'url':
+      return `<div data-id="url" class="${cls}" style="${style}"><div style="display:inline-flex;align-items:center;gap:7px;padding:5px 14px;border-radius:50px;background:rgba(${acRgb},0.1);border:1px solid rgba(${acRgb},0.28);color:${sc.al};font-size:11px;font-weight:600;white-space:nowrap;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5C8 1.5 5.5 4 5.5 8s2.5 6.5 2.5 6.5M8 1.5C8 1.5 10.5 4 10.5 8S8 14.5 8 14.5M1.5 8h13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>${el.text}</div></div>`;
+    case 'quote':
+      return `<div data-id="quote" class="${cls}" style="${style}"><div style="font-size:${state.bsize+2}px;color:${sc.text};font-style:italic;line-height:1.65;text-align:center;max-width:${maxW}px;">${el.text}</div></div>`;
+    case 'attr':
+      return `<div data-id="attr" class="${cls}" style="${style}"><div style="font-size:12px;color:${sc.muted};text-align:center;">${el.text}</div></div>`;
+    case 'brand':
+      return `<div data-id="brand" class="${cls}" style="${style}"><div style="display:inline-flex;align-items:center;gap:5px;opacity:0.48;"><img src="${LOGO_SRC}" style="width:13px;height:13px;border-radius:3px;object-fit:contain;" draggable="false"><span style="font-size:10px;font-weight:600;color:${sc.text};letter-spacing:0.3px;">Divine Link</span></div></div>`;
+  }
+  return '';
+}
+
+// ─── RENDER ────────────────────────────────────────────────────────────────
+function render() {
+  state.type   = document.getElementById('ctrl-type').value;
+  state.bg     = document.getElementById('ctrl-bg').value;
+  state.hsize  = +document.getElementById('ctrl-hsize').value;
+  state.bsize  = +document.getElementById('ctrl-bsize').value;
+  state.weight = document.getElementById('ctrl-weight').value;
+  state.radius = +document.getElementById('ctrl-radius').value;
+  state.lsize  = +document.getElementById('ctrl-lsize').value;
+  state.overlay= +document.getElementById('ctrl-overlay').value;
+  document.getElementById('v-hsize').textContent  = state.hsize+'px';
+  document.getElementById('v-bsize').textContent  = state.bsize+'px';
+  document.getElementById('v-radius').textContent = state.radius+'px';
+  document.getElementById('v-lsize').textContent  = state.lsize+'px';
+  document.getElementById('v-overlay').textContent= state.overlay+'%';
+
+  const sc=SCHEMES[state.scheme];
+  const [cw,ch]=csize();
+  const canvas=document.getElementById('graphic-canvas');
+  canvas.style.cssText=`width:${cw}px;height:${ch}px;border-radius:${state.radius}px;background:${getBG(sc)};`;
+
+  let html=getExtras(sc);
+  for(const id of EL_ORDER) { if(state.elements[id].visible) html+=elHTML(id,state.elements[id],sc); }
+  canvas.innerHTML=html;
+  updatePrompt();
+  syncElPanelSel();
+}
+
+// ─── ELEMENT PANEL ─────────────────────────────────────────────────────────
+function buildElPanel() {
+  const list=document.getElementById('el-list'); list.innerHTML='';
+  for(const id of EL_ORDER) {
+    const def=EL_DEFS[id], el=state.elements[id];
+    const row=document.createElement('div');
+    row.className='el-row'+(selected===id?' sel':'')+(el.visible?'':' off');
+    row.id='elr-'+id;
+    row.onclick=e=>{ if(e.target.closest('.sb,.tog,input,textarea,select')) return; selectEl(id); };
+    row.innerHTML=`<div class="el-hdr">
+      <label class="tog" onclick="event.stopPropagation()"><input type="checkbox" id="vis-${id}" ${el.visible?'checked':''} onchange="toggleEl('${id}')"><span class="tog-s"></span></label>
+      <span class="el-name">${def.label}</span>
+      <div class="el-snaps">
+        <button class="sb" title="Left"   onclick="alignH('${id}','l');event.stopPropagation()">⬅</button>
+        <button class="sb" title="Centre" onclick="alignH('${id}','c');event.stopPropagation()">↔</button>
+        <button class="sb" title="Right"  onclick="alignH('${id}','r');event.stopPropagation()">➡</button>
+        <div class="el-sep"></div>
+        <button class="sb" title="Top"    onclick="alignV('${id}','t');event.stopPropagation()">↑</button>
+        <button class="sb" title="Middle" onclick="alignV('${id}','m');event.stopPropagation()">↕</button>
+        <button class="sb" title="Bottom" onclick="alignV('${id}','b');event.stopPropagation()">↓</button>
+      </div>
+    </div>${def.hasText && el.visible ? `<div class="el-txt">${
+      (id==='subtext'||id==='quote')
+        ? `<textarea id="txt-${id}" rows="2" oninput="updateText('${id}',this.value)">${el.text||''}</textarea>`
+        : `<input type="text" id="txt-${id}" value="${(el.text||'').replace(/"/g,'&quot;')}" oninput="updateText('${id}',this.value)">`
+    }</div>` : ''}`;
+    list.appendChild(row);
+  }
+}
+
+function syncElPanelSel() {
+  document.querySelectorAll('.el-row').forEach(r=>r.classList.toggle('sel', r.id==='elr-'+selected));
+}
+
+function selectEl(id) { selected=id; render(); }
+
+function toggleEl(id) {
+  state.elements[id].visible=document.getElementById('vis-'+id).checked;
+  buildElPanel(); render();
+}
+
+function updateText(id, val) { state.elements[id].text=val; render(); }
+
+function alignH(id, dir) {
+  const el=state.elements[id];
+  el.x = dir==='l'?13 : dir==='c'?50 : 87;
+  render();
+}
+
+function alignV(id, dir) {
+  const el=state.elements[id];
+  el.y = dir==='t'?8 : dir==='m'?50 : 92;
+  render();
+}
+
+// ─── DRAG ──────────────────────────────────────────────────────────────────
+document.getElementById('graphic-canvas').addEventListener('mousedown', e=>{
+  const el=e.target.closest('[data-id]');
+  if(!el){selected=null;syncElPanelSel();return;}
+  const id=el.dataset.id;
+  selected=id;
+  drag={active:true,id,sx:e.clientX,sy:e.clientY,ex:state.elements[id].x,ey:state.elements[id].y};
+  document.getElementById('graphic-canvas').classList.add('dragging');
+  syncElPanelSel();
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', e=>{
+  if(!drag.active) return;
+  const c=document.getElementById('graphic-canvas'), rect=c.getBoundingClientRect();
+  const nx=Math.max(2,Math.min(98, drag.ex+(e.clientX-drag.sx)/rect.width*100));
+  const ny=Math.max(2,Math.min(98, drag.ey+(e.clientY-drag.sy)/rect.height*100));
+  const d=c.querySelector(`[data-id="${drag.id}"]`);
+  if(d){d.style.left=nx+'%';d.style.top=ny+'%';}
+});
+
+document.addEventListener('mouseup', e=>{
+  if(!drag.active) return;
+  const c=document.getElementById('graphic-canvas'), rect=c.getBoundingClientRect();
+  state.elements[drag.id].x=Math.max(2,Math.min(98, drag.ex+(e.clientX-drag.sx)/rect.width*100));
+  state.elements[drag.id].y=Math.max(2,Math.min(98, drag.ey+(e.clientY-drag.sy)/rect.height*100));
+  drag.active=false;
+  document.getElementById('graphic-canvas').classList.remove('dragging');
+  updatePrompt();
+});
+
+// Touch
+document.getElementById('graphic-canvas').addEventListener('touchstart',e=>{
+  const t=e.touches[0], el=document.elementFromPoint(t.clientX,t.clientY)?.closest('[data-id]');
+  if(!el) return;
+  const id=el.dataset.id; selected=id;
+  drag={active:true,id,sx:t.clientX,sy:t.clientY,ex:state.elements[id].x,ey:state.elements[id].y};
+  syncElPanelSel(); e.preventDefault();
+},{passive:false});
+
+document.addEventListener('touchmove',e=>{
+  if(!drag.active) return;
+  const t=e.touches[0], c=document.getElementById('graphic-canvas'), rect=c.getBoundingClientRect();
+  const nx=Math.max(2,Math.min(98, drag.ex+(t.clientX-drag.sx)/rect.width*100));
+  const ny=Math.max(2,Math.min(98, drag.ey+(t.clientY-drag.sy)/rect.height*100));
+  const d=c.querySelector(`[data-id="${drag.id}"]`);
+  if(d){d.style.left=nx+'%';d.style.top=ny+'%';} e.preventDefault();
+},{passive:false});
+
+document.addEventListener('touchend',e=>{
+  if(!drag.active) return;
+  const t=e.changedTouches[0], c=document.getElementById('graphic-canvas'), rect=c.getBoundingClientRect();
+  state.elements[drag.id].x=Math.max(2,Math.min(98, drag.ex+(t.clientX-drag.sx)/rect.width*100));
+  state.elements[drag.id].y=Math.max(2,Math.min(98, drag.ey+(t.clientY-drag.sy)/rect.height*100));
+  drag.active=false; updatePrompt();
+});
+
+// ─── PROMPT ────────────────────────────────────────────────────────────────
+const SCHEME_NAMES={ 'dark-orange':'dark navy + orange','deep-purple':'dark + purple','emerald':'dark green + emerald','midnight':'midnight blue','gold':'warm dark + gold','light':'light + orange' };
+const BG_NAMES={ gradient:'gradient',glow:'radial glow',mesh:'mesh gradient',solid:'solid dark',grid:'subtle grid',image:'custom image background' };
+const TYPE_NAMES={ social:'1:1 square social post',banner:'16:9 wide banner',story:'9:16 portrait story',feature:'feature highlight card',testimonial:'testimonial quote card' };
+
+function updatePrompt() {
+  const sc=SCHEMES[state.scheme], el=state.elements;
+  const p=[];
+  p.push(`Create a ${TYPE_NAMES[state.type]} marketing graphic for Divine Link (macOS app — real-time Bible verse detection for churches using ProPresenter).`);
+  p.push(`Style: ${SCHEME_NAMES[state.scheme]} colour scheme, ${BG_NAMES[state.bg]}.`);
+  if(el.logo.visible) p.push(`Brand logo: use https://divinelink.netlify.app/logo.png — ${state.lsize}px, positioned at ${Math.round(el.logo.x)}% x ${Math.round(el.logo.y)}% of canvas.`);
+  if(el.headline.visible) p.push(`Headline: "${el.headline.text}" — ${state.hsize}px, weight ${state.weight}.`);
+  if(el.subtext.visible) p.push(`Subtext: "${el.subtext.text}" — ${state.bsize}px, muted.`);
+  if(el.badge.visible) p.push(`Badge: "${el.badge.text}" accent pill.`);
+  if(el.divider.visible) p.push(`Accent divider line.`);
+  if(el.cta.visible) p.push(`CTA: "${el.cta.text}" gradient button with glow shadow.`);
+  if(el.url.visible) p.push(`URL pill: "${el.url.text}" with globe icon.`);
+  if(el.quote.visible) p.push(`Quote: ${el.quote.text}`);
+  if(el.attr.visible) p.push(`Attribution: "${el.attr.text}".`);
+  if(el.brand.visible) p.push(`Small brand watermark at ${Math.round(el.brand.x)}% x ${Math.round(el.brand.y)}% using logo from https://divinelink.netlify.app/logo.png.`);
+  p.push(`${state.radius}px corners.`);
+  document.getElementById('prompt-output').textContent=p.join(' ');
+}
+
+// ─── AUTO-SAVE FOLDER ──────────────────────────────────────────────────────
+let autoSaveDir = null;
+
+async function pickSaveDir() {
+  if (!window.showDirectoryPicker) { alert('Auto-save folder requires Chrome or Edge.'); return; }
+  try {
+    autoSaveDir = await window.showDirectoryPicker({ mode:'readwrite' });
+    updateDirIndicator();
+  } catch(e) { if(e.name !== 'AbortError') console.error(e); }
+}
+
+function clearSaveDir() {
+  autoSaveDir = null;
+  updateDirIndicator();
+}
+
+function updateDirIndicator() {
+  const ind = document.getElementById('dir-indicator');
+  const btn = document.getElementById('dir-btn');
+  const expBtn = document.getElementById('export-btn');
+  if (autoSaveDir) {
+    document.getElementById('dir-name').textContent = autoSaveDir.name;
+    ind.style.display = 'flex';
+    btn.style.display = 'none';
+    expBtn.title = `Auto-saving to "${autoSaveDir.name}"`;
+  } else {
+    ind.style.display = 'none';
+    btn.style.display = '';
+    expBtn.title = '';
+  }
+}
+
+// ─── EXPORT ────────────────────────────────────────────────────────────────
+let h2cLoaded=false;
+
+function loadH2C(cb) {
+  if(h2cLoaded){cb();return;}
+  const s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  s.onload=()=>{h2cLoaded=true;cb();};
+  s.onerror=()=>alert('Export library failed to load — check internet connection.');
+  document.head.appendChild(s);
+}
+
+async function exportGraphic() {
+  const btn=document.getElementById('export-btn');
+  btn.textContent='⏳ Rendering…'; btn.classList.add('exporting');
+
+  loadH2C(async ()=>{
+    const canvas=document.getElementById('graphic-canvas');
+    // Temporarily remove selection highlight
+    const selEl=canvas.querySelector('.sel-el');
+    const selId=selEl?selEl.dataset.id:null;
+    if(selEl) selEl.classList.remove('sel-el');
+
+    try {
+      const cnv=await html2canvas(canvas,{scale:2,useCORS:true,allowTaint:true,backgroundColor:null,logging:false});
+      if(selId){const e=canvas.querySelector(`[data-id="${selId}"]`);if(e)e.classList.add('sel-el');}
+      const fname=`divine-link-${state.type}-${new Date().toISOString().slice(0,10)}.png`;
+
+      // Auto-save to folder if one is set
+      if(autoSaveDir) {
+        try {
+          const fh=await autoSaveDir.getFileHandle(fname,{create:true});
+          const blob=await new Promise(res=>cnv.toBlob(res,'image/png'));
+          const w=await fh.createWritable(); await w.write(blob); await w.close();
+          flashDone(btn); return;
+        } catch(e) { console.error('Auto-save failed, falling back:',e); }
+      }
+
+      if(window.showSaveFilePicker) {
+        try {
+          const handle=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'PNG Image',accept:{'image/png':['.png']}}]});
+          const blob=await new Promise(res=>cnv.toBlob(res,'image/png'));
+          const w=await handle.createWritable(); await w.write(blob); await w.close();
+          flashDone(btn);
+        } catch(e) {
+          if(e.name!=='AbortError') dlFallback(cnv,fname);
+          else { btn.textContent='⬇ Export PNG'; btn.classList.remove('exporting'); }
+        }
+      } else { dlFallback(cnv,fname); }
+    } catch(err) {
+      if(selId){const e=canvas.querySelector(`[data-id="${selId}"]`);if(e)e.classList.add('sel-el');}
+      console.error(err); alert('Export failed — try Chrome or Edge.');
+      btn.textContent='⬇ Export PNG'; btn.classList.remove('exporting');
+    }
+  });
+}
+
+function dlFallback(cnv, fname) {
+  const a=document.createElement('a'); a.download=fname; a.href=cnv.toDataURL('image/png'); a.click();
+  flashDone(document.getElementById('export-btn'));
+}
+
+function flashDone(btn) {
+  btn.textContent='✓ Saved!'; btn.classList.remove('exporting'); btn.classList.add('done');
+  setTimeout(()=>{btn.textContent='⬇ Export PNG';btn.classList.remove('done');},2500);
+}
+
+function copyPrompt() {
+  navigator.clipboard.writeText(document.getElementById('prompt-output').textContent).then(()=>{
+    const btn=document.getElementById('copy-btn'); btn.textContent='Copied!'; btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='Copy Prompt';btn.classList.remove('copied');},2000);
+  });
+}
+
+// ─── INIT ──────────────────────────────────────────────────────────────────
+buildElPanel();
+render();
+</script>
+</body>
+</html>

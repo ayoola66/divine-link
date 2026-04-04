@@ -71,17 +71,27 @@ supabase secrets set STRIPE_SECRET_KEY=sk_live_xxxx
 
 # Set webhook secret (get this after creating webhook in Stripe)
 supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_xxxx
+
+# Branded post-payment email (Resend)
+supabase secrets set RESEND_API_KEY=re_xxxx
+supabase secrets set TRANSACTIONAL_FROM_EMAIL=hello@divinelinkapp.com
+supabase secrets set TRANSACTIONAL_REPLY_TO=do-not-reply@divinelinkapp.com
+
+# Optional URL overrides
+supabase secrets set APP_DOWNLOAD_URL=https://divinelink.netlify.app/releases/DivineLink-latest.zip
+supabase secrets set WEBSITE_URL=https://divinelink.netlify.app
 ```
 
 ### 4.5 Deploy Function
 
 ```bash
-supabase functions deploy stripe-webhook
+supabase functions deploy stripe-webhook --no-verify-jwt
 ```
 
 ### 4.6 Get Function URL
 
 After deployment, your webhook URL will be:
+
 ```
 https://qzjhjgkvvcamcqpdrgkf.supabase.co/functions/v1/stripe-webhook
 ```
@@ -93,6 +103,7 @@ https://qzjhjgkvvcamcqpdrgkf.supabase.co/functions/v1/stripe-webhook
 2. Click **Add endpoint**
 
 3. Enter your Supabase function URL:
+
    ```
    https://qzjhjgkvvcamcqpdrgkf.supabase.co/functions/v1/stripe-webhook
    ```
@@ -125,7 +136,7 @@ https://qzjhjgkvvcamcqpdrgkf.supabase.co/functions/v1/stripe-webhook
 3. Select your Divine Link Premium product
 
 4. Under **After payment** → **Redirect customers**:
-   - URL: `https://divinelink.netlify.app/success`
+   - URL: `https://divinelink.netlify.app/success.html`
 
 5. Copy the payment link URL
 
@@ -140,7 +151,22 @@ https://qzjhjgkvvcamcqpdrgkf.supabase.co/functions/v1/stripe-webhook
 
 For custom checkout, you'd create a Supabase Edge Function that creates a Stripe Checkout Session. This gives more control over the flow.
 
-## Step 7: Test the Flow
+## Step 7: Enable both payment emails
+
+To ensure users get both expected emails:
+
+1. In Stripe Dashboard, enable customer receipt/invoice emails for paid charges.
+2. Keep webhook events enabled so Supabase can send the Divine Link branded setup email.
+3. Confirm your DNS includes the required sender records for your email provider (SPF/DKIM) for `divinelinkapp.com`.
+
+### Email Behaviour
+
+- Stripe usually sends a receipt for paid charges. For 100% discounted checkouts,
+  Stripe may generate a £0.00 invoice and may skip the receipt email.
+- Divine Link sends a branded onboarding email from `hello@divinelinkapp.com`.
+- Replies are intentionally disabled (`TRANSACTIONAL_REPLY_TO=do-not-reply@divinelinkapp.com`).
+
+## Step 8: Test the Flow
 
 1. **Build and run** the app in Xcode
 
@@ -156,6 +182,19 @@ For custom checkout, you'd create a Supabase Edge Function that creates a Stripe
 
 7. Webhook fires → Supabase updated → App shows Premium
 
+## Step 9: Run automated billing health check
+
+From project root, run:
+
+```bash
+bash "scripts/check-billing-health.sh"
+```
+
+This verifies:
+- webhook endpoint status + event subscriptions
+- all live payment link redirects point to `success.html`
+- latest checkout/invoice events have healthy webhook delivery state
+
 ## Verification Checklist
 
 - [ ] Database tables created (profiles, subscriptions, devices)
@@ -164,6 +203,8 @@ For custom checkout, you'd create a Supabase Edge Function that creates a Stripe
 - [ ] Devices are registered (check devices table)
 - [ ] Stripe webhook deployed and receiving events
 - [ ] Payment updates subscription status and tier (`premium` + `grace/love`)
+- [ ] Divine Link branded setup email is delivered
+- [ ] Stripe receipt or £0.00 invoice behaviour matches charged amount
 - [ ] App shows no ads for premium users
 
 ## Troubleshooting
@@ -178,7 +219,27 @@ For custom checkout, you'd create a Supabase Edge Function that creates a Stripe
 
 1. Check Stripe webhook logs: Developers → Webhooks → Select endpoint → Logs
 2. Verify function is deployed: `supabase functions list`
-3. Check function logs: `supabase functions logs stripe-webhook`
+3. Check Edge Function logs in Supabase Dashboard:
+   `Project → Edge Functions → stripe-webhook → Invocations/Logs`
+
+### Webhook Delivery 4xx Mismatches
+
+If Stripe shows delivery failures, use these exact fixes:
+
+- `401` with `Missing authorization header`
+  - Cause: JWT verification is still enabled for Stripe webhook calls.
+  - Fix: redeploy with JWT verification disabled:
+    ```bash
+    supabase functions deploy stripe-webhook --no-verify-jwt
+    ```
+
+- `400` with `SubtleCryptoProvider cannot be used in a synchronous context`
+  - Cause: signature verification used synchronous construction.
+  - Fix: use `await stripe.webhooks.constructEventAsync(...)` in the webhook code, then redeploy.
+
+After either fix, go to Stripe event details and click **Resend** for:
+- `checkout.session.completed`
+- `invoice.payment_succeeded`
 
 ### Subscription Not Updating
 
@@ -189,11 +250,13 @@ For custom checkout, you'd create a Supabase Edge Function that creates a Stripe
 ## Database Tables Reference
 
 ### profiles
+
 - `id` (UUID) - Links to auth.users
 - `email` (TEXT)
 - `display_name` (TEXT)
 
 ### subscriptions
+
 - `id` (UUID)
 - `user_id` (UUID) - Links to profiles
 - `status` (TEXT) - lifecycle: free/trial/premium/cancelled/expired
@@ -211,6 +274,7 @@ If your Supabase project was created before tier differentiation, run:
 This migration backfills `tier` values and updates status constraints safely.
 
 ### devices
+
 - `id` (UUID)
 - `user_id` (UUID)
 - `device_id` (TEXT) - Hardware UUID

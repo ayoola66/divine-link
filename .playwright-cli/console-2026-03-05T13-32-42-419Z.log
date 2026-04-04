@@ -1,0 +1,7 @@
+Total messages: 5 (Errors: 5, Warnings: 0)
+
+[ERROR] Access to fetch at 'https://divinelink.netlify.app/logo.png?_=1772717559077' from origin 'http://localhost:9876' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ http://localhost:9876/marketing-playground.html:0
+[ERROR] Failed to load resource: net::ERR_FAILED @ https://divinelink.netlify.app/logo.png?_=1772717559077:0
+[ERROR] Access to image at 'https://divinelink.netlify.app/logo.png' from origin 'http://localhost:9876' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ http://localhost:9876/marketing-playground.html:0
+[ERROR] Failed to load resource: net::ERR_FAILED @ https://divinelink.netlify.app/logo.png:0
+[ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://localhost:9876/favicon.ico:0
