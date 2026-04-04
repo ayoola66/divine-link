@@ -2,16 +2,18 @@
 
 Last Updated: 4 April 2026
 
-## Current Version: 1.3.8
+## Current Version: 1.3.10
 
 ## Current Release Snapshot
 
-- **Latest app release**: `v1.3.8` (external device transcription fix)
+- **Latest app release**: `v1.3.10` (notarised packaging hardening + website download UX refresh)
 - **Recent release train**:
+  - `v1.3.10` - Gatekeeper-safe packaging fix (`ditto`), refreshed appcast signature, DMG + ZIP chooser rollout
   - `v1.3.8` - external device transcription fix (timer/run loop + non-default device init guard)
   - `v1.3.7` - audio device switch fix + BlackHole wording clarity
   - `v1.3.6` - transcription fallback fix + notarised build
-- **Distribution**: Sparkle appcast + Netlify release artifacts are active for direct distribution.
+- **Distribution**: Sparkle appcast + Netlify release artefacts are active for direct distribution.
+- **Download UX**: `/download` chooser page now offers DMG (recommended), ZIP, and release notes.
 
 > Note: The phase tables below are retained as historical implementation records from the initial rollout and do not represent current live version numbering.
 
@@ -24,7 +26,7 @@ Divine Link uses a **freemium model**:
 | Tier | Price | Features |
 |------|-------|----------|
 | Free | £0 | Full app functionality + ads |
-| Premium | £9.97/month | Ad-free experience |
+| Premium | £9.99/month | Ad-free experience |
 
 **Distribution**: Direct sales via website (not App Store initially)
 
@@ -92,33 +94,33 @@ Divine Link uses a **freemium model**:
 
 ---
 
-### 🔲 Phase 3: Stripe Integration (PENDING)
+### ✅ Phase 3: Stripe Integration (COMPLETE)
 
 **Goal**: Accept payments and update subscription status
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Create Stripe Payment Link | 🔲 Pending | In Stripe Dashboard |
-| Update checkout URL in app | 🔲 Pending | `SubscriptionService.swift` |
-| Deploy webhook to Supabase | 🔲 Pending | `supabase functions deploy` |
-| Configure webhook in Stripe | 🔲 Pending | Add endpoint URL |
-| Set webhook secret | 🔲 Pending | `supabase secrets set` |
-| Test payment flow | 🔲 Pending | Use test card |
-| Go live | 🔲 Pending | Switch to live keys |
+| Create Stripe Payment Link | ✅ Done | Monthly + yearly links live |
+| Update checkout URL in app | ✅ Done | Tier-specific links configured |
+| Deploy webhook to Supabase | ✅ Done | `stripe-webhook` live |
+| Configure webhook in Stripe | ✅ Done | Required events subscribed |
+| Set webhook secret | ✅ Done | Live secret configured |
+| Test payment flow | ✅ Done | Live purchases + discount flows validated |
+| Go live | ✅ Done | Live keys + live links in production |
 
 ---
 
-### 🔲 Phase 4: Landing Page Polish (PENDING)
+### ✅ Phase 4: Landing Page Polish (COMPLETE)
 
 **Goal**: Professional landing page with legal pages
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Terms of Service page | 🔲 Pending | `/terms.html` |
-| Privacy Policy page | 🔲 Pending | `/privacy.html` |
-| Success page (post-checkout) | 🔲 Pending | `/success.html` |
-| Cancel page | 🔲 Pending | `/cancel.html` |
-| Improved styling | 🔲 Pending | Better CSS |
+| Terms of Service page | ✅ Done | `/terms.html` |
+| Privacy Policy page | ✅ Done | `/privacy.html` |
+| Success page (post-checkout) | ✅ Done | `/success.html` on-brand + download options |
+| Cancel page | ✅ Done | `/cancel.html` |
+| Improved styling | ✅ Done | Landing + release notes + success flow aligned |
 | Screenshots/demo | 🔲 Pending | App images |
 
 ---
@@ -178,7 +180,7 @@ Public Key: fbg4DwpGznsP6/scSfKu1hbfIlW0/LgnSRS+fi/4Ciw=
 3. **Create Stripe Payment Link** (10 min)
 4. **Deploy webhook** to Supabase (15 min)
 5. **Test end-to-end payment** (10 min)
-6. **Create first signed release** for Sparkle (20 min)
+6. **Run release script** for next version (produces ZIP + DMG)
 
 ---
 

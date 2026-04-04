@@ -78,7 +78,8 @@ supabase secrets set TRANSACTIONAL_FROM_EMAIL=hello@divinelinkapp.com
 supabase secrets set TRANSACTIONAL_REPLY_TO=do-not-reply@divinelinkapp.com
 
 # Optional URL overrides
-supabase secrets set APP_DOWNLOAD_URL=https://divinelink.netlify.app/releases/DivineLink-latest.zip
+# Use /download so users can pick DMG or ZIP
+supabase secrets set APP_DOWNLOAD_URL=https://divinelink.netlify.app/download
 supabase secrets set WEBSITE_URL=https://divinelink.netlify.app
 ```
 
@@ -165,6 +166,7 @@ To ensure users get both expected emails:
   Stripe may generate a £0.00 invoice and may skip the receipt email.
 - Divine Link sends a branded onboarding email from `hello@divinelinkapp.com`.
 - Replies are intentionally disabled (`TRANSACTIONAL_REPLY_TO=do-not-reply@divinelinkapp.com`).
+- App download links in transactional emails should target `/download` (chooser page with DMG/ZIP options).
 
 ## Step 8: Test the Flow
 

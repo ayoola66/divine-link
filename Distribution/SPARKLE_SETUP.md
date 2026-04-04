@@ -59,11 +59,21 @@ After generating keys, update `Info.plist`:
 2. In Organizer: **Distribute App → Copy App**
 3. Save `DivineLink.app` to a folder
 
-### 5.2 Create ZIP
+### 5.2 Create ZIP (for Sparkle)
 
 ```bash
 cd /path/to/folder/containing/app
-zip -r DivineLink-1.0.2.zip DivineLink.app
+ditto -c -k --sequesterRsrc --keepParent DivineLink.app DivineLink-1.0.2.zip
+```
+
+### 5.2b Create DMG (for website downloads)
+
+```bash
+hdiutil create \
+  -volname "DivineLink" \
+  -srcfolder DivineLink.app \
+  -ov -format UDZO \
+  DivineLink-1.0.2.dmg
 ```
 
 ### 5.3 Sign the ZIP
@@ -91,7 +101,7 @@ cd ~/Library/Developer/Xcode/DerivedData/DivineLink-*/SourcePackages/artifacts/s
 ### 5.5 Upload to GitHub
 
 1. Create a new Release: `v1.0.2`
-2. Upload `DivineLink-1.0.2.zip` as an asset
+2. Upload `DivineLink-1.0.2.zip` and `DivineLink-1.0.2.dmg` as assets
 3. Update `appcast.xml` with the download URL
 4. Commit and push `appcast.xml` to the repository
 
@@ -109,7 +119,8 @@ divine-link-releases/
 └── releases/
     ├── DivineLink-1.0.0.zip
     ├── DivineLink-1.0.1.zip
-    └── DivineLink-1.0.2.zip
+    ├── DivineLink-1.0.2.zip
+    └── DivineLink-1.0.2.dmg
 ```
 
 ## Automated Releases (Optional)
@@ -148,7 +159,7 @@ jobs:
       - name: Create ZIP
         run: |
           cd build
-          zip -r DivineLink-${{ github.ref_name }}.zip DivineLink.app
+          ditto -c -k --sequesterRsrc --keepParent DivineLink.app DivineLink-${{ github.ref_name }}.zip
       
       - name: Sign Update
         run: |
@@ -173,7 +184,7 @@ jobs:
 
 ### Signature verification failed
 - Regenerate keys and update both private key and Info.plist public key
-- Re-sign the ZIP file
+- Re-sign the ZIP file (Sparkle validates ZIP signature, not DMG)
 
 ### App crashes on update
 - Ensure the ZIP contains `DivineLink.app` at the root level
@@ -185,6 +196,7 @@ jobs:
 |------|-----|
 | Appcast (update feed) | https://divinelink.netlify.app/appcast.xml |
 | Landing page | https://divinelink.netlify.app |
+| Download chooser | https://divinelink.netlify.app/download |
 | Release downloads | https://divinelink.netlify.app/releases/ |
 | GitHub repo (site) | https://github.com/ayoola66/divine-link-site (private) |
 

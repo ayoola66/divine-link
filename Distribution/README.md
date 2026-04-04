@@ -24,10 +24,11 @@ Distribution/
 ├── supabase-tier-migration.sql  # Migration for tier differentiation
 ├── netlify-site/                # Landing page files
 │   ├── index.html               # Landing page
+│   ├── download.html            # Download format chooser (DMG/ZIP/notes)
 │   ├── admin.html               # Ad management dashboard
 │   ├── appcast.xml              # Sparkle update feed
 │   ├── netlify.toml             # Netlify configuration
-│   └── releases/                # App release ZIPs
+│   └── releases/                # App release artefacts (ZIP + DMG)
 └── supabase-functions/          # Supabase Edge Functions
     └── stripe-webhook/          # Stripe payment webhook
         └── index.ts
@@ -63,18 +64,18 @@ Distribution/
 - Ad enforcement system
 - See: [AD_SYSTEM.md](./AD_SYSTEM.md)
 
-### 🔲 Phase 3: Stripe Integration (PENDING)
+### ✅ Phase 3: Stripe Integration (LIVE)
 
-- Create Stripe Payment Link
-- Deploy webhook to Supabase
-- Test payment flow end-to-end
+- Stripe payment links active for monthly/yearly plans
+- Supabase webhook deployed and handling subscription state
+- Post-payment redirect and branded transactional email flow live
 
-### 🔲 Phase 4: Landing Page Polish (PENDING)
+### ✅ Phase 4: Landing Page & Download UX (LIVE)
 
-- Add Terms of Service page
-- Add Privacy Policy page
-- Add success/cancel pages for checkout
-- Style improvements
+- Terms/Privacy/Success/Cancel pages deployed
+- Dedicated `/download` chooser deployed (DMG, ZIP, release notes)
+- `success.html` now includes install options for paid users
+- Download CTAs across website route through `/download`
 
 ### 🔲 Phase 5: DNS Setup (OPTIONAL)
 
@@ -86,6 +87,7 @@ Distribution/
 | Resource           | URL                                                         |
 | ------------------ | ----------------------------------------------------------- |
 | Landing Page       | https://divinelink.netlify.app                              |
+| Download Chooser   | https://divinelink.netlify.app/download                     |
 | Admin Dashboard    | https://divinelink.netlify.app/admin.html                   |
 | Appcast Feed       | https://divinelink.netlify.app/appcast.xml                  |
 | Supabase Dashboard | https://supabase.com/dashboard/project/qzjhjgkvvcamcqpdrgkf |
@@ -118,12 +120,23 @@ Distribution/
 2. **Export** as "Developer ID" signed app
 3. **Notarise** release with Apple and staple ticket
 4. **Verify** signature + Gatekeeper + stapled ticket
-5. **Zip** the .app bundle
-6. **Sign** with Sparkle: `./sign_update DivineLink-X.X.X.zip`
-7. **Update** appcast.xml with signature and length
-8. **Upload** ZIP to `netlify-site/releases/`
+5. **Package** artefacts:
+   - ZIP (for Sparkle updates)
+   - DMG (for website/manual install flow)
+6. **Sign** ZIP with Sparkle: `./sign_update DivineLink-X.X.X.zip`
+7. **Update** appcast.xml with ZIP signature and length
+8. **Upload** ZIP + DMG to `netlify-site/releases/`
 9. **Push** to GitHub → Netlify auto-deploys
 10. **Users** receive update notification!
+
+### Download Link Rule
+
+- Public download CTAs should point to `https://divinelink.netlify.app/download`
+- `/download` presents:
+  - DMG (recommended for most users)
+  - ZIP (alternative/manual)
+  - Release notes
+- Keep Sparkle pointed at ZIP/appcast; DMG is for website-first installs.
 
 For the full trust/privacy release gate, see:
 
