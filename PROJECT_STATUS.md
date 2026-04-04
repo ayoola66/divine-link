@@ -1,8 +1,19 @@
 # Divine Link - Project Status
 
-Last Updated: 26 January 2026
+Last Updated: 4 April 2026
 
-## Current Version: 1.0.2 (1.0.3 in development)
+## Current Version: 1.3.8
+
+## Current Release Snapshot
+
+- **Latest app release**: `v1.3.8` (external device transcription fix)
+- **Recent release train**:
+  - `v1.3.8` - external device transcription fix (timer/run loop + non-default device init guard)
+  - `v1.3.7` - audio device switch fix + BlackHole wording clarity
+  - `v1.3.6` - transcription fallback fix + notarised build
+- **Distribution**: Sparkle appcast + Netlify release artifacts are active for direct distribution.
+
+> Note: The phase tables below are retained as historical implementation records from the initial rollout and do not represent current live version numbering.
 
 ---
 

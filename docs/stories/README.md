@@ -1,8 +1,8 @@
 # Divine Link - Development Stories
 
-**Total Stories:** 28 (across 5 Epics)  
-**Completed:** 22 stories (79%)  
-**Status:** Epics 1-5 Core Features Complete
+**Total Stories:** 41 (across 9 Epics)
+**Completed:** 25 stories (61%)
+**Status:** Epics 1-5 Complete, Epic 6-7 Complete, Epic 8-9 Planning
 
 ---
 
@@ -12,9 +12,13 @@
 |------|------|---------|----------|--------|
 | 1 | Foundation & Audio Capture | 5 | 5 | ✅ Complete |
 | 2 | Transcription & Detection | 7 | 6 | ⚠️ 2.7 Pending |
-| 3 | ProPresenter Integration | 9 | 5 | ✅ Core Complete |
+| 3 | ProPresenter Integration | 9 | 9 | ✅ Complete |
 | 4 | Service Sessions & History | 7 | 4 | ⚠️ 4.1, 4.5, 4.6 Pending |
 | 5 | Advanced Bible Vocabulary | 2 | 2 | ✅ Complete |
+| 6 | Operator Safety & Confidence | 5 | 5 | ✅ Complete |
+| 7 | Advanced Detection & Personalisation | 3 | 3 | ✅ Complete |
+| 8 | UX/UI Modernization & Platform Expansion | 6 | 0 | 📋 Planning |
+| 9 | Marketing & Growth - Organic Launch Strategy | 7 | 0 | 📋 Planning |
 
 ---
 
@@ -175,6 +179,72 @@ Epic 5 (Vocabulary) ✅ COMPLETE                       │
 
 ---
 
+---
+
+### Epic 6: Operator Safety & Detection Confidence (5 Stories) ✅
+
+| # | Story | Complexity | Status |
+|---|-------|------------|--------|
+| 6.1 | [Panic Button & Clear Screen](epic-6/story-6.1-panic-button.md) | Small | ✅ Complete |
+| 6.2 | [Detection Confidence Indicator](epic-6/story-6.2-confidence-indicator.md) | Medium | ✅ Complete |
+| 6.3 | [ProPresenter Message API Research](epic-6/story-6.3-propresenter-message-api.md) | Medium | ✅ Complete |
+| 6.4 | [ProPresenter WebSocket Messages API](epic-6/story-6.4-propresenter-message-implementation.md) | Large | ✅ Complete |
+| 6.5 | [Hybrid Integration Manager](epic-6/story-6.5-propresenter-theme-injection.md) | Large | ✅ Complete |
+
+**Epic 6 Deliverable:** Operator safety features and robust ProPresenter integration with fallbacks.
+
+---
+
+### Epic 7: Advanced Detection & Personalisation (3 Stories) ✅
+
+| # | Story | Complexity | Status |
+|---|-------|------------|--------|
+| 7.1 | [Reference Buffer (Stateful Detection)](epic-7/story-7.1-reference-buffer.md) | Medium | ✅ Complete |
+| 7.2 | [Implicit Detection (AI-Powered)](epic-7/story-7.2-implicit-detection.md) | Large | ✅ Complete |
+| 7.3 | [Pastor Profiles](epic-7/story-7.3-pastor-profiles.md) | Medium | ✅ Complete |
+
+**Epic 7 Deliverable:** Contextual awareness and pastor-specific personalization.
+
+---
+
+### Epic 8: UX/UI Modernization & Platform Expansion (6 Stories) 📋
+
+| # | Story | Complexity | Status | Priority |
+|---|-------|------------|--------|----------|
+| 8.1 | Modern UI Redesign (YouVersion-inspired) | Large | 📋 Planned | P0 |
+| 8.2 | Manual Scripture Search | Medium | 📋 Planned | P0 |
+| 8.3 | Service Session Management | Medium | 📋 Planned | P0 |
+| 8.4 | Export & Share Functionality | Small | 📋 Planned | P0 |
+| 8.5 | Language Localization (UK/US) | Small | 📋 Planned | P1 |
+| 8.6 | Multi-Platform Integration (EasyWorship/FreeShow) | Large | 📋 Planned | P1 |
+
+**Epic 8 Deliverable:** Modern YouVersion-style interface with multi-platform support.
+
+**Documentation:**
+- [Epic 8 README](epic-8/README.md) - Full epic details
+- [Epic 8 Prioritization Matrix](../epic-8-prioritization-matrix.md) - Feature analysis & recommendations
+
+---
+
+### Epic 9: Marketing & Growth - Organic Launch Strategy (7 Stories) 📋
+
+| # | Story | Complexity | Status | Priority |
+|---|-------|------------|--------|----------|
+| 9.1 | Brand Identity & Asset Kit | Medium | 📋 Planned | P0 |
+| 9.2 | Website Landing Pages & SEO | Medium | 📋 Planned | P0 |
+| 9.3 | Social Media Content Engine | Large | 📋 Planned | P0 |
+| 9.4 | Video Content Production | Large | 📋 Planned | P0 |
+| 9.5 | Community & Influencer Outreach | Medium | 📋 Planned | P1 |
+| 9.6 | Email & Newsletter Launch | Small | 📋 Planned | P1 |
+| 9.7 | v2.0 Launch Campaign | Large | 📋 Planned | P1 |
+
+**Epic 9 Deliverable:** Complete organic marketing engine with AI-generated content, landing pages, and v2.0 launch campaign.
+
+**Documentation:**
+- [Epic 9 README](../../marketing/stories/epic-9/README.md) - Full epic details with AI tool prompts and audience strategy
+
+---
+
 ## Next Steps
 
 1. ~~**Epic 1** - Foundation & Audio Capture~~ ✅ Complete
@@ -182,7 +252,9 @@ Epic 5 (Vocabulary) ✅ COMPLETE                       │
 3. ~~**Epic 3** - ProPresenter Integration~~ ✅ Complete
 4. ~~**Epic 4** - Service Sessions (core features)~~ ✅ Complete
 5. ~~**Epic 5** - Advanced Vocabulary~~ ✅ Complete
-6. **Story 2.7** - Bible Database Validation 📋 Next
-7. **Stories 4.1, 4.5, 4.6** - Pastor Profiles & Learning 📋 Planned
-8. **Testing** - Full QA pass
-9. **Release** - Package and distribute MVP
+6. ~~**Epic 6** - Operator Safety & Confidence~~ ✅ Complete
+7. ~~**Epic 7** - Advanced Detection & Personalisation~~ ✅ Complete
+8. **Epic 8** - UX/UI Modernization & Platform Expansion 📋 Current Focus
+9. **Epic 9** - Marketing & Growth - Organic Launch Strategy 📋 Can start now (9.1-9.6 independent of Epic 8)
+10. **Story 2.7** - Bible Database Validation (pending)
+11. **Stories 4.1, 4.5, 4.6** - Pastor Profiles & Learning (pending)

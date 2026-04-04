@@ -18,7 +18,9 @@ Distribution/
 ├── SPARKLE_SETUP.md             # Phase 1: Sparkle auto-update setup
 ├── PHASE2_SETUP.md              # Phase 2: Supabase backend setup
 ├── AD_SYSTEM.md                 # Dynamic ad system documentation
+├── DIRECT_DISTRIBUTION_TRUST.md # Website install trust & privacy checklist
 ├── supabase-schema.sql          # Database schema for Supabase
+├── supabase-tier-migration.sql  # Migration for tier differentiation
 ├── netlify-site/                # Landing page files
 │   ├── index.html               # Landing page
 │   ├── admin.html               # Ad management dashboard
@@ -88,6 +90,8 @@ Distribution/
 ### Supabase
 - Project URL: `https://qzjhjgkvvcamcqpdrgkf.supabase.co`
 - Anon Key: (in `SupabaseConfig.swift`)
+- Existing deployments should run `Distribution/supabase-tier-migration.sql`
+  to enable explicit tier differentiation (Mercy/Grace/Love).
 
 ### Stripe
 - Product ID: `prod_TtV8U5mVO1cecV`
@@ -102,12 +106,17 @@ Distribution/
 
 1. **Archive** app in Xcode (Product → Archive)
 2. **Export** as "Developer ID" signed app
-3. **Zip** the .app bundle
-4. **Sign** with Sparkle: `./sign_update DivineLink-X.X.X.zip`
-5. **Update** appcast.xml with signature and length
-6. **Upload** ZIP to `netlify-site/releases/`
-7. **Push** to GitHub → Netlify auto-deploys
-8. **Users** receive update notification!
+3. **Notarise** release with Apple and staple ticket
+4. **Verify** signature + Gatekeeper + stapled ticket
+5. **Zip** the .app bundle
+6. **Sign** with Sparkle: `./sign_update DivineLink-X.X.X.zip`
+7. **Update** appcast.xml with signature and length
+8. **Upload** ZIP to `netlify-site/releases/`
+9. **Push** to GitHub → Netlify auto-deploys
+10. **Users** receive update notification!
+
+For the full trust/privacy release gate, see:
+- [Direct Distribution Trust & Privacy Checklist](./DIRECT_DISTRIBUTION_TRUST.md)
 
 ## GitHub Repositories
 

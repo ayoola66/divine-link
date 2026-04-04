@@ -26,7 +26,7 @@ Each entry follows this format:
 
 ### [2026-02] - Audio capture: silent buffers, meter and detection not working
 **Type:** Bug  
-**Status:** Open (Investigating)  
+**Status:** Resolved (v1.3.6-v1.3.8)  
 **Severity:** High  
 **Related:** `AudioCaptureService.swift`, `DetectionPipeline`, `docs/analysis/audio-capture-issues-and-fixes.md`
 
@@ -34,14 +34,21 @@ Each entry follows this format:
 Audio Level Test and Audio Meter do not move; detection does nothing. Buffers are delivered from the tap but contain all-zero samples (RMS 0.0). Logs show `Source RMS (ch0): 0.0 - 🔇 SILENT/LOW`, and sometimes `throwing -10877` and `HALC_ProxyIOContext::_StartIO(): Start failed ... error 35`.
 
 **Cause:**  
-Not fully resolved. Multiple fixes have been applied (see analysis doc): format mismatch handling, avoiding redundant engine recreation for the system default device, skipping redundant `setInputDevice` calls when the device is unchanged. HAL/driver or permission/sandbox may still be preventing real I/O.
+This issue was caused by multiple interacting failures:
+1. Engine recreation path calling `audioEngine.reset()` and destabilising Core Audio HAL on device switches.
+2. Restart timer scheduling off the main run loop, so transcription never resumed after certain gaps.
+3. On-device-only recognition assumptions without robust fallback when models were unavailable.
+4. Non-default input-device initialisation edge cases around AudioUnit setup ordering.
 
 **Solution:**  
-Pending. See **`docs/analysis/audio-capture-issues-and-fixes.md`** for full error codes, attempted fixes, and recommended next steps (permission check, minimal repro, entitlements, logging).
+Resolved across release train:
+- `v1.3.6`: Added `supportsOnDeviceRecognition` guard + fallback to server recognition.
+- `v1.3.7`: Removed `audioEngine.reset()` from recreation path to avoid HAL corruption.
+- `v1.3.8`: Moved recogniser callback restart scheduling onto main queue/run loop and force-initialised `inputNode` before non-default AudioUnit property writes.
 
 **Notes:**  
-- Engine starts and tap receives buffers; only the *content* of buffers is silent.
-- Document `docs/analysis/audio-capture-issues-and-fixes.md` is the single source of detail for this issue.
+- Original deep-dive remains in `docs/analysis/audio-capture-issues-and-fixes.md`.
+- Post-fix validation should be run on both default and external input devices before each release cut.
 
 ---
 
@@ -664,4 +671,4 @@ print(normaliser.normalise("glacians"))  // Should print "Galatians"
 
 ---
 
-*Last Updated: 2026-01-22*
+*Last Updated: 2026-04-04*

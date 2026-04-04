@@ -48,7 +48,10 @@ CREATE TRIGGER on_auth_user_created
 CREATE TABLE IF NOT EXISTS public.subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    status TEXT NOT NULL DEFAULT 'free' CHECK (status IN ('free', 'trial', 'premium', 'cancelled', 'expired')),
+    -- status = billing lifecycle; tier = product entitlement level
+    -- NOTE: grace/love are retained in status for backward compatibility with older rows.
+    status TEXT NOT NULL DEFAULT 'free' CHECK (status IN ('free', 'trial', 'premium', 'cancelled', 'expired', 'grace', 'love')),
+    tier TEXT NOT NULL DEFAULT 'mercy' CHECK (tier IN ('mercy', 'grace', 'love')),
     stripe_customer_id TEXT,
     stripe_subscription_id TEXT,
     current_period_start TIMESTAMPTZ,
@@ -70,8 +73,8 @@ CREATE POLICY "Users can view own subscription" ON public.subscriptions
 CREATE OR REPLACE FUNCTION public.handle_new_profile()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO public.subscriptions (user_id, status)
-    VALUES (NEW.id, 'free');
+    INSERT INTO public.subscriptions (user_id, status, tier)
+    VALUES (NEW.id, 'free', 'mercy');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -148,6 +151,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.get_my_subscription()
 RETURNS TABLE (
     status TEXT,
+    tier TEXT,
     is_premium BOOLEAN,
     period_end TIMESTAMPTZ,
     device_count INTEGER,
@@ -157,10 +161,25 @@ BEGIN
     RETURN QUERY
     SELECT 
         s.status,
-        (s.status = 'premium' OR s.status = 'trial') AS is_premium,
+        COALESCE(
+            s.tier,
+            CASE
+                WHEN s.status = 'love' THEN 'love'
+                WHEN s.status IN ('premium', 'grace', 'trial') THEN 'grace'
+                ELSE 'mercy'
+            END
+        ) AS tier,
+        (
+            s.status IN ('premium', 'trial', 'grace', 'love')
+            OR COALESCE(s.tier, 'mercy') IN ('grace', 'love')
+        ) AS is_premium,
         s.current_period_end AS period_end,
         public.get_active_device_count(auth.uid()) AS device_count,
-        2 AS max_devices
+        CASE
+            WHEN COALESCE(s.tier, CASE WHEN s.status = 'love' THEN 'love' WHEN s.status IN ('premium', 'grace', 'trial') THEN 'grace' ELSE 'mercy' END) = 'love' THEN 5
+            WHEN COALESCE(s.tier, CASE WHEN s.status = 'love' THEN 'love' WHEN s.status IN ('premium', 'grace', 'trial') THEN 'grace' ELSE 'mercy' END) = 'grace' THEN 2
+            ELSE 1
+        END AS max_devices
     FROM public.subscriptions s
     WHERE s.user_id = auth.uid();
 END;

@@ -163,7 +163,7 @@ For custom checkout, you'd create a Supabase Edge Function that creates a Stripe
 - [ ] User can sign in and out
 - [ ] Devices are registered (check devices table)
 - [ ] Stripe webhook deployed and receiving events
-- [ ] Payment updates subscription status to 'premium'
+- [ ] Payment updates subscription status and tier (`premium` + `grace/love`)
 - [ ] App shows no ads for premium users
 
 ## Troubleshooting
@@ -196,10 +196,19 @@ For custom checkout, you'd create a Supabase Edge Function that creates a Stripe
 ### subscriptions
 - `id` (UUID)
 - `user_id` (UUID) - Links to profiles
-- `status` (TEXT) - free/trial/premium/cancelled/expired
+- `status` (TEXT) - lifecycle: free/trial/premium/cancelled/expired
+- `tier` (TEXT) - entitlement: mercy/grace/love
 - `stripe_customer_id` (TEXT)
 - `stripe_subscription_id` (TEXT)
 - `current_period_end` (TIMESTAMPTZ)
+
+### Existing Deployments
+
+If your Supabase project was created before tier differentiation, run:
+
+- `Distribution/supabase-tier-migration.sql`
+
+This migration backfills `tier` values and updates status constraints safely.
 
 ### devices
 - `id` (UUID)

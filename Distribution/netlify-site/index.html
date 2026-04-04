@@ -42,7 +42,7 @@
         "url": "https://divinelink.netlify.app/",
         "applicationCategory": "ReligiousApplication",
         "operatingSystem": "macOS",
-        "softwareVersion": "1.3.5",
+        "softwareVersion": "1.3.8",
         "downloadUrl": "https://divinelink.netlify.app/releases/DivineLink-latest.zip",
         "screenshot": "https://divinelink.netlify.app/logo.png",
         "author": {
@@ -148,6 +148,12 @@
             --love: #8B5CF6;
             --gradient-1: linear-gradient(135deg, #E07A2B 0%, #F59E4C 100%);
             --gradient-2: linear-gradient(135deg, #141428 0%, #1a1a35 100%);
+        }
+
+        /* ---- Smooth scroll (same-page anchors only) ---- */
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 80px; /* offset for sticky header */
         }
 
         /* ---- Reset ---- */
@@ -470,10 +476,55 @@
         .mac-dot.mac-min    { background: #FFBD2E; }
         .mac-dot.mac-max    { background: #28C840; }
 
-        .mac-window img {
+        /* Hero carousel — stacked images with CSS fade */
+        .mac-window-carousel {
+            position: relative;
+            width: 100%;
+            /* height anchored to first image's natural ratio */
+        }
+
+        .mac-window-carousel img {
             display: block;
             width: 100%;
             height: auto;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transition: opacity 0.6s ease-in-out;
+        }
+
+        /* First image visible by default; JS overrides with .active */
+        .mac-window-carousel img:first-child {
+            position: relative; /* holds natural height */
+        }
+
+        .mac-window-carousel img.active {
+            opacity: 1;
+        }
+
+        /* Dot indicators */
+        .carousel-dots {
+            display: flex;
+            justify-content: center;
+            gap: 7px;
+            margin-top: 14px;
+        }
+
+        .carousel-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.25);
+            cursor: pointer;
+            transition: background 0.3s, transform 0.3s;
+            border: none;
+            padding: 0;
+        }
+
+        .carousel-dot.active {
+            background: var(--primary);
+            transform: scale(1.3);
         }
 
         .hero-stats {
@@ -756,6 +807,30 @@
             color: var(--text-muted);
             font-size: 0.95rem;
             line-height: 1.6;
+        }
+
+        /* Step & card screenshots */
+        .step-screenshot {
+            margin-top: 20px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+        }
+
+        .step-screenshot img,
+        .card-screenshot img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .card-screenshot {
+            margin-top: 16px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.35);
         }
 
         /* ---- Task 6: Testimonials ---- */
@@ -1561,7 +1636,7 @@
                     </div>
                 </div>
 
-                <!-- Task 5: Real app screenshot with macOS window chrome -->
+                <!-- Hero image carousel: 5 screenshots cycling with fade -->
                 <div class="hero-image reveal">
                     <div class="mac-window">
                         <div class="mac-window-bar">
@@ -1569,7 +1644,20 @@
                             <span class="mac-dot mac-min"></span>
                             <span class="mac-dot mac-max"></span>
                         </div>
-                        <img src="/screenshots/02-hero-verse-detected.png" alt="Divine Link detecting John 3:16 during live preaching">
+                        <div class="mac-window-carousel" id="heroCarousel">
+                            <img src="/screenshots/02-hero-verse-detected.png" alt="Divine Link detecting John 3:16 during live preaching" class="active">
+                            <img src="/screenshots/03-hero-verse-pushed.png" alt="Divine Link verse pushed to ProPresenter">
+                            <img src="/screenshots/04-hero-multiple-verses.png" alt="Divine Link displaying multiple detected verses">
+                            <img src="/screenshots/18-settings-propresenter.png" alt="Divine Link ProPresenter connection settings">
+                            <img src="/screenshots/20-settings-detection.png" alt="Divine Link detection sensitivity settings">
+                        </div>
+                    </div>
+                    <div class="carousel-dots" id="carouselDots">
+                        <button class="carousel-dot active" aria-label="Slide 1"></button>
+                        <button class="carousel-dot" aria-label="Slide 2"></button>
+                        <button class="carousel-dot" aria-label="Slide 3"></button>
+                        <button class="carousel-dot" aria-label="Slide 4"></button>
+                        <button class="carousel-dot" aria-label="Slide 5"></button>
                     </div>
                 </div>
             </div>
@@ -1662,6 +1750,9 @@
                     </div>
                     <h3>Pastor Profiles</h3>
                     <p>Save preferred translations and speech corrections for each speaker. Perfect for churches with multiple ministers. <strong>Grace: 2 profiles, Love: 5 profiles</strong></p>
+                    <div class="card-screenshot">
+                        <img src="/screenshots/23-pastors-list.png" alt="Divine Link pastor profiles list">
+                    </div>
                 </div>
                 <div class="feature-card reveal">
                     <div class="feature-icon">
@@ -1731,21 +1822,33 @@
                     <div class="step-number">1</div>
                     <h4>Listen</h4>
                     <p>Divine Link captures audio from your Mac's microphone or audio input device.</p>
+                    <div class="step-screenshot">
+                        <img src="/screenshots/01-hero-listening.png" alt="Divine Link listening — microphone active, waiting for scripture">
+                    </div>
                 </div>
                 <div class="step reveal">
                     <div class="step-number">2</div>
                     <h4>Transcribe</h4>
                     <p>Advanced speech recognition converts spoken words to text in real-time.</p>
+                    <div class="step-screenshot">
+                        <img src="/screenshots/02-hero-verse-detected.png" alt="Divine Link live transcript with John 3:16 appearing">
+                    </div>
                 </div>
                 <div class="step reveal">
                     <div class="step-number">3</div>
                     <h4>Detect</h4>
                     <p>AI identifies scripture references and matches them to the Bible database.</p>
+                    <div class="step-screenshot">
+                        <img src="/screenshots/11-feature-confidence-indicators.png" alt="Divine Link showing confidence score for detected verse">
+                    </div>
                 </div>
                 <div class="step reveal">
                     <div class="step-number">4</div>
                     <h4>Display</h4>
                     <p>One click pushes the verse to ProPresenter. Premium users get direct API integration for faster, background-safe display.</p>
+                    <div class="step-screenshot">
+                        <img src="/screenshots/03-hero-verse-pushed.png" alt="Divine Link verse pushed to ProPresenter">
+                    </div>
                 </div>
             </div>
         </div>
@@ -1817,6 +1920,9 @@
                         <li style="color: var(--text-muted); font-size: 0.9em;"><span style="color: #f59e0b; margin-right: 8px;">ℹ</span> Keyboard automation available</li>
                         <li class="disabled"><span class="cross">✗</span> Additional translations</li>
                     </ul>
+                    <div class="card-screenshot" style="margin-bottom: 20px;">
+                        <img src="/screenshots/07-free-tier-with-ads.png" alt="Divine Link free tier showing sidebar ads">
+                    </div>
                     <a href="releases/DivineLink-latest.zip" class="btn btn-mercy">Download Free</a>
                 </div>
 
@@ -1963,6 +2069,9 @@
                     </div>
                     <h3>Panic Button</h3>
                     <p>Instantly clear the screen with one click if something goes wrong. <strong>Operators stay in control</strong> during live services.</p>
+                    <div class="card-screenshot">
+                        <img src="/screenshots/09-feature-panic-button.png" alt="Divine Link panic button — one click to clear screen">
+                    </div>
                 </div>
                 <div class="why-card reveal">
                     <div class="why-icon">
@@ -1970,6 +2079,9 @@
                     </div>
                     <h3>Confidence Indicators</h3>
                     <p>See detection confidence scores before displaying. <strong>Transparency over black-box AI</strong> — you decide what's accurate enough.</p>
+                    <div class="card-screenshot">
+                        <img src="/screenshots/11-feature-confidence-indicators.png" alt="Divine Link showing High confidence badge on detected verse">
+                    </div>
                 </div>
                 <div class="why-card reveal">
                     <div class="why-icon">
@@ -2044,7 +2156,7 @@
             </div>
             <div class="footer-bottom">
                 <div class="footer-copy">© 2026 Divine Link by O'Rekun Media</div>
-                <span class="version-badge">v1.3.5</span>
+                <span class="version-badge">v1.3.8</span>
             </div>
         </div>
     </footer>
@@ -2133,6 +2245,44 @@
                 document.body.style.overflow = '';
             }
         });
+
+        // ---- Hero image carousel ----
+        (function () {
+            const carousel   = document.getElementById('heroCarousel');
+            const dotsWrap   = document.getElementById('carouselDots');
+            if (!carousel || !dotsWrap) return;
+
+            const imgs  = Array.from(carousel.querySelectorAll('img'));
+            const dots  = Array.from(dotsWrap.querySelectorAll('.carousel-dot'));
+            let current = 0;
+            let timer;
+
+            function goTo(n) {
+                imgs[current].classList.remove('active');
+                dots[current].classList.remove('active');
+                current = (n + imgs.length) % imgs.length;
+                imgs[current].classList.add('active');
+                dots[current].classList.add('active');
+            }
+
+            function advance() { goTo(current + 1); }
+
+            function startTimer() {
+                clearInterval(timer);
+                timer = setInterval(advance, 3800);
+            }
+
+            // Dot click: jump to slide and restart timer
+            dots.forEach((dot, i) => {
+                dot.addEventListener('click', () => { goTo(i); startTimer(); });
+            });
+
+            // Pause on hover, resume on leave
+            carousel.addEventListener('mouseenter', () => clearInterval(timer));
+            carousel.addEventListener('mouseleave', startTimer);
+
+            startTimer();
+        })();
     </script>
 
 </body>

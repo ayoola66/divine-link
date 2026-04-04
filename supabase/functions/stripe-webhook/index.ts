@@ -8,6 +8,11 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Stripe from 'https://esm.sh/stripe@13.10.0'
+import {
+  determineTierFromProductId,
+  mapStripeStatus as mapStripeSubscriptionStatus,
+  type SubscriptionTier,
+} from './subscription-mapping.ts'
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
   apiVersion: '2023-10-16',
@@ -17,10 +22,6 @@ const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
-
-// Stripe Product IDs for tier mapping
-const GRACE_PRODUCT_ID = 'prod_TtV8U5mVO1cecV'
-const LOVE_PRODUCT_ID = 'prod_TvU0LGh7zBgIH3'
 
 serve(async (req: Request) => {
   const signature = req.headers.get('stripe-signature')
@@ -115,15 +116,15 @@ async function handleCheckoutComplete(supabase: any, session: Stripe.Checkout.Se
   const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
     expand: ['items.data.price.product'],
   })
-  
-  // Determine tier based on Stripe product
-  const tierStatus = determineTier(subscription)
+  const tier = determineTier(subscription)
+  const status = mapStripeSubscriptionStatus(subscription.status as any)
   
   // Update subscription in database
   const { error: updateError } = await supabase
     .from('subscriptions')
     .update({
-      status: tierStatus,
+      status,
+      tier,
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
       current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
@@ -155,22 +156,27 @@ async function handleSubscriptionUpdate(supabase: any, subscription: Stripe.Subs
     return
   }
   
-  // Determine status - use tier-aware mapping for active subscriptions
-  let status: string
+  const status = mapStripeSubscriptionStatus(subscription.status as any)
+  let tier: SubscriptionTier | undefined
   if (subscription.status === 'active' || subscription.status === 'trialing') {
-    status = determineTier(subscription)
-  } else {
-    status = mapStripeStatus(subscription.status)
+    // Expanded fetch is needed to access product mapping for tier differentiation.
+    const fullSubscription = await stripe.subscriptions.retrieve(subscription.id, {
+      expand: ['items.data.price.product'],
+    })
+    tier = determineTier(fullSubscription)
   }
+  
+  const updatePayload: Record<string, unknown> = {
+    status,
+    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+    cancel_at_period_end: subscription.cancel_at_period_end,
+  }
+  if (tier) updatePayload.tier = tier
   
   const { error: updateError } = await supabase
     .from('subscriptions')
-    .update({
-      status,
-      current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-      cancel_at_period_end: subscription.cancel_at_period_end,
-    })
+    .update(updatePayload)
     .eq('stripe_customer_id', customerId)
   
   if (updateError) {
@@ -202,31 +208,32 @@ async function handleSubscriptionCancelled(supabase: any, subscription: Stripe.S
 // Handle successful payment
 async function handlePaymentSucceeded(supabase: any, invoice: Stripe.Invoice) {
   const customerId = invoice.customer as string
-  const subscriptionId = invoice.subscription as string
-  
-  // Determine tier from the subscription to set the correct status
-  let tierStatus = 'grace' // Default to grace if we can't determine
+  const subscriptionId = invoice.subscription as string | null
+  let tier: SubscriptionTier | undefined
   if (subscriptionId) {
     try {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
         expand: ['items.data.price.product'],
       })
-      tierStatus = determineTier(subscription)
+      tier = determineTier(subscription)
     } catch (err) {
-      console.error('Failed to retrieve subscription for tier check:', err)
+      console.error('Failed to resolve subscription tier from invoice:', err)
     }
   }
   
-  // Ensure subscription is active with correct tier after payment
+  // Ensure subscription is active after payment
+  const updatePayload: Record<string, unknown> = {
+    status: 'premium',
+  }
+  if (tier) updatePayload.tier = tier
+
   const { error } = await supabase
     .from('subscriptions')
-    .update({
-      status: tierStatus,
-    })
+    .update(updatePayload)
     .eq('stripe_customer_id', customerId)
   
   if (!error) {
-    console.log(`✅ Payment succeeded for customer: ${customerId} (tier: ${tierStatus})`)
+    console.log(`✅ Payment succeeded for customer: ${customerId}`)
   }
 }
 
@@ -247,45 +254,22 @@ async function handlePaymentFailed(supabase: any, invoice: Stripe.Invoice) {
   }
 }
 
-// Determine subscription tier (grace or love) from Stripe subscription product
-function determineTier(subscription: Stripe.Subscription): string {
+// Determine subscription tier (grace/love) from Stripe subscription product
+function determineTier(subscription: Stripe.Subscription): SubscriptionTier {
   try {
-    // Check subscription items for product ID
     for (const item of subscription.items.data) {
       const price = item.price
-      // Product may be expanded or just an ID string
-      const productId = typeof price.product === 'string' 
-        ? price.product 
+      const productId = typeof price.product === 'string'
+        ? price.product
         : (price.product as any)?.id
-      
-      if (productId === LOVE_PRODUCT_ID) {
-        return 'love'
-      }
-      if (productId === GRACE_PRODUCT_ID) {
-        return 'grace'
-      }
+      const tier = determineTierFromProductId(productId)
+      if (tier === 'love') return 'love'
+      if (tier === 'grace') return 'grace'
     }
   } catch (err) {
     console.error('Error determining tier from subscription:', err)
   }
-  
-  // Default to grace for backward compatibility (existing premium subscribers)
-  return 'grace'
-}
 
-// Map Stripe subscription status to our status
-function mapStripeStatus(stripeStatus: Stripe.Subscription.Status): string {
-  switch (stripeStatus) {
-    case 'active':
-      return 'premium'
-    case 'trialing':
-      return 'trial'
-    case 'past_due':
-    case 'unpaid':
-      return 'expired'
-    case 'canceled':
-      return 'cancelled'
-    default:
-      return 'free'
-  }
+  // Paid fallback remains Grace for backward compatibility.
+  return 'grace'
 }

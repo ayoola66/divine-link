@@ -5,6 +5,52 @@ All notable changes to Divine Link will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.8] - 2026-03-15
+
+### Fixed
+
+- **External audio-device transcription stall (critical)**: Resolved a restart scheduling bug where the speech recogniser callback fired on a background thread and `scheduleRestart()` created a `Timer` on a non-spinning background run loop. This could leave transcription permanently stalled after device-switch gaps. Callback handling is now marshalled to the main queue so restart timers reliably fire.
+- **Non-default input device initialisation edge case**: Initialised `AVAudioEngine` `inputNode` before `AudioUnitSetProperty` for non-default devices to avoid nil `audioUnit` scenarios during configuration.
+
+### Technical
+
+- `TranscriptionService.swift`: Wrapped recognition callback work in `DispatchQueue.main.async` to ensure timer scheduling occurs on the main run loop.
+- `AudioCaptureService.swift`: Added explicit `inputNode` initialisation before applying AudioUnit properties for external/non-default devices.
+- Updated packaged release artifacts and Sparkle appcast for `v1.3.8`.
+
+---
+
+## [1.3.7] - 2026-03-15
+
+### Fixed
+
+- **Audio device switch silence regression**: Removed `audioEngine.reset()` inside `recreateAudioEngine()`. The reset call was corrupting Core Audio HAL state after input-device changes, causing newly created engines to return silent buffers.
+
+### Changed
+
+- **BlackHole wording clarity**: Updated settings copy to explain BlackHole is optional and only needed when capturing audio from another app on the same Mac.
+
+### Technical
+
+- `AudioCaptureService.swift`: Removed HAL-corrupting reset path during audio engine recreation.
+- `SettingsView.swift`: Updated user-facing copy for BlackHole configuration guidance.
+- Updated packaged release artifacts and Sparkle appcast for `v1.3.7`.
+
+---
+
+## [1.3.6] - 2026-03-15
+
+### Fixed
+
+- **Transcription fallback when on-device model unavailable**: Fixed silent transcription failure mode where audio remained active but no text appeared. `requiresOnDeviceRecognition` now checks `supportsOnDeviceRecognition` and falls back to server-based recognition when on-device models are unavailable.
+
+### Technical
+
+- `TranscriptionService.swift`: Added robust capability check and fallback path for devices/environments lacking on-device speech model support.
+- Updated packaged release artifacts and Sparkle appcast for `v1.3.6`.
+
+---
+
 ## [1.3.5] - 2026-02-11
 
 ### Fixed

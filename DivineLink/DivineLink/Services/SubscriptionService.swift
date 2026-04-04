@@ -86,6 +86,7 @@ struct Subscription: Codable {
     let id: String
     let userId: String
     let status: APISubscriptionStatus
+    let tier: String?
     let stripeCustomerId: String?
     let stripeSubscriptionId: String?
     let currentPeriodStart: Date?
@@ -98,6 +99,7 @@ struct Subscription: Codable {
         case id
         case userId = "user_id"
         case status
+        case tier
         case stripeCustomerId = "stripe_customer_id"
         case stripeSubscriptionId = "stripe_subscription_id"
         case currentPeriodStart = "current_period_start"
@@ -119,6 +121,7 @@ struct Subscription: Codable {
 
 struct SubscriptionInfo: Codable {
     let status: String
+    let tier: String?
     let isPremium: Bool
     let periodEnd: Date?
     let deviceCount: Int
@@ -126,6 +129,7 @@ struct SubscriptionInfo: Codable {
     
     enum CodingKeys: String, CodingKey {
         case status
+        case tier
         case isPremium = "is_premium"
         case periodEnd = "period_end"
         case deviceCount = "device_count"
@@ -256,8 +260,8 @@ final class SubscriptionService: ObservableObject {
                     print("👑 Admin override — ignoring API status (\(info.status))")
                 } else {
                     self.isPremium = info.isPremium
-                    // Parse tier from status string
-                    let tier = parseTierFromStatus(info.status)
+                    // Parse tier from explicit tier field first, then status fallback
+                    let tier = parseTier(tierValue: info.tier, statusValue: info.status)
                     self.currentTier = tier
                     cacheStatus(info.isPremium, tier: tier)
                     
@@ -419,7 +423,7 @@ final class SubscriptionService: ObservableObject {
                 print("👑 Admin override (direct) — ignoring API status (\(sub.status))")
             } else {
                 self.isPremium = sub.isPremium && !sub.isExpired
-                let tier = sub.status.toTier
+                let tier = parseTier(tierValue: sub.tier, statusValue: sub.status.rawValue)
                 self.currentTier = tier
                 cacheStatus(self.isPremium, tier: tier)
                 print("✅ Subscription (direct): \(sub.status) (tier: \(tier.displayName), premium: \(self.isPremium))")
@@ -438,9 +442,20 @@ final class SubscriptionService: ObservableObject {
         }
     }
     
-    /// Parse tier from status string returned by API
-    private func parseTierFromStatus(_ status: String) -> SubscriptionTier {
-        let lowercased = status.lowercased()
+    /// Parse tier using explicit tier value first, then status fallback for backward compatibility.
+    private func parseTier(tierValue: String?, statusValue: String) -> SubscriptionTier {
+        if let tierValue {
+            let lowerTier = tierValue.lowercased()
+            if lowerTier.contains("love") || lowerTier.contains("pro") {
+                return .love
+            } else if lowerTier.contains("grace") || lowerTier.contains("premium") {
+                return .grace
+            } else if lowerTier.contains("mercy") || lowerTier.contains("free") {
+                return .mercy
+            }
+        }
+        
+        let lowercased = statusValue.lowercased()
         if lowercased.contains("love") || lowercased.contains("pro") {
             return .love
         } else if lowercased.contains("grace") || lowercased.contains("premium") {
