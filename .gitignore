@@ -100,6 +100,7 @@ debug-log.md
 
 # Apple authentication keys (secrets)
 AuthKey_*.p8
+_.divinelinkapp.com_private_key.key
 
 # Local Netlify folder
 .netlify
