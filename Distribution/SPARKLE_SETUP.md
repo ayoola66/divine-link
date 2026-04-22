@@ -66,16 +66,6 @@ cd /path/to/folder/containing/app
 ditto -c -k --sequesterRsrc --keepParent DivineLink.app DivineLink-1.0.2.zip
 ```
 
-### 5.2b Create DMG (for website downloads)
-
-```bash
-hdiutil create \
-  -volname "DivineLink" \
-  -srcfolder DivineLink.app \
-  -ov -format UDZO \
-  DivineLink-1.0.2.dmg
-```
-
 ### 5.3 Sign the ZIP
 
 ```bash
@@ -101,7 +91,7 @@ cd ~/Library/Developer/Xcode/DerivedData/DivineLink-*/SourcePackages/artifacts/s
 ### 5.5 Upload to GitHub
 
 1. Create a new Release: `v1.0.2`
-2. Upload `DivineLink-1.0.2.zip` and `DivineLink-1.0.2.dmg` as assets
+2. Upload `DivineLink-1.0.2.zip` as a release asset
 3. Update `appcast.xml` with the download URL
 4. Commit and push `appcast.xml` to the repository
 
@@ -119,8 +109,7 @@ divine-link-releases/
 └── releases/
     ├── DivineLink-1.0.0.zip
     ├── DivineLink-1.0.1.zip
-    ├── DivineLink-1.0.2.zip
-    └── DivineLink-1.0.2.dmg
+    └── DivineLink-1.0.2.zip
 ```
 
 ## Automated Releases (Optional)
@@ -184,7 +173,7 @@ jobs:
 
 ### Signature verification failed
 - Regenerate keys and update both private key and Info.plist public key
-- Re-sign the ZIP file (Sparkle validates ZIP signature, not DMG)
+- Re-sign the ZIP file
 
 ### App crashes on update
 - Ensure the ZIP contains `DivineLink.app` at the root level

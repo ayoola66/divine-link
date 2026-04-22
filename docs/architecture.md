@@ -39,7 +39,7 @@ Divine Link is a native macOS application built with Swift and SwiftUI, using a 
 **Deployment Host:** Direct download via website/CDN (future: App Store)  
 **Regions:** N/A (local app)
 
-**Rationale:** The PRD explicitly targets zero variable costs and local-first processing. No backend services are needed since all processing happens on-device. Distribution via signed DMG is standard for macOS apps outside the App Store.
+**Rationale:** The PRD explicitly targets zero variable costs and local-first processing. No backend services are needed since all processing happens on-device. Distribution via signed and notarised ZIP is used for macOS apps outside the App Store.
 
 ### 2.3 Repository Structure
 
@@ -138,7 +138,7 @@ graph TB
 | **Unit Testing** | XCTest | Built-in | Unit and integration tests | Native testing framework, integrated with Xcode |
 | **UI Testing** | XCUITest | Built-in | UI automation tests | Native macOS UI testing (future) |
 | **Code Signing** | Developer ID | Required | App notarisation | Required for distribution outside App Store |
-| **Distribution** | DMG | N/A | Application packaging | Standard macOS distribution format |
+| **Distribution** | ZIP | N/A | Application packaging | Signed and notarised ZIP archive |
 
 ---
 
@@ -578,23 +578,24 @@ Since Divine Link is a local-first application with no cloud services:
 **Application Distribution:**
 - **Platform:** macOS (direct download)
 - **Build Command:** Xcode Archive (Product → Archive)
-- **Output Format:** Signed DMG (Disk Image)
+- **Output Format:** Signed and notarised ZIP archive
 - **Distribution Method:** Direct download from website/CDN
 
 **Build Process:**
 1. Archive in Xcode
 2. Export as "Developer ID" signed app
-3. Create DMG
-4. Notarise with Apple
-5. Distribute via website/CDN
+3. Notarise with Apple
+4. Create ZIP with `ditto`
+5. Sign ZIP with Sparkle EdDSA key
+6. Distribute via website/CDN
 
 ### 12.2 Environments
 
 | Environment | Purpose | Distribution Method |
 |-------------|---------|---------------------|
 | **Development** | Local development | Run from Xcode (⌘R) |
-| **Beta** | Internal testing | Signed DMG (not notarised) |
-| **Release** | Public distribution | Signed + Notarised DMG |
+| **Beta** | Internal testing | Signed ZIP (not notarised) |
+| **Release** | Public distribution | Signed + Notarised ZIP |
 
 ---
 

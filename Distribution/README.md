@@ -24,11 +24,11 @@ Distribution/
 ├── supabase-tier-migration.sql  # Migration for tier differentiation
 ├── netlify-site/                # Landing page files
 │   ├── index.html               # Landing page
-│   ├── download.html            # Download format chooser (DMG/ZIP/notes)
+│   ├── download.html            # Download page (ZIP + release notes)
 │   ├── admin.html               # Ad management dashboard
 │   ├── appcast.xml              # Sparkle update feed
 │   ├── netlify.toml             # Netlify configuration
-│   └── releases/                # App release artefacts (ZIP + DMG)
+│   └── releases/                # App release artefacts (ZIP)
 └── supabase-functions/          # Supabase Edge Functions
     └── stripe-webhook/          # Stripe payment webhook
         └── index.ts
@@ -73,8 +73,8 @@ Distribution/
 ### ✅ Phase 4: Landing Page & Download UX (LIVE)
 
 - Terms/Privacy/Success/Cancel pages deployed
-- Dedicated `/download` chooser deployed (DMG, ZIP, release notes)
-- `success.html` now includes install options for paid users
+- Dedicated `/download` page deployed (ZIP + release notes)
+- `success.html` now includes download link for paid users
 - Download CTAs across website route through `/download`
 
 ### 🔲 Phase 5: DNS Setup (OPTIONAL)
@@ -120,23 +120,18 @@ Distribution/
 2. **Export** as "Developer ID" signed app
 3. **Notarise** release with Apple and staple ticket
 4. **Verify** signature + Gatekeeper + stapled ticket
-5. **Package** artefacts:
-   - ZIP (for Sparkle updates)
-   - DMG (for website/manual install flow)
+5. **Package** ZIP for distribution
 6. **Sign** ZIP with Sparkle: `./sign_update DivineLink-X.X.X.zip`
 7. **Update** appcast.xml with ZIP signature and length
-8. **Upload** ZIP + DMG to `netlify-site/releases/`
+8. **Upload** ZIP to `netlify-site/releases/`
 9. **Push** to GitHub → Netlify auto-deploys
 10. **Users** receive update notification!
 
 ### Download Link Rule
 
 - Public download CTAs should point to `https://divinelink.netlify.app/download`
-- `/download` presents:
-  - DMG (recommended for most users)
-  - ZIP (alternative/manual)
-  - Release notes
-- Keep Sparkle pointed at ZIP/appcast; DMG is for website-first installs.
+- `/download` presents the signed+notarised ZIP and release notes link
+- Sparkle auto-updates also use the ZIP via appcast.xml
 
 For the full trust/privacy release gate, see:
 

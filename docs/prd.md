@@ -79,7 +79,7 @@ The technical foundation has been validated: ProPresenter's `/v1/stage/message` 
 | **NFR8** | The application shall perform all speech recognition locally without transmitting audio to external servers (MVP). |
 | **NFR9** | The application shall handle network disconnection to ProPresenter gracefully with automatic reconnection attempts. |
 | **NFR10** | The application shall provide clear error messages and recovery guidance when issues occur. |
-| **NFR11** | The application shall be distributed as a signed and notarised DMG for direct download. |
+| **NFR11** | The application shall be distributed as a signed and notarised ZIP for direct download. |
 | **NFR12** | The application shall include no recurring API costs for core functionality (local-first mandate). |
 
 ---
@@ -152,7 +152,7 @@ The technical foundation has been validated: ProPresenter's `/v1/stage/message` 
 
 | Aspect | MVP Decision |
 |--------|--------------|
-| **Primary** | Direct download (signed DMG) |
+| **Primary** | Direct download (signed ZIP) |
 | **Code Signing** | Developer ID + Notarisation |
 | **Auto-Updates** | Sparkle framework |
 | **App Store** | Future enhancement |

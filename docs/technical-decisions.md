@@ -17,10 +17,10 @@
 
 | Aspect | MVP Decision | Future Enhancement |
 |--------|--------------|-------------------|
-| **Primary Distribution** | Direct download (signed DMG) | App Store submission |
+| **Primary Distribution** | Direct download (signed ZIP) | App Store submission |
 | **Code Signing** | Developer ID + Notarisation | Same |
 | **Auto-Updates** | Sparkle framework | Native App Store updates |
-| **Installer Type** | DMG with drag-to-Applications | PKG installer (if needed) |
+| **Installer Type** | Notarised ZIP (extract & drag to Applications) | PKG installer (if needed) |
 
 **Rationale:** Direct distribution avoids App Store sandbox restrictions on audio capture and enables faster iteration without review delays.
 

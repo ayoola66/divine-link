@@ -8,12 +8,12 @@ Last Updated: 4 April 2026
 
 - **Latest app release**: `v1.3.10` (notarised packaging hardening + website download UX refresh)
 - **Recent release train**:
-  - `v1.3.10` - Gatekeeper-safe packaging fix (`ditto`), refreshed appcast signature, DMG + ZIP chooser rollout
+  - `v1.3.10` - Gatekeeper-safe packaging fix (`ditto`), refreshed appcast signature, ZIP download page
   - `v1.3.8` - external device transcription fix (timer/run loop + non-default device init guard)
   - `v1.3.7` - audio device switch fix + BlackHole wording clarity
   - `v1.3.6` - transcription fallback fix + notarised build
 - **Distribution**: Sparkle appcast + Netlify release artefacts are active for direct distribution.
-- **Download UX**: `/download` chooser page now offers DMG (recommended), ZIP, and release notes.
+- **Download UX**: `/download` page offers signed ZIP download and release notes.
 
 > Note: The phase tables below are retained as historical implementation records from the initial rollout and do not represent current live version numbering.
 
@@ -180,7 +180,7 @@ Public Key: fbg4DwpGznsP6/scSfKu1hbfIlW0/LgnSRS+fi/4Ciw=
 3. **Create Stripe Payment Link** (10 min)
 4. **Deploy webhook** to Supabase (15 min)
 5. **Test end-to-end payment** (10 min)
-6. **Run release script** for next version (produces ZIP + DMG)
+6. **Run release script** for next version (produces signed ZIP)
 
 ---
 
