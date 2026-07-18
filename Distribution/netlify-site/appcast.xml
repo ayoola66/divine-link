@@ -8,6 +8,31 @@
         
         <!-- Latest Version -->
         <item>
+            <title>Version 1.4.0</title>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <pubDate>Sat, 18 Jul 2026 22:22:00 +0000</pubDate>
+
+            <description><![CDATA[
+                <h2>Version 1.4.0</h2>
+                <ul>
+                    <li>More reliable live transcription — no longer drops words after pauses</li>
+                    <li>Now recognises references spoken in reverse: "John verse 16 chapter 5"</li>
+                    <li>Stability improvements</li>
+                </ul>
+            ]]></description>
+
+            <enclosure
+                url="https://divinelink.netlify.app/releases/DivineLink-1.4.0.zip"
+                length="13120037"
+                type="application/octet-stream"
+                sparkle:edSignature="OW5L95+BwBONHz/pjAb6lPzVg5J+sVTugJ71UTKnwl1n3ggdKdvk9fep/WITKVGDQMtCGAVNt9JiIpRi8KWUBw=="
+            />
+        </item>
+
+        <!-- Previous Version -->
+        <item>
             <title>Version 1.3.10</title>
             <sparkle:version>16</sparkle:version>
             <sparkle:shortVersionString>1.3.10</sparkle:shortVersionString>

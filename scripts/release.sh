@@ -60,7 +60,7 @@ CHANGELOG_FILE="$PROJECT_ROOT/CHANGELOG.md"
 INFO_PLIST="$PROJECT_ROOT/DivineLink/DivineLink/Info.plist"
 
 # Notarisation profile name (set up with xcrun notarytool store-credentials)
-NOTARIZATION_PROFILE="Divine Link Notarization"
+NOTARIZATION_PROFILE="DivineLink-Notary"
 
 # Team ID
 TEAM_ID="QVHM976XC5"
@@ -432,13 +432,18 @@ fi
 NEW_ITEM=$(generate_appcast_item "$NEW_VERSION" "$NEW_BUILD" "$ZIP_FILENAME" "$SIGNATURE" "$FILE_SIZE" "$RELEASE_NOTES")
 
 # Insert into appcast.xml (after <!-- Latest Version -->)
-# Using awk for more reliable multiline insertion
+# NOTE: awk -v cannot carry a multi-line value on macOS/BSD awk ("newline in
+# string" error). Write the new item to a file and read it with getline so the
+# multi-line XML block inserts reliably regardless of awk flavour.
 TEMP_APPCAST="$BUILD_DIR/appcast_temp.xml"
-awk -v new_item="$NEW_ITEM" '
+ITEM_FILE="$BUILD_DIR/new_item.xml"
+printf '%s\n' "$NEW_ITEM" > "$ITEM_FILE"
+awk -v item_file="$ITEM_FILE" '
     /<!-- Latest Version -->/ {
         print
         print ""
-        print new_item
+        while ((getline line < item_file) > 0) print line
+        close(item_file)
         next
     }
     { print }
