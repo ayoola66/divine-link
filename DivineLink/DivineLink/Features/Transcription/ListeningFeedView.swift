@@ -111,7 +111,12 @@ class TranscriptBuffer: ObservableObject {
             withTimeInterval: sentencePauseInterval,
             repeats: false
         ) { [weak self] _ in
-            self?.finalizeInProgressText()
+            // The timer is scheduled from this @MainActor method, so it fires on the
+            // main run loop. assumeIsolated lets us call the @MainActor method
+            // synchronously (no async hop / timing shift) without a concurrency warning.
+            MainActor.assumeIsolated {
+                self?.finalizeInProgressText()
+            }
         }
     }
 

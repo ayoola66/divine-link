@@ -88,6 +88,7 @@ class ScriptureDetectorService: ObservableObject {
         case spokenWords    // Genesis twenty one one → 21:1, John three sixteen → 3:16
         case chapterOnly    // Romans 8
         case invertedVerbal // "verse 31 of Romans 8" or "verse 31 of Romans eight"
+        case bookVerseChapter // "John verse 16 chapter 5" → John 5:16 (verse spoken before chapter)
         case partialVerse   // "verse 18" or "verses 5 to 7" (requires context)
     }
     
@@ -134,7 +135,20 @@ class ScriptureDetectorService: ObservableObject {
             patterns.append((regex, .verbal))
             print("✅ verbal pattern compiled (priority 1)")
         }
-        
+
+        // 1b. INVERTED BOOK-VERSE-CHAPTER: "John verse 16 chapter 5" → John 5:16
+        // Some speakers say the verse before the chapter. Requires BOTH the "verse"
+        // AND "chapter" keywords in that order, so it is unambiguous and cannot
+        // produce false positives. High priority (right after the standard verbal).
+        // Groups: (1)book (2)verse_start (3)verse_end optional (4)chapter
+        if let regex = try? NSRegularExpression(
+            pattern: #"(?:^|\s)((?:\d\s?)?[A-Za-z]+)\s+(?:verse?s?|versus)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s|$|[,.])"#,
+            options: .caseInsensitive
+        ) {
+            patterns.append((regex, .bookVerseChapter))
+            print("✅ bookVerseChapter pattern compiled (priority 1b - verse before chapter)")
+        }
+
         // 2. VERBAL SHORT: "Genesis 1 verse 1" or "John 3 verse 16 to 20" (no "chapter" keyword)
         // Limit chapter to 1-2 digits (max 99) to avoid matching "316" as chapter
         // Also accept "versus" as speech recognition often mishears "verse"
@@ -305,6 +319,11 @@ class ScriptureDetectorService: ObservableObject {
         // Handle inverted verbal references: "verse X of Book Y"
         if type == .invertedVerbal {
             return parseInvertedVerbalMatch(match, in: text)
+        }
+
+        // Handle book-verse-chapter references: "John verse 16 chapter 5" → John 5:16
+        if type == .bookVerseChapter {
+            return parseBookVerseChapterMatch(match, in: text)
         }
         
         // Extract book name
@@ -573,7 +592,17 @@ class ScriptureDetectorService: ObservableObject {
             contextMatch = 1.0
             verseExistence = 1.0
             patternTypeName = "invertedVerbal"
-            
+
+        case .bookVerseChapter:
+            // "John verse 16 chapter 5" - inverted verse/chapter, explicit keywords.
+            // Note: normally handled separately in parseBookVerseChapterMatch; this
+            // case exists for switch exhaustiveness and mirrors invertedVerbal.
+            referenceClarity = 0.85
+            speechConfidence = 0.80
+            contextMatch = 1.0
+            verseExistence = 1.0
+            patternTypeName = "bookVerseChapter"
+
         case .partialVerse:
             // "verse 18" - requires context buffer, lower confidence
             // Note: This case should not normally be reached as partialVerse
@@ -755,8 +784,105 @@ class ScriptureDetectorService: ObservableObject {
         )
     }
     
+    // MARK: - Book-Verse-Chapter Parsing
+
+    /// Parse a "book verse X chapter Y" reference (verse spoken before the chapter) → book Y:X.
+    /// Groups: 1=book, 2=verse_start, 3=verse_end (optional), 4=chapter
+    private func parseBookVerseChapterMatch(_ match: NSTextCheckingResult, in text: String) -> DetectionResult? {
+        guard match.numberOfRanges >= 5 else {
+            print("⚠️ [bookVerseChapter] Not enough capture groups: \(match.numberOfRanges)")
+            return nil
+        }
+
+        guard let fullRange = Range(match.range, in: text) else { return nil }
+        let rawMatch = String(text[fullRange]).trimmingCharacters(in: .whitespaces)
+
+        // Book (group 1)
+        guard let bookRange = Range(match.range(at: 1), in: text) else { return nil }
+        let rawBook = String(text[bookRange]).trimmingCharacters(in: .whitespaces)
+
+        // Reject obvious non-book filler words captured as the "book"
+        let commonWordsToReject: Set<String> = [
+            "for", "of", "on", "and", "or", "but", "the", "a", "an", "in", "at", "to",
+            "with", "from", "by", "is", "are", "was", "were", "you", "we", "our"
+        ]
+        if commonWordsToReject.contains(rawBook.lowercased()) {
+            print("⚠️ [bookVerseChapter] Rejected common word as book: '\(rawBook)'")
+            return nil
+        }
+
+        // Verse start (group 2 — number or word)
+        guard let verseStartRange = Range(match.range(at: 2), in: text),
+              let verseStart = parseNumber(String(text[verseStartRange])) else {
+            print("⚠️ [bookVerseChapter] Could not parse verse start")
+            return nil
+        }
+
+        // Verse end (group 3 — optional)
+        var verseEnd: Int? = nil
+        if match.range(at: 3).location != NSNotFound,
+           let verseEndRange = Range(match.range(at: 3), in: text) {
+            verseEnd = parseNumber(String(text[verseEndRange]))
+        }
+
+        // Chapter (group 4 — number or word)
+        guard let chapterRange = Range(match.range(at: 4), in: text),
+              let chapter = parseNumber(String(text[chapterRange])) else {
+            print("⚠️ [bookVerseChapter] Could not parse chapter")
+            return nil
+        }
+
+        // Normalise the book name
+        guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
+            print("⚠️ [bookVerseChapter] Could not normalize book: '\(rawBook)'")
+            return nil
+        }
+
+        // Validate ranges (Psalms has 150 chapters; Psalm 119 has 176 verses)
+        if chapter > 150 {
+            print("⚠️ [bookVerseChapter] Rejected invalid chapter: \(chapter)")
+            return nil
+        }
+        if verseStart > 176 {
+            print("⚠️ [bookVerseChapter] Rejected invalid verse: \(verseStart)")
+            return nil
+        }
+
+        let reference = ScriptureReference(
+            book: canonicalBook,
+            chapter: chapter,
+            verseStart: verseStart,
+            verseEnd: verseEnd
+        )
+
+        let confidence = DetectionConfidence(
+            referenceClarity: 0.85,
+            speechConfidence: 0.80,
+            contextMatch: 1.0,
+            verseExistence: 1.0
+        )
+
+        referenceBuffer.updateContext(
+            book: canonicalBook,
+            chapter: chapter,
+            verseStart: verseStart,
+            verseEnd: verseEnd
+        )
+
+        print("✅ Detection: \(reference.formatted) [bookVerseChapter] - Confidence: \(confidence.percentage)%")
+        print("   Raw: '\(rawMatch)' → Book: \(canonicalBook), Chapter: \(chapter), Verse: \(verseStart)\(verseEnd.map { "-\($0)" } ?? "")")
+
+        return DetectionResult(
+            reference: reference,
+            rawMatch: rawMatch,
+            detectionConfidence: confidence,
+            timestamp: Date(),
+            patternType: "bookVerseChapter"
+        )
+    }
+
     // MARK: - Partial Verse Parsing
-    
+
     /// Parse a partial verse reference using context buffer
     private func parsePartialVerseMatch(_ match: NSTextCheckingResult, in text: String) -> DetectionResult? {
         guard referenceBuffer.isEnabled else {

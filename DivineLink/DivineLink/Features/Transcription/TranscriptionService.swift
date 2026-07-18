@@ -9,7 +9,7 @@ enum TranscriptionError: LocalizedError {
     case permissionDenied
     case requestCreationFailed
     case recognitionFailed(Error)
-    
+
     var errorDescription: String? {
         switch self {
         case .recognizerNotAvailable:
@@ -36,61 +36,74 @@ struct TranscriptionSegment: Identifiable {
 
 // MARK: - Transcription Service
 
-/// Service that transcribes audio to text using Apple's Speech framework
+/// Service that transcribes audio to text using Apple's Speech framework.
+///
+/// Long-form continuous recognition (a 30–45 minute service) is handled by
+/// **seamless session handoff**: Apple's `SFSpeechRecognizer` finalises a session
+/// on each natural pause (`isFinal`), after which that task will not process any
+/// more audio. Rather than tearing the session down and rebuilding it after a
+/// timer delay — which used to leave `recognitionRequest == nil` for ~0.5s and
+/// DROP every audio buffer (and spoken word) in that window — we now stand up the
+/// NEW request+task and swap it in BEFORE retiring the old one, keeping the audio
+/// feed live the entire time. No words are lost across the restart boundary.
 @MainActor
 class TranscriptionService: ObservableObject {
-    
+
     // MARK: - Published Properties
-    
+
     @Published var transcript: String = ""
     @Published var isTranscribing = false
     @Published var error: TranscriptionError?
     @Published var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
-    
+
     // MARK: - Publishers
-    
+
     /// Publishes new transcription segments for processing
     let transcriptPublisher = PassthroughSubject<TranscriptionSegment, Never>()
-    
+
     /// Publishes the full transcript when it updates
     let fullTranscriptPublisher = PassthroughSubject<String, Never>()
-    
+
     // MARK: - Private Properties
-    
+
     private let speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var lastTranscript: String = ""
+    /// Damped recycle timer — used ONLY for the silence (code 1110) and error
+    /// recovery paths, so a quiet room cannot spin session restarts. The isFinal
+    /// path uses an immediate seamless handoff (no timer, no audio gap).
     private var restartTimer: Timer?
 
-    /// Weak reference to audio capture — stored at start() so scheduleRestart can rebuild the session
+    /// Weak reference to audio capture — stored at start() so the seamless handoff
+    /// can keep feeding buffers into the freshly-created request.
     private weak var audioCaptureService: AudioCaptureService?
-    /// Guards against re-entrant restart loops (rapid error sequences)
+    /// Guards against re-entrant restart loops (rapid isFinal / error sequences)
     private var isRestarting = false
-    
+
     // Configuration
     private let locale: Locale
     private let requiresOnDevice: Bool
-    
+
     // Custom language model for Bible vocabulary
     private var bibleLanguageModel: BibleLanguageModel?
-    
+
     // MARK: - Initialisation
-    
+
     init(locale: Locale = Locale(identifier: "en-GB"), requiresOnDevice: Bool = true) {
         self.locale = locale
         self.requiresOnDevice = requiresOnDevice
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
-        
+
         // Check initial authorization status
         self.authorizationStatus = SFSpeechRecognizer.authorizationStatus()
-        
+
         // Initialise Bible language model
         self.bibleLanguageModel = BibleLanguageModel()
     }
-    
+
     // MARK: - Permission Handling
-    
+
     /// Request speech recognition permission
     func requestPermission() async -> Bool {
         return await withCheckedContinuation { continuation in
@@ -102,87 +115,60 @@ class TranscriptionService: ObservableObject {
             }
         }
     }
-    
+
     /// Check if speech recognition is available
     var isAvailable: Bool {
         speechRecognizer?.isAvailable ?? false
     }
-    
+
     // MARK: - Transcription Control
-    
+
     /// Start transcribing audio from the given audio capture service
     func start(with audioCapture: AudioCaptureService) {
         audioCaptureService = audioCapture
         print("🎙️ [Transcription] Starting transcription service...")
-        
+
         guard authorizationStatus == .authorized else {
             print("❌ [Transcription] Permission denied")
             error = .permissionDenied
             return
         }
-        
+
         guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
             print("❌ [Transcription] Recognizer not available")
             error = .recognizerNotAvailable
             return
         }
-        
-        // Cancel any existing task
-        stop()
-        
+
+        // Retire any lingering session from a previous run (full teardown here is
+        // fine — this is an external (re)start, not a seamless in-flight handoff).
+        restartTimer?.invalidate()
+        restartTimer = nil
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        recognitionRequest = nil
+        recognitionTask = nil
+        isRestarting = false
+
         // Clear previous state
         error = nil
         transcript = ""
         lastTranscript = ""
-        
-        // Create recognition request
-        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        
-        guard let recognitionRequest = recognitionRequest else {
-            print("❌ [Transcription] Failed to create recognition request")
-            error = .requestCreationFailed
+
+        // Create the first recognition session
+        guard beginRecognitionSession() else {
+            // beginRecognitionSession sets `error` on failure
             return
         }
-        
-        // Configure request
-        recognitionRequest.shouldReportPartialResults = true
-        // Only require on-device if the recognizer actually supports it on this device.
-        // If supportsOnDeviceRecognition is false (model not downloaded or OS version gap),
-        // hard-requiring it causes the recognition task to fail silently — audio flows,
-        // meter responds, but no text is produced. Fall back to server-based in that case.
-        let canUseOnDevice = speechRecognizer.supportsOnDeviceRecognition
-        recognitionRequest.requiresOnDeviceRecognition = requiresOnDevice && canUseOnDevice
-        if requiresOnDevice && !canUseOnDevice {
-            print("⚠️ [Transcription] On-device recognition not supported on this device — falling back to server-based")
-        }
-        print("📝 [Transcription] Recognition request created, onDevice: \(requiresOnDevice && canUseOnDevice)")
-        
-        // Add custom vocabulary if available
-        configureCustomVocabulary(request: recognitionRequest)
-        
-        // Start recognition task.
-        // CRITICAL: dispatch to main before calling handleRecognitionResult.
-        // The SFSpeechRecognizer callback fires on a background thread, but
-        // handleRecognitionResult / scheduleRestart() are @MainActor-isolated.
-        // Without this hop, Timer.scheduledTimer in scheduleRestart() schedules
-        // on the background RunLoop (which isn't spinning), so the restart timer
-        // never fires — transcription permanently stalls after any device switch
-        // or recognition error, even though audio buffers keep flowing.
-        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            DispatchQueue.main.async {
-                self?.handleRecognitionResult(result: result, error: error)
-            }
-        }
-        print("✅ [Transcription] Recognition task started")
-        
-        // Subscribe to audio buffers
+
+        // Subscribe to audio buffers (once — the seamless handoff keeps this alive)
         setupAudioBufferSubscription(audioCapture: audioCapture)
-        
+
         isTranscribing = true
         print("✅ [Transcription] Transcription service started successfully")
     }
-    
-    /// Stop transcribing
+
+    /// Stop transcribing (external stop — full teardown)
     func stop() {
         restartTimer?.invalidate()
         restartTimer = nil
@@ -192,16 +178,107 @@ class TranscriptionService: ObservableObject {
         recognitionTask = nil
         recognitionRequest = nil
 
+        audioSubscription?.cancel()
+        audioSubscription = nil
+
         isTranscribing = false
         isRestarting = false
         audioCaptureService = nil
     }
-    
+
+    // MARK: - Recognition Session Lifecycle
+
+    /// Create, configure, and start a fresh recognition request + task, assigning
+    /// them to `recognitionRequest` / `recognitionTask`. Does NOT touch the audio
+    /// subscription, `audioCaptureService`, or `isTranscribing` — those are owned
+    /// by start()/stop() and must survive a seamless handoff.
+    /// Returns false (and sets `error`) if the recognizer is unavailable.
+    @discardableResult
+    private func beginRecognitionSession() -> Bool {
+        guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+            print("❌ [Transcription] Recognizer not available for session start")
+            error = .recognizerNotAvailable
+            return false
+        }
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+
+        // Only require on-device if the recognizer actually supports it on this device.
+        // If supportsOnDeviceRecognition is false (model not downloaded or OS version gap),
+        // hard-requiring it causes the recognition task to fail silently — audio flows,
+        // meter responds, but no text is produced. Fall back to server-based in that case.
+        let canUseOnDevice = speechRecognizer.supportsOnDeviceRecognition
+        request.requiresOnDeviceRecognition = requiresOnDevice && canUseOnDevice
+        if requiresOnDevice && !canUseOnDevice {
+            print("⚠️ [Transcription] On-device recognition not supported on this device — falling back to server-based")
+        }
+
+        // Add custom Bible vocabulary if available
+        configureCustomVocabulary(request: request)
+
+        // Start recognition task.
+        // CRITICAL: dispatch to main before calling handleRecognitionResult.
+        // The SFSpeechRecognizer callback fires on a background thread, but this
+        // class is @MainActor-isolated.
+        let task = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+            DispatchQueue.main.async {
+                self?.handleRecognitionResult(result: result, error: error)
+            }
+        }
+
+        recognitionRequest = request
+        recognitionTask = task
+        print("✅ [Transcription] Recognition session started (onDevice: \(requiresOnDevice && canUseOnDevice))")
+        return true
+    }
+
+    /// Seamless session handoff — used after `isFinal`, where dropping audio would
+    /// drop spoken words. Stands up the NEW session and swaps it in BEFORE retiring
+    /// the old one, so `appendAudioBuffer` always has a live request to feed and no
+    /// audio buffer is discarded. `isTranscribing` stays true throughout (the display
+    /// buffer relies on that — it only finalises when transcribing actually stops).
+    private func restartSeamlessly() {
+        guard !isRestarting, isTranscribing, audioCaptureService != nil else { return }
+        isRestarting = true
+        defer { isRestarting = false }
+
+        let oldRequest = recognitionRequest
+        let oldTask = recognitionTask
+
+        // Create + swap in the new session first…
+        guard beginRecognitionSession() else {
+            // New session failed — keep the old one rather than going dark.
+            recognitionRequest = oldRequest
+            recognitionTask = oldTask
+            print("⚠️ [Transcription] Seamless restart failed to create new session — keeping old")
+            return
+        }
+
+        // …then retire the old one. Buffers arriving now feed the new request.
+        lastTranscript = ""   // the new session's partial results start fresh
+        oldRequest?.endAudio()
+        oldTask?.cancel()
+        print("🔄 [Transcription] Seamless session handoff complete (no audio gap)")
+    }
+
+    /// Damped recycle for the silence / error paths only. A quiet room repeatedly
+    /// returns "no speech" (code 1110); restarting immediately there would spin the
+    /// CPU, so we debounce. No spoken words are at risk during silence.
+    private func scheduleDampedRestart() {
+        restartTimer?.invalidate()
+        restartTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.restartSeamlessly()
+            }
+        }
+    }
+
     // MARK: - Audio Buffer Handling
-    
+
     private var audioSubscription: AnyCancellable?
     private var receivedBufferCount = 0
-    
+
     private func setupAudioBufferSubscription(audioCapture: AudioCaptureService) {
         print("🔊 [Transcription] Setting up audio buffer subscription")
         receivedBufferCount = 0
@@ -211,16 +288,16 @@ class TranscriptionService: ObservableObject {
             }
         print("✅ [Transcription] Audio buffer subscription established")
     }
-    
-    /// Append audio buffer to the recognition request
+
+    /// Append audio buffer to the current recognition request.
     func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         receivedBufferCount += 1
-        
+
         // Log first buffer with format details
         if receivedBufferCount == 1 {
             let format = buffer.format
             let frameCount = buffer.frameLength
-            
+
             // Calculate RMS to verify audio data
             var rms: Float = 0
             if let channelData = buffer.floatChannelData?[0], frameCount > 0 {
@@ -230,14 +307,14 @@ class TranscriptionService: ObservableObject {
                 }
                 rms = sqrt(sum / Float(frameCount))
             }
-            
+
             print("🎉 [Transcription] First audio buffer received!")
             print("   Format: \(format.channelCount)ch, \(Int(format.sampleRate))Hz")
             print("   Frames: \(frameCount), RMS: \(rms)")
         } else if receivedBufferCount % 100 == 0 {
             print("📊 [Transcription] Received \(receivedBufferCount) audio buffers")
         }
-        
+
         guard recognitionRequest != nil else {
             if receivedBufferCount <= 5 {
                 print("⚠️ [Transcription] Recognition request is nil, cannot append buffer (\(receivedBufferCount))")
@@ -246,91 +323,69 @@ class TranscriptionService: ObservableObject {
         }
         recognitionRequest?.append(buffer)
     }
-    
+
     // MARK: - Recognition Result Handling
-    
+
     private func handleRecognitionResult(result: SFSpeechRecognitionResult?, error: Error?) {
         if let error = error {
-            print("❌ [Transcription] Recognition error: \(error.localizedDescription)")
             handleRecognitionError(error)
             return
         }
-        
+
         guard let result = result else {
-            print("⚠️ [Transcription] Result is nil")
             return
         }
-        
+
         let newTranscript = result.bestTranscription.formattedString
-        print("📝 [Transcription] Received: \"\(newTranscript)\" (isFinal: \(result.isFinal))")
-        
+
         // Only update if transcript changed
         if newTranscript != lastTranscript {
             lastTranscript = newTranscript
-            
-            DispatchQueue.main.async { [weak self] in
-                self?.transcript = newTranscript
-                self?.fullTranscriptPublisher.send(newTranscript)
-                
-                // Send segment for processing
-                let segment = TranscriptionSegment(
-                    text: newTranscript,
-                    timestamp: Date(),
-                    isFinal: result.isFinal
-                )
-                self?.transcriptPublisher.send(segment)
-            }
+
+            transcript = newTranscript
+            fullTranscriptPublisher.send(newTranscript)
+
+            // Send segment for processing (display buffer + detection)
+            let segment = TranscriptionSegment(
+                text: newTranscript,
+                timestamp: Date(),
+                isFinal: result.isFinal
+            )
+            transcriptPublisher.send(segment)
         }
-        
-        // If final, prepare for next utterance
+
+        // On final, hand off to a fresh session immediately — no audio gap, so the
+        // next utterance is captured without losing the words in between.
         if result.isFinal {
-            scheduleRestart()
+            restartSeamlessly()
         }
     }
-    
+
     private func handleRecognitionError(_ error: Error) {
         let nsError = error as NSError
-        
-        // Ignore cancelled errors (expected when stopping)
+
+        // Ignore cancelled errors — expected when we retire the old task during a
+        // seamless handoff, and when stopping.
         if nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 216 {
-            // Recognition was cancelled - this is normal
             return
         }
-        
-        // Ignore "no speech detected" errors
+
+        // "No speech detected" — silence. Recycle the session on a damped timer so a
+        // quiet room can't spin restarts. No spoken words are at risk here.
         if nsError.code == 1110 {
-            // No speech detected - restart listening
-            scheduleRestart()
+            scheduleDampedRestart()
             return
         }
-        
-        DispatchQueue.main.async { [weak self] in
-            self?.error = .recognitionFailed(error)
-            print("Recognition error: \(error.localizedDescription)")
-        }
-        
-        // Attempt recovery
-        scheduleRestart()
+
+        self.error = .recognitionFailed(error)
+        print("❌ [Transcription] Recognition error: \(error.localizedDescription)")
+
+        // Attempt recovery on a damped timer.
+        scheduleDampedRestart()
     }
-    
-    private func scheduleRestart() {
-        restartTimer?.invalidate()
-        restartTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self,
-                      !self.isRestarting,
-                      let audioCapture = self.audioCaptureService else { return }
-                self.isRestarting = true
-                self.stop()
-                self.start(with: audioCapture)
-                self.isRestarting = false
-                print("🔄 [Transcription] Session restarted after isFinal/error")
-            }
-        }
-    }
-    
+
     // MARK: - Custom Vocabulary
-    
+
     private func configureCustomVocabulary(request: SFSpeechAudioBufferRecognitionRequest) {
         // Use Bible language model if available (macOS 14+)
         if let model = bibleLanguageModel, model.isReady {
@@ -340,7 +395,7 @@ class TranscriptionService: ObservableObject {
             print("⚠️ Bible language model not ready, using standard recognition")
         }
     }
-    
+
     /// Check if Bible language model is ready
     var isBibleModelReady: Bool {
         bibleLanguageModel?.isReady ?? false
