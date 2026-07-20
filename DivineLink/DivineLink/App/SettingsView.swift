@@ -215,9 +215,39 @@ struct AudioSettingsTab: View {
     @ObservedObject private var audioManager = AudioDeviceManager.shared
     @StateObject private var audioTest = AudioCaptureService()
     @State private var isTesting = false
-    
+    // Enhanced-recognition (WhisperKit) on-demand model — manual entry / retry point.
+    @ObservedObject private var whisperModel = WhisperModelManager.shared
+    @State private var showModelDownload = false
+
     var body: some View {
         Form {
+            // Enhanced Recognition (Apple Silicon only) — manual download / retry.
+            if WhisperModelManager.isSupported {
+                Section {
+                    switch whisperModel.state {
+                    case .installed:
+                        Label("Enhanced recognition installed", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    case let .downloading(fraction, _, _):
+                        HStack {
+                            ProgressView(value: max(0, min(fraction, 1)))
+                            Text("\(Int((max(0, min(fraction, 1)) * 100).rounded()))%")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    default:
+                        Button("Download Enhanced Recognition (~464 MB)") {
+                            showModelDownload = true
+                        }
+                    }
+                } header: {
+                    Text("Enhanced Recognition")
+                } footer: {
+                    Text("An on-device AI speech model for more accurate, punctuated transcription. Downloads once, then works fully offline. Apple-Silicon Macs only.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section {
                 Picker("Input Device", selection: $audioManager.selectedDevice) {
                     ForEach(audioManager.availableDevices, id: \.uniqueID) { device in
@@ -383,6 +413,13 @@ struct AudioSettingsTab: View {
         }
         .formStyle(.grouped)
         .padding()
+        .sheet(isPresented: $showModelDownload) {
+            WhisperDownloadView(
+                manager: whisperModel,
+                onUseStandard: { showModelDownload = false },
+                onClose: { showModelDownload = false }
+            )
+        }
         .onDisappear {
             // Stop testing when leaving the tab
             if isTesting {

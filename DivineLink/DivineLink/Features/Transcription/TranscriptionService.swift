@@ -88,6 +88,35 @@ class TranscriptionService: ObservableObject {
     // Custom language model for Bible vocabulary
     private var bibleLanguageModel: BibleLanguageModel?
 
+    // MARK: - Whisper engine (offline WhisperKit) — alternative to Apple on-device STT
+
+    private lazy var whisper = WhisperTranscriber(model: "small.en")
+    private var usingWhisper = false
+    /// Engine choice. Defaults to WhisperKit (offline, punctuated, better accuracy).
+    /// Falls back to Apple automatically if the Whisper model can't load.
+    private var useWhisperSetting: Bool {
+        if UserDefaults.standard.object(forKey: "useWhisperKit") == nil { return true }
+        return UserDefaults.standard.bool(forKey: "useWhisperKit")
+    }
+
+    /// WhisperKit runs its CoreML models on the Apple Neural Engine / Metal. On Intel
+    /// Macs those ops are unsupported (MPSGraph padded-tensor error) and the float16
+    /// decoder init CRASHES with EXC_BAD_ACCESS — which a do/catch cannot recover. So we
+    /// gate WhisperKit on Apple-Silicon hardware and fall back to Apple STT on Intel.
+    ///
+    /// We ALSO require the model to be installed on disk: the ~464 MB model is no longer
+    /// bundled — it's downloaded on demand (first launch, Apple Silicon) by
+    /// `WhisperModelManager`. Until it's present (or if the owner skipped/deferred the
+    /// download, or the download failed), we transcribe with Apple STT so the app is
+    /// always usable. Once installed, this flips to Whisper on the next start.
+    private var shouldUseWhisper: Bool {
+        useWhisperSetting && Self.isAppleSilicon && WhisperModelManager.isInstalled
+    }
+
+    /// True only on Apple-Silicon hardware. Single source of truth lives in
+    /// `WhisperModelManager.isSupported` (same runtime sysctl) to avoid drift.
+    static var isAppleSilicon: Bool { WhisperModelManager.isSupported }
+
     // MARK: - Initialisation
 
     init(locale: Locale = Locale(identifier: "en-GB"), requiresOnDevice: Bool = true) {
@@ -106,7 +135,7 @@ class TranscriptionService: ObservableObject {
 
     /// Request speech recognition permission
     func requestPermission() async -> Bool {
-        return await withCheckedContinuation { continuation in
+        let granted: Bool = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { [weak self] status in
                 DispatchQueue.main.async {
                     self?.authorizationStatus = status
@@ -114,18 +143,36 @@ class TranscriptionService: ObservableObject {
                 }
             }
         }
+        // Whisper needs only microphone audio (requested separately by the pipeline), so a
+        // denied Speech-Recognition permission must not block the offline Whisper engine.
+        return shouldUseWhisper ? true : granted
     }
 
     /// Check if speech recognition is available
     var isAvailable: Bool {
-        speechRecognizer?.isAvailable ?? false
+        if shouldUseWhisper { return true }
+        return speechRecognizer?.isAvailable ?? false
     }
 
     // MARK: - Transcription Control
 
-    /// Start transcribing audio from the given audio capture service
+    /// Start transcribing audio from the given audio capture service.
+    /// Routes to the offline Whisper engine when enabled, else Apple's recognizer.
     func start(with audioCapture: AudioCaptureService) {
         audioCaptureService = audioCapture
+        if shouldUseWhisper {
+            startWhisper(with: audioCapture)
+            return
+        }
+        if useWhisperSetting && !Self.isAppleSilicon {
+            print("⚠️ [Transcription] WhisperKit requested but this is an Intel Mac — using Apple STT (Whisper needs Apple Silicon)")
+        }
+        startApple(with: audioCapture)
+    }
+
+    /// Apple SFSpeechRecognizer engine (on-device). Also the fallback when Whisper is off
+    /// or its model cannot load.
+    private func startApple(with audioCapture: AudioCaptureService) {
         print("🎙️ [Transcription] Starting transcription service...")
 
         guard authorizationStatus == .authorized else {
@@ -168,8 +215,62 @@ class TranscriptionService: ObservableObject {
         print("✅ [Transcription] Transcription service started successfully")
     }
 
+    /// WhisperKit engine (offline, on-device). Routes Whisper output through the SAME
+    /// publishers as the Apple path, so detection, the transcript view, the mic selector,
+    /// and the word-edit feature all work unchanged.
+    private func startWhisper(with audioCapture: AudioCaptureService) {
+        error = nil
+        transcript = ""
+        lastTranscript = ""
+        usingWhisper = true
+
+        whisper.onText = { [weak self] text, isFinal in
+            guard let self else { return }
+            self.transcript = text
+            self.fullTranscriptPublisher.send(text)
+            self.transcriptPublisher.send(
+                TranscriptionSegment(text: text, timestamp: Date(), isFinal: isFinal)
+            )
+        }
+        whisper.onStateChange = { [weak self] running in
+            self?.isTranscribing = running
+        }
+        whisper.onError = { [weak self] message in
+            guard let self else { return }
+            print("⚠️ [Transcription] Whisper: \(message) — falling back to Apple recognizer")
+            self.usingWhisper = false
+            self.whisper.stop()
+            self.ensureSpeechAuthThenStartApple(with: audioCapture)
+        }
+
+        isTranscribing = true // optimistic; confirmed once the model finishes loading
+        whisper.start(audioPublisher: audioCapture.audioBufferPublisher)
+        print("✅ [Transcription] Whisper engine starting (small.en, offline)")
+    }
+
+    /// Fallback entry that guarantees Speech authorization before starting Apple STT.
+    /// `requestPermission()` intentionally masks a denied Speech permission when Whisper is
+    /// the preferred engine — so if Whisper then fails to load at runtime, we must actually
+    /// request Speech authorization here, or the Apple fallback would silently go dark.
+    private func ensureSpeechAuthThenStartApple(with audioCapture: AudioCaptureService) {
+        if authorizationStatus == .authorized {
+            startApple(with: audioCapture)
+            return
+        }
+        SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            DispatchQueue.main.async {
+                self?.authorizationStatus = status
+                self?.startApple(with: audioCapture)
+            }
+        }
+    }
+
     /// Stop transcribing (external stop — full teardown)
     func stop() {
+        if usingWhisper {
+            whisper.stop()
+            usingWhisper = false
+        }
         restartTimer?.invalidate()
         restartTimer = nil
 
@@ -352,6 +453,14 @@ class TranscriptionService: ObservableObject {
                 isFinal: result.isFinal
             )
             transcriptPublisher.send(segment)
+        } else if result.isFinal {
+            // Final result identical to the last partial: still emit a FINAL segment so
+            // the display buffer commits this session as exactly one line. Without this,
+            // the in-progress line is never finalised and the next session's cumulative
+            // text stacks on top of it — the source of the duplicated-transcript bug.
+            transcriptPublisher.send(
+                TranscriptionSegment(text: newTranscript, timestamp: Date(), isFinal: true)
+            )
         }
 
         // On final, hand off to a fresh session immediately — no audio gap, so the

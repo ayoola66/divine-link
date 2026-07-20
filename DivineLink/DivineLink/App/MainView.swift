@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Main content view displayed in the application window
 struct MainView: View {
@@ -18,7 +19,13 @@ struct MainView: View {
     @State private var selectedVerseId: UUID? = nil
     @State private var pushCoordinator: PushActionCoordinator?
     @State private var f12EventMonitor: Any?
-    
+
+    // Enhanced-recognition (WhisperKit) on-demand model download — first launch, Apple Silicon only.
+    @ObservedObject private var whisperModel = WhisperModelManager.shared
+    @State private var showModelDownload = false
+    /// Offer the one-time download once; if skipped, don't nag on every launch.
+    @AppStorage("whisperModelOfferedV1") private var whisperModelOffered = false
+
     // Bible translation selection
     @AppStorage("selectedTranslation") private var selectedTranslation: String = "KJV"
     
@@ -28,6 +35,8 @@ struct MainView: View {
     // Observe nested objects directly for proper SwiftUI updates
     @ObservedObject private var audioCapture: AudioCaptureService
     @ObservedObject private var transcriptBuffer: TranscriptBuffer
+    // Shared audio-device manager — drives the quick mic selector in the status row.
+    @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
     
     init() {
         let pipeline = DetectionPipeline()
@@ -141,6 +150,15 @@ struct MainView: View {
             
             // Configure panic button service with dependencies
             panicService.configure(ppClient: ppClient, buffer: pipeline.buffer)
+
+            // First launch on Apple Silicon: offer the one-time enhanced-recognition download.
+            // Intel Macs (isSupported == false) never see this — they use Apple Speech directly.
+            // NB: the "offered" flag is flipped ONLY when the user explicitly declines (below),
+            // NOT here at show-time — so an Escape-dismiss or a quit mid-download re-offers next
+            // launch instead of permanently stranding the feature.
+            if WhisperModelManager.isSupported, !whisperModel.isInstalled, !whisperModelOffered {
+                showModelDownload = true
+            }
         }
         .onKeyPress(.space) {
             // Only toggle if not editing transcript, not in a modal sheet, and has microphone permission
@@ -170,8 +188,19 @@ struct MainView: View {
         .onDisappear {
             removeF12KeyHandler()
         }
+        .sheet(isPresented: $showModelDownload) {
+            WhisperDownloadView(
+                manager: whisperModel,
+                onUseStandard: {
+                    // Explicit decline → don't auto-offer again. Re-reachable from Settings.
+                    whisperModelOffered = true
+                    showModelDownload = false
+                },
+                onClose: { showModelDownload = false }
+            )
+        }
     }
-    
+
     // MARK: - F12 Key Handler
     
     private func setupF12KeyHandler() {
@@ -801,6 +830,10 @@ struct MainView: View {
                                 },
                                 onSelectVerse: { index in
                                     pipeline.buffer.setCurrentVerse(id: verse.id, index: index)
+                                },
+                                availableTranslations: availableTranslations,
+                                onChangeTranslation: { translation in
+                                    changeTranslation(verse, to: translation)
                                 }
                             )
                         }
@@ -912,9 +945,72 @@ struct MainView: View {
             selectedVerseId = pipeline.buffer.pendingVerses.first?.id
         }
     }
+
+    /// Switch a single detected verse card to a different Bible translation, in place.
+    /// Re-fetches the same reference in the chosen version and updates just that card —
+    /// the app-wide default translation is left untouched.
+    private func changeTranslation(_ verse: PendingVerse, to translation: String) {
+        guard translation != verse.translation else { return }
+        let bibleVerses = pipeline.bible.getVerses(from: verse.reference, translation: translation)
+        let items = bibleVerses.map { VerseItem(verseNumber: $0.verse, text: $0.text) }
+        pipeline.buffer.updateTranslation(id: verse.id, translation: translation, verses: items)
+    }
     
+    // MARK: - Mic Selector (quick audio-input switcher)
+
+    /// Quick audio-input selector in the status row — change the mic/input device
+    /// without opening Settings → Audio. Reflects and updates the shared
+    /// AudioDeviceManager, which the pipeline already observes to switch input live.
+    private var micSelector: some View {
+        Menu {
+            if audioDeviceManager.availableDevices.isEmpty {
+                Text("No input devices found")
+            }
+            ForEach(audioDeviceManager.availableDevices, id: \.uniqueID) { device in
+                Button {
+                    Task { await audioDeviceManager.selectDevice(device) }
+                } label: {
+                    HStack {
+                        Text(device.localizedName)
+                        if device.uniqueID == audioDeviceManager.selectedDevice?.uniqueID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button {
+                Task { await audioDeviceManager.refreshDevices() }
+            } label: {
+                Label("Refresh devices", systemImage: "arrow.clockwise")
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 8))
+                Text(shortDeviceName(audioDeviceManager.selectedDevice?.localizedName))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(audioCapture.isCapturing ? Color.green.opacity(0.2) : Color.gray.opacity(0.12))
+            .foregroundStyle(audioCapture.isCapturing ? .green : .secondary)
+            .clipShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Change audio input device")
+    }
+
+    /// Shorten long device names for the compact status pill.
+    private func shortDeviceName(_ name: String?) -> String {
+        guard let name, !name.isEmpty else { return "Input" }
+        return name.count > 18 ? String(name.prefix(17)) + "…" : name
+    }
+
     // MARK: - Status Indicators Row
-    
+
     private var statusIndicatorsRow: some View {
         HStack(spacing: 12) {
             StatusPill(
@@ -923,7 +1019,9 @@ struct MainView: View {
                 isActive: audioCapture.isCapturing,
                 color: .green
             )
-            
+
+            micSelector
+
             StatusPill(
                 icon: "text.bubble.fill",
                 label: "Speech",
@@ -1083,7 +1181,9 @@ struct VerseRowView: View {
     let onNextVerse: () -> Void
     let onPreviousVerse: () -> Void
     let onSelectVerse: (Int) -> Void
-    
+    let availableTranslations: [String]
+    let onChangeTranslation: (String) -> Void
+
     @ObservedObject private var detectionSettings = DetectionSettings.shared
     @State private var isHovering = false
     @State private var isExpanded = false
@@ -1202,13 +1302,44 @@ struct VerseRowView: View {
     
     private var translationAndTimestamp: some View {
         HStack(spacing: 4) {
-            Text(verse.translation)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            translationPicker
             Text(verse.timestamp, style: .time)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    /// Per-card Bible-version switcher. Tapping shows the available translations;
+    /// choosing one re-renders THIS verse in that version without changing the
+    /// app-wide default — lets the operator flick a detected verse between versions.
+    private var translationPicker: some View {
+        Menu {
+            ForEach(availableTranslations, id: \.self) { translation in
+                Button {
+                    onChangeTranslation(translation)
+                } label: {
+                    HStack {
+                        Text(translation)
+                        if translation == verse.translation {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Text(verse.translation)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 7))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Switch Bible version for this verse")
     }
     
     @ViewBuilder
@@ -1245,11 +1376,15 @@ struct VerseRowView: View {
     
     private var singleVerseText: some View {
         let dimmed = isLowConfidenceBySettings && detectionSettings.autoHoldLowConfidence
+        // Compact 2-line preview by default; the selected card expands to full text so
+        // the card grows dynamically to fit any translation's length (KJV/ASV/WEB).
         return Text(verse.fullText)
             .scaledBodyFont()
             .foregroundStyle(Color.secondary.opacity(dimmed ? 0.7 : 1.0))
-            .lineLimit(2)
+            .lineLimit(isSelected ? nil : 2)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
     }
     
     @ViewBuilder

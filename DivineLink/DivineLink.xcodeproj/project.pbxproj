@@ -8,9 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		2C7403EB2F2EAA7B0019BE16 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2C7403EA2F2EAA7B0019BE16 /* Sparkle */; };
+		2CDB5FFA300D9FD600CEE1E0 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2CDB5FF9300D9FD600CEE1E0 /* WhisperKit */; };
+		2CDB601C300DAD3400CEE1E2 /* WhisperModels in Resources */ = {isa = PBXBuildFile; fileRef = 2CDB601A300DAD3400CEE1E0 /* WhisperModels */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2CDB601A300DAD3400CEE1E0 /* WhisperModels */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WhisperModels/tokenizer; sourceTree = "<group>"; };
 		2CE3BBD22F1C52BD00CD5B6F /* DivineLink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DivineLink.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -40,6 +43,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2CDB5FFA300D9FD600CEE1E0 /* WhisperKit in Frameworks */,
 				2C7403EB2F2EAA7B0019BE16 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -50,6 +54,7 @@
 		2CE3BBC92F1C52BD00CD5B6F = {
 			isa = PBXGroup;
 			children = (
+				2CDB601A300DAD3400CEE1E0 /* WhisperModels */,
 				2CE3BBD42F1C52BD00CD5B6F /* DivineLink */,
 				2CE3BBD32F1C52BD00CD5B6F /* Products */,
 			);
@@ -84,6 +89,7 @@
 			name = DivineLink;
 			packageProductDependencies = (
 				2C7403EA2F2EAA7B0019BE16 /* Sparkle */,
+				2CDB5FF9300D9FD600CEE1E0 /* WhisperKit */,
 			);
 			productName = DivineLink;
 			productReference = 2CE3BBD22F1C52BD00CD5B6F /* DivineLink.app */;
@@ -115,6 +121,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				2C7403E92F2EAA7B0019BE16 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				2CDB5FF8300D9FD600CEE1E0 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2CE3BBD32F1C52BD00CD5B6F /* Products */;
@@ -131,6 +138,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2CDB601C300DAD3400CEE1E2 /* WhisperModels in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -279,7 +287,7 @@
 				CODE_SIGN_ENTITLEMENTS = DivineLink/DivineLink.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = QVHM976XC5;
 				ENABLE_APP_SANDBOX = YES;
@@ -295,7 +303,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ORekunMedia.DivineLink;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -316,7 +324,7 @@
 				CODE_SIGN_ENTITLEMENTS = DivineLink/DivineLink.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = QVHM976XC5;
 				ENABLE_APP_SANDBOX = YES;
@@ -332,7 +340,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 1.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ORekunMedia.DivineLink;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -377,6 +385,14 @@
 				minimumVersion = 2.8.1;
 			};
 		};
+		2CDB5FF8300D9FD600CEE1E0 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/argmax-oss-swift";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -384,6 +400,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2C7403E92F2EAA7B0019BE16 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		2CDB5FF9300D9FD600CEE1E0 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2CDB5FF8300D9FD600CEE1E0 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */;
+			productName = WhisperKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
