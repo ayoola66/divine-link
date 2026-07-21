@@ -81,65 +81,108 @@ class TranscriptBuffer: ObservableObject {
 
     private let maxLength: Int
     private let maxLines: Int
-    /// Seconds of silence before a non-final partial is treated as a completed sentence.
-    private let sentencePauseInterval: TimeInterval = 1.5
+    /// Seconds of speech-silence before the current phrase is committed to its own line.
+    /// A pause = a new line — this is what makes the transcript easy to follow.
+    private let sentencePauseInterval: TimeInterval = 1.4
     private var sentenceTimer: Timer?
+
+    /// Full cumulative text of the CURRENT STT session. Apple reports each partial as
+    /// the entire transcript-so-far for the active session, then resets to a short
+    /// partial when a new session begins (seamless handoff).
+    private var sessionCumulative: String = ""
+    /// The portion of `sessionCumulative` already committed to `lines`. Everything
+    /// after it is the live, uncommitted phrase. Tracking this DELTA (instead of
+    /// committing whole cumulative snapshots) is what lets us break a new line at each
+    /// pause WITHOUT the old duplication bug.
+    private var committedPrefix: String = ""
 
     init(maxLength: Int = 500, maxLines: Int = 300) {
         self.maxLength = maxLength
         self.maxLines = maxLines
     }
 
-    /// Update the rolling in-progress text (called for every STT segment).
-    /// Restarts the sentence-boundary timer — if no new update arrives within
-    /// sentencePauseInterval seconds the current partial is committed as a final line.
+    /// Update from an STT partial (cumulative within a session).
     func update(_ newText: String) {
-        var trimmedText = newText
-        if trimmedText.count > maxLength {
-            let startIndex = trimmedText.index(trimmedText.endIndex, offsetBy: -maxLength)
-            trimmedText = String(trimmedText[startIndex...])
-            if let spaceIndex = trimmedText.firstIndex(of: " ") {
-                trimmedText = String(trimmedText[trimmedText.index(after: spaceIndex)...])
-            }
+        if committedPrefix.isEmpty || newText.hasPrefix(committedPrefix) {
+            // Fresh session, or the same session growing normally.
+            sessionCumulative = newText
+        } else if newText.count < committedPrefix.count {
+            // New STT session (cumulative reset shorter) with no explicit isFinal:
+            // commit the previous session's trailing phrase, then start fresh.
+            commitDelta()
+            committedPrefix = ""
+            sessionCumulative = newText
+        } else {
+            // Apple revised words inside the already-committed region — resync on the
+            // longest common prefix so the live delta stays correct.
+            committedPrefix = String(commonPrefix(committedPrefix, newText))
+            sessionCumulative = newText
         }
-        text = trimmedText
 
-        // Restart the silence timer on every new partial
+        text = displayTrimmed(currentDelta())
+        scheduleSentenceCommit()
+    }
+
+    /// The live (uncommitted) phrase = session text beyond what's already committed.
+    private func currentDelta() -> String {
+        guard sessionCumulative.hasPrefix(committedPrefix) else { return sessionCumulative }
+        return String(sessionCumulative.dropFirst(committedPrefix.count))
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Restart the pause timer; when it fires, the current phrase becomes its own line.
+    private func scheduleSentenceCommit() {
         sentenceTimer?.invalidate()
-        guard !trimmedText.isEmpty else { return }
-        sentenceTimer = Timer.scheduledTimer(
-            withTimeInterval: sentencePauseInterval,
-            repeats: false
-        ) { [weak self] _ in
-            // The timer is scheduled from this @MainActor method, so it fires on the
-            // main run loop. assumeIsolated lets us call the @MainActor method
-            // synchronously (no async hop / timing shift) without a concurrency warning.
-            MainActor.assumeIsolated {
-                self?.finalizeInProgressText()
-            }
+        guard !currentDelta().isEmpty else { return }
+        sentenceTimer = Timer.scheduledTimer(withTimeInterval: sentencePauseInterval, repeats: false) { [weak self] _ in
+            // Timer is scheduled on the main run loop from this @MainActor method.
+            MainActor.assumeIsolated { self?.commitDelta() }
         }
     }
 
-    /// Append a finalised transcript line to the session history.
+    /// Commit the current live phrase as one finalised line (called on a pause, on
+    /// isFinal, on a session change, or on stop). Idempotent when nothing is pending.
+    private func commitDelta() {
+        let delta = currentDelta()
+        guard !delta.isEmpty else { return }
+        lines.append(TranscriptLine(text: delta))
+        if lines.count > maxLines { lines.removeFirst() }
+        committedPrefix = sessionCumulative
+        text = ""
+    }
+
+    /// Trim the live phrase to the rolling character budget (display only).
+    private func displayTrimmed(_ newText: String) -> String {
+        guard newText.count > maxLength else { return newText }
+        var t = String(newText[newText.index(newText.endIndex, offsetBy: -maxLength)...])
+        if let space = t.firstIndex(of: " ") { t = String(t[t.index(after: space)...]) }
+        return t
+    }
+
+    /// Longest common character prefix of two strings.
+    private func commonPrefix(_ a: String, _ b: String) -> Substring {
+        var count = 0
+        for (x, y) in zip(a, b) { if x == y { count += 1 } else { break } }
+        return a.prefix(count)
+    }
+
+    /// Called on an explicit isFinal STT result: commit the trailing phrase and reset.
     func appendFinalLine(_ newText: String) {
         let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            // STT session ended with empty final (cancel/timeout) — salvage in-progress text
-            finalizeInProgressText()
-        } else {
-            lines.append(TranscriptLine(text: trimmed))
-            if lines.count > maxLines { lines.removeFirst() }
-            text = ""
+        if !trimmed.isEmpty, newText.hasPrefix(committedPrefix) {
+            sessionCumulative = newText
         }
+        commitDelta()
+        committedPrefix = ""
+        sessionCumulative = ""
+        text = ""
     }
 
-    /// Promotes whatever in-progress text exists to a final line.
-    /// Called when the STT session ends without producing a non-empty final result.
+    /// Promote the current phrase to a line. Called when transcription actually STOPS.
     func finalizeInProgressText() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { text = ""; return }
-        lines.append(TranscriptLine(text: trimmed))
-        if lines.count > maxLines { lines.removeFirst() }
+        commitDelta()
+        committedPrefix = ""
+        sessionCumulative = ""
         text = ""
     }
 
@@ -152,6 +195,8 @@ class TranscriptBuffer: ObservableObject {
     func clear() {
         sentenceTimer?.invalidate()
         sentenceTimer = nil
+        committedPrefix = ""
+        sessionCumulative = ""
         text = ""
         lines = []
     }

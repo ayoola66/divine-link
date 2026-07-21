@@ -47,12 +47,27 @@ final class WhisperModelManager: ObservableObject {
 
     // MARK: - Hardware support
 
-    /// True only on Apple-Silicon hardware (runtime sysctl, Rosetta-safe).
+    /// True only when running NATIVELY on Apple-Silicon hardware.
+    ///
+    /// Two conditions, both required:
+    ///  1. The hardware is arm64 (`hw.optional.arm64`).
+    ///  2. This process is NOT translated by Rosetta (`sysctl.proc_translated != 1`).
+    ///
+    /// The universal binary normally runs the arm64 slice natively on Apple Silicon, so (2) is
+    /// belt-and-suspenders — but a Rosetta-translated x86_64 process reports arm64 *hardware*
+    /// yet would crash WhisperKit's Metal/float16 path exactly like real Intel. Treating a
+    /// translated process as unsupported routes it to Apple Speech instead of crashing.
     nonisolated static let isSupported: Bool = {
-        var value: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        let result = sysctlbyname("hw.optional.arm64", &value, &size, nil, 0)
-        return result == 0 && value == 1
+        var isArm: Int32 = 0
+        var armSize = MemoryLayout<Int32>.size
+        let armOK = sysctlbyname("hw.optional.arm64", &isArm, &armSize, nil, 0) == 0 && isArm == 1
+
+        var translated: Int32 = 0
+        var tSize = MemoryLayout<Int32>.size
+        // Absent sysctl (Intel / older macOS) → errno, treated as "not translated".
+        let isTranslated = sysctlbyname("sysctl.proc_translated", &translated, &tSize, nil, 0) == 0 && translated == 1
+
+        return armOK && !isTranslated
     }()
 
     nonisolated var isSupported: Bool { Self.isSupported }

@@ -76,30 +76,27 @@ struct TranscriptTextView: NSViewRepresentable {
         var offsetMap: [(id: UUID, range: NSRange)] = []
         var cursor = 0
 
+        // Each finalised phrase gets its OWN line (a pause = a new line) so the
+        // transcript is easy to follow — read top to bottom, one phrase per line.
+        // The live (non-final) phrase shows on the trailing line in a dimmer colour.
+        let lineAttrs: [NSAttributedString.Key: Any] = [.font: lineFont, .foregroundColor: lineColor]
         for line in lines {
             let lineText = line.text + "\n"
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: lineFont,
-                .foregroundColor: lineColor
-            ]
-            let nsLine = NSAttributedString(string: lineText, attributes: attrs)
             offsetMap.append((id: line.id, range: NSRange(location: cursor, length: line.text.count)))
             cursor += (lineText as NSString).length
-            attrString.append(nsLine)
+            attrString.append(NSAttributedString(string: lineText, attributes: lineAttrs))
         }
 
         if !currentText.isEmpty {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: lineFont,
-                .foregroundColor: inProgressColor
-            ]
-            attrString.append(NSAttributedString(string: currentText, attributes: attrs))
+            attrString.append(NSAttributedString(
+                string: currentText,
+                attributes: [.font: lineFont, .foregroundColor: inProgressColor]
+            ))
         } else if lines.isEmpty {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
-                .foregroundColor: NSColor.tertiaryLabelColor
-            ]
-            attrString.append(NSAttributedString(string: "Listening...", attributes: attrs))
+            attrString.append(NSAttributedString(
+                string: "Listening...",
+                attributes: [.font: lineFont, .foregroundColor: NSColor.tertiaryLabelColor]
+            ))
         }
 
         // Only replace storage content if it actually changed (avoids selection flicker)
