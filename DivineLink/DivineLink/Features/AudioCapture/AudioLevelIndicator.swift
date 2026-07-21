@@ -108,6 +108,89 @@ struct CompactAudioLevelIndicator: View {
     }
 }
 
+// MARK: - Engine Loading Banner
+
+/// Small status line shown ABOVE the soundbar while the transcription engine starts up.
+///
+/// Shows "Engine loading, standby…" for at least a few seconds — even when the engine is
+/// effectively instant (Apple STT on Intel) — then flips to "Ready" once the engine can
+/// actually produce text (on Apple Silicon, only after the WhisperKit model finishes
+/// loading), then clears so the soundbar takes over. Appears once per launch / restart.
+struct EngineLoadingBanner: View {
+    @ObservedObject var service: TranscriptionService
+
+    @State private var phase: Phase = .loading
+    @State private var minElapsed = false
+    private enum Phase { case loading, ready, live }
+
+    /// Minimum time the "loading" message stays visible, even if the engine is instant.
+    private let minLoadingSeconds: Double = 3.0
+    /// How long "Ready" shows before it clears.
+    private let readySeconds: Double = 1.5
+    /// Safety net — never stay stuck on "loading" if the engine never reports ready.
+    private let maxLoadingSeconds: Double = 30.0
+
+    var body: some View {
+        Group {
+            switch phase {
+            case .loading:
+                banner(text: "Engine loading, standby…", systemImage: "hourglass", tint: .orange, showSpinner: true)
+            case .ready:
+                banner(text: "Ready", systemImage: "checkmark.circle.fill", tint: .green, showSpinner: false)
+            case .live:
+                EmptyView()
+            }
+        }
+        .onAppear { startSequence() }
+        .onChange(of: service.engineReady) { _, _ in advanceIfReady() }
+    }
+
+    private func startSequence() {
+        phase = .loading
+        minElapsed = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + minLoadingSeconds) {
+            minElapsed = true
+            advanceIfReady()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + maxLoadingSeconds) {
+            if phase == .loading { showReadyThenClear() }
+        }
+    }
+
+    private func advanceIfReady() {
+        guard phase == .loading, minElapsed, service.engineReady else { return }
+        showReadyThenClear()
+    }
+
+    private func showReadyThenClear() {
+        guard phase == .loading else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { phase = .ready }
+        DispatchQueue.main.asyncAfter(deadline: .now() + readySeconds) {
+            withAnimation(.easeInOut(duration: 0.3)) { phase = .live }
+        }
+    }
+
+    @ViewBuilder
+    private func banner(text: String, systemImage: String, tint: Color, showSpinner: Bool) -> some View {
+        HStack(spacing: 6) {
+            if showSpinner {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+            } else {
+                Image(systemName: systemImage)
+                    .foregroundStyle(tint)
+            }
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 2)
+        .transition(.opacity)
+    }
+}
+
 // MARK: - Previews
 
 #Preview("Audio Level - Low") {

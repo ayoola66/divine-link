@@ -96,7 +96,10 @@ struct MainView: View {
             
             // Zone 1: Transcript Feed (compact)
             transcriptSection
-            
+
+            // Engine loading indicator (shown above the soundbar on launch/restart)
+            EngineLoadingBanner(service: pipeline.transcription)
+
             // Audio level indicator
             audioLevelView
             

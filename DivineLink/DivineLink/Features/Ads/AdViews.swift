@@ -286,6 +286,20 @@ struct SingleAdView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.black.opacity(0.1))
             }
+
+            // Transparent click layer ON TOP of the media so the whole ad is clickable and
+            // the tap ALWAYS opens the advertiser's landing page — even over a WKWebView
+            // (YouTube/GIF) or AVPlayer, which would otherwise swallow the tap (and, for a
+            // YouTube embed, navigate inside the video instead of opening the click URL —
+            // the "clicking shows the hyperlink instead of playing" symptom).
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if let url = ad.clickURL {
+                        NSWorkspace.shared.open(url)
+                        adService.recordClick(adId: ad.id)
+                    }
+                }
         }
         .aspectRatio(ad.adFormat.aspectRatio, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -296,12 +310,6 @@ struct SingleAdView: View {
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
-            }
-        }
-        .onTapGesture {
-            if let url = ad.clickURL {
-                NSWorkspace.shared.open(url)
-                adService.recordClick(adId: ad.id)
             }
         }
         .onAppear {
@@ -419,6 +427,7 @@ struct VideoPlayerView: View {
         player = AVPlayer(url: url)
         player?.isMuted = true // Mute by default for ads
         player?.actionAtItemEnd = .none
+        player?.automaticallyWaitsToMinimizeStalling = false // start ASAP for a short looping ad
         
         // Loop the video
         NotificationCenter.default.addObserver(
@@ -503,11 +512,11 @@ struct YouTubeWebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         
-        // Load HTML with embedded iframe - using youtube-nocookie for privacy and better compatibility
-        // Note: YouTube Shorts work with the same /embed/ URL format using the video ID
-        // Parameters to minimize branding: modestbranding=1, controls=0, showinfo=0, iv_load_policy=3 (hide annotations)
-        let embedURL = "https://www.youtube-nocookie.com/embed/\(videoID)?autoplay=1&loop=1&playlist=\(videoID)&mute=1&controls=0&modestbranding=1&playsinline=1&rel=0&fs=0&disablekb=1&showinfo=0&iv_load_policy=3&cc_load_policy=0&origin=https://divinelink.app"
-        
+        // Use the YouTube IFrame Player API rather than a bare autoplay iframe. The API's
+        // onReady callback lets us explicitly mute() + playVideo(), which starts playback
+        // reliably on WebKit versions (notably older Intel macOS) where the `autoplay=1`
+        // attribute alone is silently blocked — the reason the ad autoplayed on Apple
+        // Silicon but not on Intel. Muted playback satisfies WebKit's autoplay policy.
         let html = """
         <!DOCTYPE html>
         <html>
@@ -516,27 +525,38 @@ struct YouTubeWebView: NSViewRepresentable {
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-                iframe { 
-                    position: absolute; 
-                    top: 0; left: 0; 
-                    width: 100%; height: 100%; 
-                    border: none;
-                }
+                #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
             </style>
         </head>
         <body>
-            <iframe 
-                id="ytplayer"
-                src="\(embedURL)"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                referrerpolicy="strict-origin-when-cross-origin"
-                allowfullscreen>
-            </iframe>
+            <div id="player"></div>
+            <script src="https://www.youtube.com/iframe_api"></script>
+            <script>
+                var ytPlayer;
+                function onYouTubeIframeAPIReady() {
+                    ytPlayer = new YT.Player('player', {
+                        videoId: '\(videoID)',
+                        host: 'https://www.youtube-nocookie.com',
+                        playerVars: {
+                            autoplay: 1, mute: 1, controls: 0, loop: 1, playlist: '\(videoID)',
+                            modestbranding: 1, playsinline: 1, rel: 0, fs: 0,
+                            disablekb: 1, iv_load_policy: 3, cc_load_policy: 0
+                        },
+                        events: {
+                            onReady: function (e) { e.target.mute(); e.target.playVideo(); },
+                            onStateChange: function (e) {
+                                if (e.data === YT.PlayerState.ENDED) { ytPlayer.seekTo(0); ytPlayer.playVideo(); }
+                                // If autoplay was throttled, nudge it again once the API is live.
+                                if (e.data === YT.PlayerState.CUED) { ytPlayer.mute(); ytPlayer.playVideo(); }
+                            }
+                        }
+                    });
+                }
+            </script>
         </body>
         </html>
         """
-        
+
         webView.loadHTMLString(html, baseURL: URL(string: "https://divinelink.app"))
         return webView
     }

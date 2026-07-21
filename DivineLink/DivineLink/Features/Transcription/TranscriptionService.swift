@@ -56,6 +56,13 @@ class TranscriptionService: ObservableObject {
     @Published var error: TranscriptionError?
     @Published var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
 
+    /// True once the transcription ENGINE is actually ready to produce text.
+    /// - Apple STT: ready as soon as the recognition session starts.
+    /// - WhisperKit: ready only after the CoreML model finishes loading (which can take
+    ///   several seconds on first start), so the UI can show a "loading" state instead of
+    ///   a moving soundbar with an empty transcript.
+    @Published var engineReady = false
+
     // MARK: - Publishers
 
     /// Publishes new transcription segments for processing
@@ -160,6 +167,7 @@ class TranscriptionService: ObservableObject {
     /// Routes to the offline Whisper engine when enabled, else Apple's recognizer.
     func start(with audioCapture: AudioCaptureService) {
         audioCaptureService = audioCapture
+        engineReady = false   // engine is (re)starting — becomes true when it can produce text
         if shouldUseWhisper {
             startWhisper(with: audioCapture)
             return
@@ -212,6 +220,7 @@ class TranscriptionService: ObservableObject {
         setupAudioBufferSubscription(audioCapture: audioCapture)
 
         isTranscribing = true
+        engineReady = true   // Apple STT is ready as soon as the session is up
         print("✅ [Transcription] Transcription service started successfully")
     }
 
@@ -234,6 +243,9 @@ class TranscriptionService: ObservableObject {
         }
         whisper.onStateChange = { [weak self] running in
             self?.isTranscribing = running
+            // Whisper reports running == true only after the CoreML model has loaded, so
+            // this is the moment the engine can actually produce text.
+            self?.engineReady = running
         }
         whisper.onError = { [weak self] message in
             guard let self else { return }
@@ -283,6 +295,7 @@ class TranscriptionService: ObservableObject {
         audioSubscription = nil
 
         isTranscribing = false
+        engineReady = false
         isRestarting = false
         audioCaptureService = nil
     }
