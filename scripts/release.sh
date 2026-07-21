@@ -388,7 +388,11 @@ if [ -z "$SPARKLE_SIGN" ] || [ ! -f "$SPARKLE_SIGN" ]; then
     read -p "Enter EdDSA signature (or press Enter to skip): " SIGNATURE
 else
     log_info "Signing with Sparkle..."
-    SIGNATURE=$("$SPARKLE_SIGN" "$ZIP_PATH" 2>/dev/null || echo "")
+    # sign_update prints the full attribute string: sparkle:edSignature="XXX" length="YYY".
+    # The appcast template already adds sparkle:edSignature="..." and length="...", so we
+    # must extract ONLY the base64 signature here — otherwise the attribute gets
+    # double-wrapped and Sparkle rejects the update as unsigned.
+    SIGNATURE=$("$SPARKLE_SIGN" "$ZIP_PATH" 2>/dev/null | sed -n 's/.*edSignature="\([^"]*\)".*/\1/p' || echo "")
     
     if [ -z "$SIGNATURE" ]; then
         log_warning "Could not auto-sign. Please sign manually."
