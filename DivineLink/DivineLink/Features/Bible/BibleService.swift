@@ -37,6 +37,23 @@ struct BibleBook: Identifiable {
     let chapters: Int
 }
 
+// MARK: - Translation Model
+
+/// A Bible translation available in the app, backed by the `translations` metadata table.
+/// Drives the dynamic (free/premium-aware) version list — no more hardcoded arrays.
+struct Translation: Identifiable, Equatable {
+    let id: String          // abbreviation, e.g. "KJV" (matches verses.translation_id)
+    let name: String        // full name, e.g. "King James Version"
+    let year: Int
+    let isDefault: Bool
+    let isPremium: Bool
+    let isPublicDomain: Bool
+    let requiresAttribution: Bool
+    let attributionText: String?
+    let verseCount: Int
+    let sortOrder: Int
+}
+
 // MARK: - Bible Verse Model
 
 struct BibleVerse: Identifiable {
@@ -88,7 +105,12 @@ class BibleService: ObservableObject {
     @Published var isLoading = true  // Shows loading state
     @Published var loadingProgress: String = "Initialising..."
     @Published var error: BibleError?
+    /// Translation abbreviations that actually have verses installed (e.g. ["KJV","WEB","ASV"]).
+    /// Populated from the `translations` metadata table at load — never hardcoded.
     @Published var availableTranslations: [String] = []
+    /// Full metadata for each available translation (free/premium, attribution, etc.),
+    /// ordered by `sort_order`. The UI reads this to build the version switcher.
+    @Published var translations: [Translation] = []
     
     // Current translation (reads from UserDefaults)
     var currentTranslation: String {
@@ -151,6 +173,10 @@ class BibleService: ObservableObject {
         
         db = dbPointer
         
+        // Load the available translations from the metadata table
+        loadingProgress = "Loading translations..."
+        loadTranslations()
+
         // Load book cache
         loadingProgress = "Loading book index..."
         await loadBookCache()
@@ -185,9 +211,64 @@ class BibleService: ObservableObject {
         return 0
     }
     
+    /// Load available translations from the `translations` metadata table (Phase 0).
+    /// Only versions that actually have verses appear (the migration removes empty rows and
+    /// sets verse_count from real data). Falls back to a KJV-only list if the table can't be
+    /// read, so the app is never left with an empty picker.
+    private func loadTranslations() {
+        guard let db = db else { return }
+
+        let query = """
+            SELECT id, name, year, is_default, is_premium, is_public_domain,
+                   requires_attribution, attribution_text, verse_count, sort_order
+            FROM translations
+            WHERE verse_count > 0
+            ORDER BY sort_order, name
+        """
+        var statement: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else {
+            print("⚠️ [Bible] Could not read translations table — defaulting to KJV")
+            availableTranslations = ["KJV"]
+            translations = []
+            return
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var loaded: [Translation] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let idPtr = sqlite3_column_text(statement, 0),
+                  let namePtr = sqlite3_column_text(statement, 1) else { continue }
+            let attribution = sqlite3_column_text(statement, 7).map { String(cString: $0) }
+            loaded.append(Translation(
+                id: String(cString: idPtr),
+                name: String(cString: namePtr),
+                year: Int(sqlite3_column_int(statement, 2)),
+                isDefault: sqlite3_column_int(statement, 3) == 1,
+                isPremium: sqlite3_column_int(statement, 4) == 1,
+                isPublicDomain: sqlite3_column_int(statement, 5) == 1,
+                requiresAttribution: sqlite3_column_int(statement, 6) == 1,
+                attributionText: attribution,
+                verseCount: Int(sqlite3_column_int(statement, 8)),
+                sortOrder: Int(sqlite3_column_int(statement, 9))
+            ))
+        }
+
+        if loaded.isEmpty {
+            // Table missing/empty (older DB) — fall back so the picker is never blank.
+            availableTranslations = ["KJV"]
+            translations = []
+            print("⚠️ [Bible] translations table empty — defaulting to KJV")
+        } else {
+            translations = loaded
+            availableTranslations = loaded.map { $0.id }
+            print("📚 [Bible] Loaded \(loaded.count) translations: \(availableTranslations.joined(separator: ", "))")
+        }
+    }
+
     private func loadBookCache() async {
         guard let db = db else { return }
-        
+
         let query = "SELECT id, name, aliases FROM books"
         var statement: OpaquePointer?
         
@@ -258,8 +339,9 @@ class BibleService: ObservableObject {
     
     // MARK: - Verse Lookup
     
-    /// Get a single verse by reference
-    func getVerse(book: String, chapter: Int, verse: Int) -> BibleVerse? {
+    /// Get a single verse by reference.
+    /// Pass `translation` to override the global selection (per-card version switching).
+    func getVerse(book: String, chapter: Int, verse: Int, translation translationOverride: String? = nil) -> BibleVerse? {
         guard let db = db else { 
             print("❌ getVerse: Database not open")
             return nil 
@@ -277,7 +359,7 @@ class BibleService: ObservableObject {
             return nil
         }
         
-        let translation = currentTranslation
+        let translation = translationOverride ?? currentTranslation
         print("🔍 Looking up: \(book) \(chapter):\(verse) (\(translation)) bookId=\(bookId)")
         
         // Use parameterised query with translation embedded to avoid C string issues
@@ -321,15 +403,16 @@ class BibleService: ObservableObject {
         )
     }
     
-    /// Get a range of verses
-    func getVerseRange(book: String, chapter: Int, startVerse: Int, endVerse: Int) -> [BibleVerse] {
+    /// Get a range of verses.
+    /// Pass `translation` to override the global selection (per-card version switching).
+    func getVerseRange(book: String, chapter: Int, startVerse: Int, endVerse: Int, translation translationOverride: String? = nil) -> [BibleVerse] {
         guard let db = db else { return [] }
         
         guard let bookId = findBookId(name: book) else {
             return []
         }
         
-        let translation = currentTranslation
+        let translation = translationOverride ?? currentTranslation
         print("📖 getVerseRange: \(book) \(chapter):\(startVerse)-\(endVerse) (\(translation)) bookId=\(bookId)")
         
         // Use GROUP BY to ensure unique verses (in case of duplicates in database)
@@ -384,17 +467,19 @@ class BibleService: ObservableObject {
         return verses
     }
     
-    /// Get verse(s) from a scripture reference
-    func getVerses(from reference: ScriptureReference) -> [BibleVerse] {
+    /// Get verse(s) from a scripture reference.
+    /// Pass `translation` to override the global selection (per-card version switching).
+    func getVerses(from reference: ScriptureReference, translation translationOverride: String? = nil) -> [BibleVerse] {
         if let endVerse = reference.verseEnd, endVerse != reference.verseStart {
             return getVerseRange(
                 book: reference.book,
                 chapter: reference.chapter,
                 startVerse: reference.verseStart,
-                endVerse: endVerse
+                endVerse: endVerse,
+                translation: translationOverride
             )
         } else {
-            if let verse = getVerse(book: reference.book, chapter: reference.chapter, verse: reference.verseStart) {
+            if let verse = getVerse(book: reference.book, chapter: reference.chapter, verse: reference.verseStart, translation: translationOverride) {
                 return [verse]
             }
             return []

@@ -27,8 +27,24 @@ Deferred (licensed, needs $ + contract, Phase 3 only): NIV, NLT, NKJV, ESV.
   global default `@AppStorage("selectedTranslation")`, hardcoded `availableTranslations = ["KJV","ASV","WEB"]`.
 - Rebuild pipeline: `_bible_rebuild/rebuild.ts` (bun:sqlite) — imports + normalises + verifies.
 
-## Phase 0 — Data model (do first)
-Add a **`translations` metadata table** (stop hardcoding the list):
+## Phase 0 — Data model ✅ DONE (2026-07-22)
+Discovered a basic `translations` table already existed (`id, name, year, is_default`) — and it
+listed **YLT with zero verses** (would have broken version-switching), while the app ignored the
+table entirely (MainView used a hardcoded `["KJV","ASV","WEB"]`). Phase 0 fixed all of that:
+- **Migration** `_bible_rebuild/phase0_translations_migration.ts` (bun:sqlite, idempotent): added
+  columns `language, is_public_domain, is_premium, requires_attribution, attribution_text,
+  source_url, verse_count, sort_order`; set verse_count from real data; upserted metadata for
+  KJV/WEB/ASV (all PD, free); **removed the empty YLT row**. Backup goes to `_bible_rebuild/` (NOT
+  Resources — that folder auto-bundles into the app).
+- **App**: new `Translation` model in `BibleService`; `loadTranslations()` reads the table
+  (`WHERE verse_count > 0 ORDER BY sort_order`) into `@Published translations` + `availableTranslations`,
+  with a KJV fallback if the table can't be read. `MainView` now derives its version list from
+  `bible.availableTranslations` (observes `bible`) instead of the hardcoded array.
+- Result: version list is fully **dynamic + free/premium-aware ready**. Picker order is now
+  KJV, WEB, ASV (WEB promoted ahead of ASV as the more modern reader). BUILD SUCCEEDED.
+- Invariant established: **a version appears in the app iff it has verses** (verse_count > 0).
+
+### (original design note) Add a **`translations` metadata table** (stop hardcoding the list):
 `id (abbrev PK), name, language, year, is_public_domain (bool), is_premium (bool),
 requires_attribution (bool), attribution_text, source_url, verse_count, installed (bool)`.
 - App reads available versions from this table (filtered by free/premium + installed), not a hardcoded array.

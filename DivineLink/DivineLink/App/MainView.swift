@@ -29,12 +29,17 @@ struct MainView: View {
     // Bible translation selection
     @AppStorage("selectedTranslation") private var selectedTranslation: String = "KJV"
     
-    // Available translations (from database)
-    private let availableTranslations = ["KJV", "ASV", "WEB"]
-    
+    // Available translations — driven dynamically by the Bible metadata table (Phase 0),
+    // no longer a hardcoded list. Falls back to KJV if the table hasn't loaded yet.
+    private var availableTranslations: [String] {
+        bible.availableTranslations.isEmpty ? ["KJV"] : bible.availableTranslations
+    }
+
     // Observe nested objects directly for proper SwiftUI updates
     @ObservedObject private var audioCapture: AudioCaptureService
     @ObservedObject private var transcriptBuffer: TranscriptBuffer
+    // Observe the Bible service so the version picker updates when translations load.
+    @ObservedObject private var bible: BibleService
     // Shared audio-device manager — drives the quick mic selector in the status row.
     @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
     
@@ -43,6 +48,7 @@ struct MainView: View {
         _pipeline = StateObject(wrappedValue: pipeline)
         _audioCapture = ObservedObject(wrappedValue: pipeline.audioCapture)
         _transcriptBuffer = ObservedObject(wrappedValue: pipeline.transcriptBuffer)
+        _bible = ObservedObject(wrappedValue: pipeline.bible)
     }
     
     /// Currently selected verse from the list
