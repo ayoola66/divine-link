@@ -51,8 +51,23 @@ requires_attribution (bool), attribution_text, source_url, verse_count, installe
 - `verses.translation_id` FKs to `translations.id`.
 - Lets premium/downloadable packs register themselves without code changes.
 
-## Phase 1 — Add modern PD versions to the bundle (BSB, LSV)
-Biggest readability win, zero cost.
+## Phase 1 — Add modern PD versions (BSB, LSV) ✅ DONE (2026-07-23)
+- **Source:** helloao.org Free-Use Bible API (public-domain / free-use). BSB id=`BSB`, LSV id=`eng_lsv`.
+- **Importer:** `_bible_rebuild/phase1_import_bsb_lsv.ts` (bun, idempotent, disk-caches raw chapter
+  JSON under `_bible_rebuild/cache/`, concurrency 12, retry). Extracts verse text from helloao's
+  `content[]` (keeps strings, skips `{noteId}`/heading/lineBreak objects, collapses whitespace;
+  LSV's `[bracketed]` clarifying words preserved). Maps books by canonical order (ordinal=book_id,
+  matches DB books 1–66). Appends to live `verses`, registers rows in `translations` (Phase-0 schema).
+- **Result:** BSB **31,086** verses, LSV **31,104** verses. Both 66 books (book_id 1–66),
+  0 duplicates, 0 footnote/pilcrow contamination, 0 double-spaces/empty. John 3:16 clean+modern in
+  both. DB 16 MB → **26 MB**, integrity OK. Total 5 versions / 155,473 verses.
+- **App:** NO Swift change needed — Phase 0's dynamic loader (`verse_count>0`) picks them up
+  automatically. Picker now shows KJV, WEB, ASV, BSB, LSV.
+- **Flagged:** BSB/LSV are marked `is_premium=1` but translation **premium-gating is not wired yet**
+  → right now they show/work for everyone. Gating is a later app task (Phase 2/monetisation).
+  Attribution stored (`requires_attribution=1`) for both; needs an Attribution screen before public ship.
+
+### (original note) Biggest readability win, zero cost.
 1. Extend `_bible_rebuild/rebuild.ts` to pull **BSB** + **LSV** from clean sources
    (berean.bible / getbible.net v2 / wldeh JSON), mapped by canonical book ordinal (reuse existing mapping).
 2. **Normalise** (we hit this before): strip footnote markers, pilcrows (¶), bracket artefacts;
