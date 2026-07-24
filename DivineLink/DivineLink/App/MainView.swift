@@ -35,6 +35,16 @@ struct MainView: View {
         bible.availableTranslations.isEmpty ? ["KJV"] : bible.availableTranslations
     }
 
+    /// Translations the CURRENT user may pick. Free users see only free-tier versions
+    /// (KJV/WEB/ASV); premium/admin users see every installed version. Premium gating.
+    private var visibleTranslations: [String] {
+        let premium = subscriptionService.isPremium || subscriptionService.isAdmin
+        if premium { return availableTranslations }
+        let freeIds = Set(bible.translations.filter { !$0.isPremium }.map { $0.id })
+        let filtered = availableTranslations.filter { freeIds.contains($0) }
+        return filtered.isEmpty ? ["KJV"] : filtered
+    }
+
     // Observe nested objects directly for proper SwiftUI updates
     @ObservedObject private var audioCapture: AudioCaptureService
     @ObservedObject private var transcriptBuffer: TranscriptBuffer
@@ -160,6 +170,15 @@ struct MainView: View {
             // Configure panic button service with dependencies
             panicService.configure(ppClient: ppClient, buffer: pipeline.buffer)
 
+            // Premium: silently download the premium Bible versions not yet installed.
+            if subscriptionService.isPremium {
+                BibleVersionManager.shared.autoDownloadPremiumVersions()
+            }
+            // If a lapsed/free user still has a premium version selected, fall back to a visible one.
+            if !visibleTranslations.contains(selectedTranslation) {
+                selectedTranslation = visibleTranslations.first ?? "KJV"
+            }
+
             // First launch on Apple Silicon: offer the one-time enhanced-recognition download.
             // Intel Macs (isSupported == false) never see this — they use Apple Speech directly.
             // NB: the "offered" flag is flipped ONLY when the user explicitly declines (below),
@@ -196,6 +215,10 @@ struct MainView: View {
         }
         .onDisappear {
             removeF12KeyHandler()
+        }
+        .onChange(of: subscriptionService.isPremium) { _, isPremium in
+            // Premium just confirmed → auto-download premium Bible versions in the background.
+            if isPremium { BibleVersionManager.shared.autoDownloadPremiumVersions() }
         }
         .sheet(isPresented: $showModelDownload) {
             WhisperDownloadView(
@@ -840,7 +863,7 @@ struct MainView: View {
                                 onSelectVerse: { index in
                                     pipeline.buffer.setCurrentVerse(id: verse.id, index: index)
                                 },
-                                availableTranslations: availableTranslations,
+                                availableTranslations: visibleTranslations,
                                 onChangeTranslation: { translation in
                                     changeTranslation(verse, to: translation)
                                 }
@@ -1040,7 +1063,7 @@ struct MainView: View {
             
             // Bible pill - clickable to change translation
             Menu {
-                ForEach(availableTranslations, id: \.self) { translation in
+                ForEach(visibleTranslations, id: \.self) { translation in
                     Button {
                         selectedTranslation = translation
                     } label: {

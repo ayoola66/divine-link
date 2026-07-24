@@ -123,6 +123,11 @@ class BibleService: ObservableObject {
     
     // Cache for chapter counts per book (for validation)
     private var bookChapterCounts: [Int: Int] = [:]
+
+    /// Maps a translation_id to the SQLite schema that holds its verses:
+    /// "main" for bundled versions, "db_<ID>" for downloaded versions ATTACHed at runtime.
+    private var translationSchema: [String: String] = [:]
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialisation
     
@@ -173,9 +178,11 @@ class BibleService: ObservableObject {
         
         db = dbPointer
         
-        // Load the available translations from the metadata table
+        // ATTACH any downloaded premium version files, then enumerate all versions
         loadingProgress = "Loading translations..."
+        attachDownloadedVersions()
         loadTranslations()
+        observeVersionChanges()
 
         // Load book cache
         loadingProgress = "Loading book index..."
@@ -254,16 +261,102 @@ class BibleService: ObservableObject {
             ))
         }
 
-        if loaded.isEmpty {
+        // Bundled versions live in main.
+        for t in loaded { translationSchema[t.id] = "main" }
+
+        // Append downloaded versions that are ATTACHed (their metadata lives in their own
+        // version_meta table). These sit after the bundled ones by sort order.
+        var all = loaded
+        for (id, schema) in translationSchema where schema != "main" {
+            if all.contains(where: { $0.id == id }) { continue }
+            if let meta = readAttachedMeta(schema: schema, id: id) { all.append(meta) }
+        }
+        all.sort { $0.sortOrder < $1.sortOrder }
+
+        if all.isEmpty {
             // Table missing/empty (older DB) — fall back so the picker is never blank.
             availableTranslations = ["KJV"]
             translations = []
             print("⚠️ [Bible] translations table empty — defaulting to KJV")
         } else {
-            translations = loaded
-            availableTranslations = loaded.map { $0.id }
-            print("📚 [Bible] Loaded \(loaded.count) translations: \(availableTranslations.joined(separator: ", "))")
+            translations = all
+            availableTranslations = all.map { $0.id }
+            print("📚 [Bible] Loaded \(all.count) translations: \(availableTranslations.joined(separator: ", "))")
         }
+    }
+
+    /// Read a downloaded version's metadata from its ATTACHed `version_meta` table.
+    private func readAttachedMeta(schema: String, id: String) -> Translation? {
+        guard let db = db else { return nil }
+        let q = "SELECT name, year, verse_count, requires_attribution, attribution_text FROM \(schema).version_meta WHERE id = '\(id)'"
+        var st: OpaquePointer?
+        guard sqlite3_prepare_v2(db, q, -1, &st, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(st) }
+        guard sqlite3_step(st) == SQLITE_ROW, let namePtr = sqlite3_column_text(st, 0) else { return nil }
+        let attribution = sqlite3_column_text(st, 4).map { String(cString: $0) }
+        return Translation(
+            id: id,
+            name: String(cString: namePtr),
+            year: Int(sqlite3_column_int(st, 1)),
+            isDefault: false,
+            isPremium: true,   // downloadable versions are premium
+            isPublicDomain: true,
+            requiresAttribution: sqlite3_column_int(st, 3) == 1,
+            attributionText: attribution,
+            verseCount: Int(sqlite3_column_int(st, 2)),
+            sortOrder: 100 + (translationSchema.keys.sorted().firstIndex(of: id) ?? 0)
+        )
+    }
+
+    /// Sync ATTACHed downloaded-version files to what's actually on disk: attach newly-downloaded
+    /// files, detach any whose file was deleted. Sets/clears `translationSchema` "db_<ID>" entries.
+    /// Safe to call repeatedly.
+    private func attachDownloadedVersions() {
+        guard let db = db else { return }
+        let installed = Dictionary(uniqueKeysWithValues: BibleVersionManager.installedFiles().map { ($0.id, $0.url) })
+
+        // Detach versions whose file is gone.
+        for (id, schema) in translationSchema where schema != "main" {
+            if installed[id] == nil {
+                if sqlite3_exec(db, "DETACH DATABASE \(schema)", nil, nil, nil) == SQLITE_OK {
+                    print("📎 [Bible] Detached removed version \(id)")
+                }
+                translationSchema[id] = nil
+            }
+        }
+
+        // Attach newly-downloaded files.
+        for (id, url) in installed {
+            let alias = "db_\(id)"
+            if translationSchema[id] == alias { continue } // already attached
+            let safePath = url.path.replacingOccurrences(of: "'", with: "''")
+            if sqlite3_exec(db, "ATTACH DATABASE '\(safePath)' AS \(alias)", nil, nil, nil) == SQLITE_OK {
+                translationSchema[id] = alias
+                print("📎 [Bible] Attached downloaded version \(id)")
+            } else {
+                print("⚠️ [Bible] Failed to attach \(id): \(String(cString: sqlite3_errmsg(db)))")
+            }
+        }
+    }
+
+    /// Re-attach + refresh the version list whenever a download completes or a version is deleted.
+    private func observeVersionChanges() {
+        BibleVersionManager.shared.installedDidChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self else { return }
+                self.attachDownloadedVersions()
+                self.loadTranslations()
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Schema-qualified `verses` table reference for a translation ("verses" or "db_<ID>.verses").
+    private func versesRef(for translation: String) -> String {
+        if let schema = translationSchema[translation], schema != "main" {
+            return "\(schema).verses"
+        }
+        return "verses"
     }
 
     private func loadBookCache() async {
@@ -362,11 +455,12 @@ class BibleService: ObservableObject {
         let translation = translationOverride ?? currentTranslation
         print("🔍 Looking up: \(book) \(chapter):\(verse) (\(translation)) bookId=\(bookId)")
         
-        // Use parameterised query with translation embedded to avoid C string issues
+        // Use parameterised query with translation embedded to avoid C string issues.
+        // verses may live in main (bundled) or an ATTACHed db_<ID> (downloaded); books is in main.
         let query = """
-            SELECT v.id, v.text, b.name 
-            FROM verses v 
-            JOIN books b ON v.book_id = b.id 
+            SELECT v.id, v.text, b.name
+            FROM \(versesRef(for: translation)) v
+            JOIN books b ON v.book_id = b.id
             WHERE v.book_id = ? AND v.chapter = ? AND v.verse = ? AND v.translation_id = '\(translation)'
             """
         
@@ -415,11 +509,12 @@ class BibleService: ObservableObject {
         let translation = translationOverride ?? currentTranslation
         print("📖 getVerseRange: \(book) \(chapter):\(startVerse)-\(endVerse) (\(translation)) bookId=\(bookId)")
         
-        // Use GROUP BY to ensure unique verses (in case of duplicates in database)
+        // Use GROUP BY to ensure unique verses (in case of duplicates in database).
+        // verses may live in main (bundled) or an ATTACHed db_<ID> (downloaded); books is in main.
         let query = """
-            SELECT v.id, v.verse, v.text, b.name 
-            FROM verses v 
-            JOIN books b ON v.book_id = b.id 
+            SELECT v.id, v.verse, v.text, b.name
+            FROM \(versesRef(for: translation)) v
+            JOIN books b ON v.book_id = b.id
             WHERE v.book_id = ? AND v.chapter = ? AND v.verse >= ? AND v.verse <= ? AND v.translation_id = '\(translation)'
             GROUP BY v.book_id, v.chapter, v.verse
             ORDER BY v.verse

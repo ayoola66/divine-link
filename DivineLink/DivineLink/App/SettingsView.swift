@@ -24,6 +24,7 @@ private enum SettingsTab: Hashable {
     case propresenter
     case pastors
     case display
+    case bibleVersions
     case premium
     case updates
     case history
@@ -173,6 +174,8 @@ struct SettingsView: View {
                 .tag(SettingsTab.pastors)
             Label("Display", systemImage: "textformat.size")
                 .tag(SettingsTab.display)
+            Label("Bible Versions", systemImage: "books.vertical")
+                .tag(SettingsTab.bibleVersions)
             // Admin tab: ONLY visible when authenticated AND user is admin.
             if authService.isAuthenticated && subscriptionService.isAdmin {
                 Label("Admin", systemImage: "wrench.and.screwdriver")
@@ -197,6 +200,7 @@ struct SettingsView: View {
             case .propresenter: ProPresenterSettingsTab()
             case .pastors: PastorProfilesTab()
             case .display: AccessibilitySettingsTab()
+            case .bibleVersions: BibleVersionsTab()
             case .premium: SubscriptionSettingsTab()
             case .updates: UpdatesSettingsTab()
             case .history: ServiceHistoryView()
@@ -689,6 +693,126 @@ struct ProPresenterSettingsTab: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
+            }
+        }
+    }
+}
+
+// MARK: - Bible Versions Tab
+
+/// Manage Bible translations: shows bundled versions and lets premium users download / delete the
+/// extra premium versions (YouVersion-style: progress %, green ✓, delete). Free users see the
+/// premium versions locked with an upgrade hint.
+struct BibleVersionsTab: View {
+    @ObservedObject private var manager = BibleVersionManager.shared
+    @ObservedObject private var subscription = SubscriptionService.shared
+
+    private var isPremium: Bool { subscription.isPremium || subscription.isAdmin }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(BibleVersionManager.bundledVersions) { v in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(v.name)
+                            Text(v.id).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if v.isPremium && !isPremium {
+                            Label("Premium", systemImage: "lock.fill")
+                                .font(.caption).foregroundStyle(.orange)
+                        } else {
+                            Label("Included", systemImage: "checkmark.circle.fill")
+                                .font(.caption).foregroundStyle(.green)
+                        }
+                    }
+                }
+            } header: {
+                Text("Included with the app")
+            } footer: {
+                if !isPremium {
+                    Text("Premium versions are unlocked with a subscription and download automatically once you upgrade.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
+                ForEach(manager.catalog) { v in
+                    versionRow(v)
+                }
+                if manager.catalog.isEmpty {
+                    Text("No additional versions available.").foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Premium — downloadable")
+            } footer: {
+                Text("On-device once downloaded; works offline. Manage storage by deleting versions you don't use.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Attributions") {
+                ForEach(attributions, id: \.self) { credit in
+                    Text(credit)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .task { await manager.refreshCatalog() }
+    }
+
+    /// All required credit lines: bundled (BSB/LSV) + any downloadable version that asks for one.
+    private var attributions: [String] {
+        var credits = BibleVersionManager.bundledAttributions
+        for v in manager.catalog where v.requiresAttribution || (v.attributionText?.isEmpty == false) {
+            if let t = v.attributionText, !t.isEmpty { credits.append(t) }
+        }
+        return credits
+    }
+
+    @ViewBuilder
+    private func versionRow(_ v: BibleVersionManager.CatalogVersion) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(v.name)
+                Text("\(v.id) · \(v.year > 0 ? String(v.year) : "")").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+
+            switch manager.state(for: v.id) {
+            case .installed:
+                Label("Installed", systemImage: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+                Button(role: .destructive) { manager.delete(v.id) } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("Delete this version")
+
+            case let .downloading(fraction):
+                HStack(spacing: 6) {
+                    ProgressView(value: fraction).frame(width: 80)
+                    Text("\(Int(fraction * 100))%").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                }
+
+            case .failed(let msg):
+                if isPremium {
+                    Button("Retry") { Task { await manager.download(v.id) } }.buttonStyle(.borderless)
+                }
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help(msg)
+
+            case .notInstalled:
+                if isPremium {
+                    Button("Download") { Task { await manager.download(v.id) } }
+                        .buttonStyle(.borderless)
+                } else {
+                    Label("Premium", systemImage: "lock.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
         }
     }
