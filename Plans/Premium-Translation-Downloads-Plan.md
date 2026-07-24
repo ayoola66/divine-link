@@ -80,9 +80,15 @@ model — and mirrors exactly what `WhisperModelManager` already does for the sp
   BBE 31,102. Hosted on Netlify `/bibles/*.sqlite` (~5 MB each, immutable cache) + `/bibles/catalog.json`
   manifest (id, tier, verse_count, file_size, sha256, download_url). `.sqlite` header rule added to
   netlify.toml. NOT bundled — initial app stays 5 versions.
-- ⏭ **Remaining (Swift app layer):** catalog read/merge → `BibleVersionManager` (download/delete/
-  progress, ATTACH routing in BibleService) → premium gating in picker → auto-download on premium →
-  Settings→Bible Versions screen → Attribution screen.
+- ✅ **Swift app layer DONE (2026-07-24, commit bc5770a).** `BibleVersionManager` (catalog bundled-
+  fallback + remote catalog.json merge, download/delete w/ byte-progress, install state from disk,
+  auto-download-on-premium). `BibleService` ATTACHes downloaded files (`db_<ID>`), detaches on delete,
+  routes verse queries via `versesRef()`, merges bundled + attached `version_meta` in loadTranslations.
+  `MainView` premium gating (free = free-tier only; premium = all) + auto-download hook. `SettingsView`
+  → **Bible Versions** tab (Included / Premium-downloadable, %/✓/delete) + Attributions section.
+  Verified: full BUILD SUCCEEDED; ATTACH cross-DB routed query returns WEBBE John 3:16 + books JOIN.
+- ⏭ **Only owner-verifiable step left:** run the app, upgrade to premium, watch the 5 versions
+  auto-download in Settings→Bible Versions, switch to a downloaded version on a verse card. Then ship 1.6.0.
 
 ## Phased implementation (when approved)
 1. **DB/catalog model:** create Supabase `bible_versions` table + seed rows for all 10; add the
