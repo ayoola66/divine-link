@@ -184,10 +184,9 @@ struct MainView: View {
             // Configure panic button service with dependencies
             panicService.configure(ppClient: ppClient, buffer: pipeline.buffer)
 
-            // Premium (or admin, for testing): silently download the premium versions not installed.
-            if hasPremiumAccess {
-                BibleVersionManager.shared.autoDownloadPremiumVersions()
-            }
+            // Downloads are ALWAYS user-initiated from Settings → Bible Versions (respecting
+            // users who don't want the storage). We just refresh the catalog here.
+            Task { await BibleVersionManager.shared.refreshCatalog() }
             // If a lapsed/free user still has a premium version selected, fall back to a visible one.
             if !visibleTranslations.contains(selectedTranslation) {
                 selectedTranslation = visibleTranslations.first ?? "KJV"
@@ -229,14 +228,6 @@ struct MainView: View {
         }
         .onDisappear {
             removeF12KeyHandler()
-        }
-        .onChange(of: subscriptionService.isPremium) { _, isPremium in
-            // Premium just confirmed → auto-download premium Bible versions in the background.
-            if isPremium { BibleVersionManager.shared.autoDownloadPremiumVersions() }
-        }
-        .onChange(of: subscriptionService.isAdmin) { _, isAdmin in
-            // Admin access granted (testing) → same auto-download.
-            if isAdmin { BibleVersionManager.shared.autoDownloadPremiumVersions() }
         }
         .onChange(of: authService.isAuthenticated) { _, _ in
             // Signing in/out changes which versions are visible — reset selection if it's now hidden.

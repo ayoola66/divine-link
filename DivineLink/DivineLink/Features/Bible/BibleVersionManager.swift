@@ -208,20 +208,10 @@ final class BibleVersionManager: ObservableObject {
         }
     }
 
-    /// Remove a downloaded version (premium users can free space).
+    /// Remove a downloaded version (users can free space).
     func delete(_ id: String) {
         try? FileManager.default.removeItem(at: Self.fileURL(for: id))
         state[id] = .notInstalled
         installedDidChange.send()
-    }
-
-    /// Called when premium is confirmed: silently download any premium version not yet installed.
-    func autoDownloadPremiumVersions() {
-        Task {
-            await refreshCatalog()
-            for v in catalog where v.tier == "premium" && !Self.isInstalled(v.id) {
-                await download(v.id)   // sequential to keep it gentle in the background
-            }
-        }
     }
 }
