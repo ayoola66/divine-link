@@ -35,11 +35,16 @@ struct MainView: View {
         bible.availableTranslations.isEmpty ? ["KJV"] : bible.availableTranslations
     }
 
+    /// Whether the current user gets premium content (paying subscriber OR admin, for testing).
+    /// Single source of truth used by both the version gate and the auto-download hooks.
+    private var hasPremiumAccess: Bool {
+        subscriptionService.isPremium || subscriptionService.isAdmin
+    }
+
     /// Translations the CURRENT user may pick. Free users see only free-tier versions
     /// (KJV/WEB/ASV); premium/admin users see every installed version. Premium gating.
     private var visibleTranslations: [String] {
-        let premium = subscriptionService.isPremium || subscriptionService.isAdmin
-        if premium { return availableTranslations }
+        if hasPremiumAccess { return availableTranslations }
         let freeIds = Set(bible.translations.filter { !$0.isPremium }.map { $0.id })
         let filtered = availableTranslations.filter { freeIds.contains($0) }
         return filtered.isEmpty ? ["KJV"] : filtered
@@ -170,8 +175,8 @@ struct MainView: View {
             // Configure panic button service with dependencies
             panicService.configure(ppClient: ppClient, buffer: pipeline.buffer)
 
-            // Premium: silently download the premium Bible versions not yet installed.
-            if subscriptionService.isPremium {
+            // Premium (or admin, for testing): silently download the premium versions not installed.
+            if hasPremiumAccess {
                 BibleVersionManager.shared.autoDownloadPremiumVersions()
             }
             // If a lapsed/free user still has a premium version selected, fall back to a visible one.
@@ -219,6 +224,10 @@ struct MainView: View {
         .onChange(of: subscriptionService.isPremium) { _, isPremium in
             // Premium just confirmed → auto-download premium Bible versions in the background.
             if isPremium { BibleVersionManager.shared.autoDownloadPremiumVersions() }
+        }
+        .onChange(of: subscriptionService.isAdmin) { _, isAdmin in
+            // Admin access granted (testing) → same auto-download.
+            if isAdmin { BibleVersionManager.shared.autoDownloadPremiumVersions() }
         }
         .sheet(isPresented: $showModelDownload) {
             WhisperDownloadView(
