@@ -39,8 +39,18 @@ struct BibleBook: Identifiable {
 
 // MARK: - Translation Model
 
+/// Access tier for a translation — drives the 3-tier gate.
+/// - `.free`: available to everyone, no login (KJV/WEB/ASV).
+/// - `.registered`: unlocked by registering an email, still free (BSB/LSV — bundled, no download).
+/// - `.premium`: requires a paid subscription (the downloadable versions).
+enum AccessTier: String {
+    case free
+    case registered
+    case premium
+}
+
 /// A Bible translation available in the app, backed by the `translations` metadata table.
-/// Drives the dynamic (free/premium-aware) version list — no more hardcoded arrays.
+/// Drives the dynamic (tier-aware) version list — no more hardcoded arrays.
 struct Translation: Identifiable, Equatable {
     let id: String          // abbreviation, e.g. "KJV" (matches verses.translation_id)
     let name: String        // full name, e.g. "King James Version"
@@ -52,6 +62,7 @@ struct Translation: Identifiable, Equatable {
     let attributionText: String?
     let verseCount: Int
     let sortOrder: Int
+    var accessTier: AccessTier = .free
 }
 
 // MARK: - Bible Verse Model
@@ -247,17 +258,21 @@ class BibleService: ObservableObject {
             guard let idPtr = sqlite3_column_text(statement, 0),
                   let namePtr = sqlite3_column_text(statement, 1) else { continue }
             let attribution = sqlite3_column_text(statement, 7).map { String(cString: $0) }
+            let isPremium = sqlite3_column_int(statement, 4) == 1
+            // Bundled premium versions (BSB/LSV) are the REGISTERED-tier reward (unlocked by
+            // registering an email, still free). Bundled non-premium are fully free.
             loaded.append(Translation(
                 id: String(cString: idPtr),
                 name: String(cString: namePtr),
                 year: Int(sqlite3_column_int(statement, 2)),
                 isDefault: sqlite3_column_int(statement, 3) == 1,
-                isPremium: sqlite3_column_int(statement, 4) == 1,
+                isPremium: isPremium,
                 isPublicDomain: sqlite3_column_int(statement, 5) == 1,
                 requiresAttribution: sqlite3_column_int(statement, 6) == 1,
                 attributionText: attribution,
                 verseCount: Int(sqlite3_column_int(statement, 8)),
-                sortOrder: Int(sqlite3_column_int(statement, 9))
+                sortOrder: Int(sqlite3_column_int(statement, 9)),
+                accessTier: isPremium ? .registered : .free
             ))
         }
 
@@ -304,7 +319,8 @@ class BibleService: ObservableObject {
             requiresAttribution: sqlite3_column_int(st, 3) == 1,
             attributionText: attribution,
             verseCount: Int(sqlite3_column_int(st, 2)),
-            sortOrder: 100 + (translationSchema.keys.sorted().firstIndex(of: id) ?? 0)
+            sortOrder: 100 + (translationSchema.keys.sorted().firstIndex(of: id) ?? 0),
+            accessTier: .premium   // downloaded versions require a paid subscription
         )
     }
 

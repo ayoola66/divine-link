@@ -41,12 +41,21 @@ struct MainView: View {
         subscriptionService.isPremium || subscriptionService.isAdmin
     }
 
-    /// Translations the CURRENT user may pick. Free users see only free-tier versions
-    /// (KJV/WEB/ASV); premium/admin users see every installed version. Premium gating.
+    /// Access tiers the CURRENT user is entitled to (3-tier gate):
+    /// - anonymous (not signed in) → free only
+    /// - registered free (signed in, no subscription) → free + registered (BSB/LSV)
+    /// - premium / admin → everything
+    private var allowedTiers: Set<AccessTier> {
+        if hasPremiumAccess { return [.free, .registered, .premium] }
+        if authService.isAuthenticated { return [.free, .registered] }
+        return [.free]
+    }
+
+    /// Translations the CURRENT user may pick, filtered by their entitled tiers.
     private var visibleTranslations: [String] {
-        if hasPremiumAccess { return availableTranslations }
-        let freeIds = Set(bible.translations.filter { !$0.isPremium }.map { $0.id })
-        let filtered = availableTranslations.filter { freeIds.contains($0) }
+        let allowed = allowedTiers
+        let allowedIds = Set(bible.translations.filter { allowed.contains($0.accessTier) }.map { $0.id })
+        let filtered = availableTranslations.filter { allowedIds.contains($0) }
         return filtered.isEmpty ? ["KJV"] : filtered
     }
 
@@ -228,6 +237,12 @@ struct MainView: View {
         .onChange(of: subscriptionService.isAdmin) { _, isAdmin in
             // Admin access granted (testing) → same auto-download.
             if isAdmin { BibleVersionManager.shared.autoDownloadPremiumVersions() }
+        }
+        .onChange(of: authService.isAuthenticated) { _, _ in
+            // Signing in/out changes which versions are visible — reset selection if it's now hidden.
+            if !visibleTranslations.contains(selectedTranslation) {
+                selectedTranslation = visibleTranslations.first ?? "KJV"
+            }
         }
         .sheet(isPresented: $showModelDownload) {
             WhisperDownloadView(

@@ -706,8 +706,11 @@ struct ProPresenterSettingsTab: View {
 struct BibleVersionsTab: View {
     @ObservedObject private var manager = BibleVersionManager.shared
     @ObservedObject private var subscription = SubscriptionService.shared
+    @ObservedObject private var auth = AuthService.shared
 
     private var isPremium: Bool { subscription.isPremium || subscription.isAdmin }
+    /// Registered = signed in with an email (unlocks BSB/LSV free), or already premium.
+    private var isRegistered: Bool { auth.isAuthenticated || isPremium }
 
     var body: some View {
         Form {
@@ -719,9 +722,11 @@ struct BibleVersionsTab: View {
                             Text(v.id).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if v.isPremium && !isPremium {
-                            Label("Premium", systemImage: "lock.fill")
-                                .font(.caption).foregroundStyle(.orange)
+                        // v.isPremium here means the REGISTERED-tier reward (BSB/LSV): free, but
+                        // requires signing in with an email. KJV/WEB/ASV are always included.
+                        if v.isPremium && !isRegistered {
+                            Label("Sign in — free", systemImage: "person.crop.circle.badge.plus")
+                                .font(.caption).foregroundStyle(.blue)
                         } else {
                             Label("Included", systemImage: "checkmark.circle.fill")
                                 .font(.caption).foregroundStyle(.green)
@@ -731,8 +736,8 @@ struct BibleVersionsTab: View {
             } header: {
                 Text("Included with the app")
             } footer: {
-                if !isPremium {
-                    Text("Premium versions are unlocked with a subscription and download automatically once you upgrade.")
+                if !isRegistered {
+                    Text("Register a free account to unlock 2 more versions (Berean Standard Bible and Literal Standard Version) — no payment needed.")
                         .foregroundStyle(.secondary)
                 }
             }
