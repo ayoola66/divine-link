@@ -213,6 +213,11 @@ struct AdSidebarView: View {
                 alignment: .leading
             )
         }
+        // The sidebar "Remove Ads" button sets showPaywall; present the paywall here so it
+        // actually appears (this view had no sheet, which is why the button did nothing).
+        .sheet(isPresented: $adManager.showPaywall) {
+            PaywallView()
+        }
     }
 }
 

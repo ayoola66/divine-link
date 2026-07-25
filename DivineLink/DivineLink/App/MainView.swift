@@ -421,14 +421,14 @@ struct MainView: View {
                     showLoginSheet = true
                 } label: {
                     HStack {
-                        Image(systemName: "person.circle.fill")
-                        Text("Sign In")
+                        Image(systemName: "person.crop.circle.badge.plus")
+                        Text("Sign Up Free")
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.blue)
                 .controlSize(.small)
-                .help("Sign in to access premium features and sync across devices")
+                .help("Register free with your email to unlock 2 extra Bible versions — or sign in if you already have an account")
             }
             
             Spacer()

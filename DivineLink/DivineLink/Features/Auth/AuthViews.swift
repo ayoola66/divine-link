@@ -31,12 +31,12 @@ struct LoginView: View {
                     .font(.system(size: 60))
                     .foregroundStyle(.orange)
                 
-                Text(showOTPEntry ? "Enter Verification Code" : "Sign In")
+                Text(showOTPEntry ? "Enter Verification Code" : "Sign Up Free or Sign In")
                     .font(.title.bold())
-                
-                Text(showOTPEntry 
+
+                Text(showOTPEntry
                      ? "We've sent a 6-digit code to \(email)"
-                     : "Sign in to access premium features and sync across devices")
+                     : "Enter your email — new or returning. We'll send a code. A free account unlocks 2 extra Bible versions; no password, no payment.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

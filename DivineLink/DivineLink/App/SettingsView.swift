@@ -856,20 +856,24 @@ struct AccountSettingsTab: View {
                     .font(.system(size: 60))
                     .foregroundStyle(.secondary)
                 
-                Text("Sign In to Divine Link")
+                Text("Create your free account")
                     .font(.title2.bold())
-                
-                Text("Create an account to access premium features, sync across devices, and manage your subscription.")
+
+                Text("Register free with just your email to unlock 2 extra Bible versions (Berean Standard Bible & Literal Standard Version). No payment needed — we'll email you a code to sign in.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
-                
-                Button("Sign In") {
+
+                Button("Sign Up Free / Sign In") {
                     showLoginSheet = true
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
+
+                Text("Already have an account? The same button signs you in.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
             .padding()
             .sheet(isPresented: $showLoginSheet) {
