@@ -40,6 +40,8 @@ struct LoginView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)   // wrap fully, never truncate
+                    .padding(.horizontal, 4)
             }
             
             // Form
@@ -76,7 +78,8 @@ struct LoginView: View {
             }
         }
         .padding()
-        .frame(width: 380, height: 450)
+        .frame(width: 380)
+        .frame(minHeight: 500)
         .onChange(of: authService.isAuthenticated) { _, isAuth in
             if isAuth {
                 dismiss()

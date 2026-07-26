@@ -136,8 +136,20 @@ final class AuthService: ObservableObject {
                 print("✅ OTP sent successfully to \(email)")
             } else {
                 let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-                print("❌ OTP request failed: \(errorBody)")
-                throw AuthError.serverError("Failed to send verification code. Please try again.")
+                print("❌ OTP request failed (\(httpResponse.statusCode)): \(errorBody)")
+                // Surface the ACTUAL cause instead of a generic message.
+                let errorCode = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error_code"] as? String
+                let message: String
+                if httpResponse.statusCode == 429 || errorCode == "over_email_send_rate_limit" {
+                    message = "Too many code requests right now. Please wait a few minutes and try again."
+                } else if errorCode == "signup_disabled" {
+                    message = "New sign-ups are temporarily unavailable. Please try again later."
+                } else if let serverMsg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["msg"] as? String, !serverMsg.isEmpty {
+                    message = serverMsg
+                } else {
+                    message = "Couldn't send the verification code. Please check your connection and try again."
+                }
+                throw AuthError.serverError(message)
             }
         } catch let error as AuthError {
             throw error
