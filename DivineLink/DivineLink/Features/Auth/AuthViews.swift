@@ -288,6 +288,7 @@ struct AccountView: View {
     @State private var isSavingProfile = false
     @State private var billingMessage: String?
     @State private var isOpeningBilling = false
+    @State private var stripeCustomer: SubscriptionService.StripeCustomer?
 
     private var isPremium: Bool { subscriptionService.isPremium || subscriptionService.isAdmin }
 
@@ -355,6 +356,24 @@ struct AccountView: View {
             }
             .padding()
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+
+            // Billing details pulled FROM Stripe (read-only) — what they entered at checkout.
+            if isPremium, let cust = stripeCustomer,
+               (cust.name != nil || cust.email != nil || !cust.addressLines.isEmpty) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Billing contact").font(.headline)
+                    Text("From your Stripe billing account").font(.caption2).foregroundStyle(.tertiary)
+                    if let name = cust.name, !name.isEmpty { Text(name).font(.subheadline) }
+                    if let email = cust.email, !email.isEmpty { Text(email).font(.caption).foregroundStyle(.secondary) }
+                    if let phone = cust.phone, !phone.isEmpty { Text(phone).font(.caption).foregroundStyle(.secondary) }
+                    ForEach(cust.addressLines, id: \.self) { line in
+                        Text(line).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+            }
 
             // Manage Billing (premium only) → Stripe hosted portal
             if isPremium {
@@ -430,6 +449,7 @@ struct AccountView: View {
             Task {
                 await deviceManager.fetchDevices()
             }
+            if isPremium { Task { await loadStripeDetails() } }
         }
         .onChange(of: authService.currentUser?.id) { _, _ in loadProfileFields() }
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
@@ -476,6 +496,18 @@ struct AccountView: View {
         defer { isOpeningBilling = false }
         if let error = await subscriptionService.openBillingPortal() {
             billingMessage = error
+        }
+    }
+
+    /// Pull billing details from Stripe for display; if the in-app name is still empty, pre-fill it
+    /// from the Stripe name (non-destructive — never overwrites something the user typed).
+    private func loadStripeDetails() async {
+        guard let cust = await subscriptionService.fetchStripeCustomer() else { return }
+        stripeCustomer = cust
+        if firstName.isEmpty && lastName.isEmpty, let fullName = cust.name, !fullName.isEmpty {
+            let parts = fullName.split(separator: " ", maxSplits: 1).map(String.init)
+            firstName = parts.first ?? ""
+            lastName = parts.count > 1 ? parts[1] : ""
         }
     }
 

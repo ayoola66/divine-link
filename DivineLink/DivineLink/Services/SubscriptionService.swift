@@ -381,6 +381,49 @@ final class SubscriptionService: ObservableObject {
         return getCheckoutURL(tier: .grace, billingPeriod: .monthly)
     }
 
+    /// Billing details pulled from Stripe (read-only display).
+    struct StripeCustomer {
+        let name: String?
+        let email: String?
+        let phone: String?
+        let addressLines: [String]   // formatted, non-empty lines only
+    }
+
+    /// Pull the premium user's billing details from Stripe (name/email/address entered at checkout)
+    /// via /api/stripe-customer, so the app can show them without re-entry. Returns nil if
+    /// unavailable (not premium, no customer, offline, or portal not set up).
+    func fetchStripeCustomer() async -> StripeCustomer? {
+        guard let token = AuthService.shared.accessToken,
+              let customerId = subscription?.stripeCustomerId, !customerId.isEmpty else { return nil }
+        let url = URL(string: "https://divinelink.netlify.app/api/stripe-customer")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["customerId": customerId])
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            let addr = json["address"] as? [String: Any]
+            let lines = [
+                addr?["line1"] as? String,
+                addr?["line2"] as? String,
+                [addr?["city"] as? String, addr?["postal_code"] as? String].compactMap { $0 }.joined(separator: " "),
+                addr?["state"] as? String,
+                addr?["country"] as? String,
+            ].compactMap { $0 }.filter { !$0.isEmpty }
+            return StripeCustomer(
+                name: json["name"] as? String,
+                email: json["email"] as? String,
+                phone: json["phone"] as? String,
+                addressLines: lines
+            )
+        } catch {
+            return nil
+        }
+    }
+
     /// Open Stripe's hosted Billing Portal so a premium user can manage billing address, payment
     /// method, invoices, and cancellation. Calls the /api/stripe-portal Netlify function with the
     /// user's Supabase token + their Stripe customer id, then opens the returned URL in the browser.
