@@ -279,20 +279,37 @@ struct AccountView: View {
     @ObservedObject private var subscriptionService = SubscriptionService.shared
     @ObservedObject private var deviceManager = DeviceManager.shared
     @State private var showSignOutConfirmation = false
-    
+
+    // Editable profile fields
+    @State private var firstName = ""
+    @State private var lastName = ""
+    @State private var church = ""
+    @State private var profileMessage: String?
+    @State private var isSavingProfile = false
+    @State private var billingMessage: String?
+    @State private var isOpeningBilling = false
+
+    private var isPremium: Bool { subscriptionService.isPremium || subscriptionService.isAdmin }
+
     var body: some View {
+        ScrollView {
         VStack(spacing: 20) {
             // Profile Header
             VStack(spacing: 8) {
                 Image(systemName: "person.circle.fill")
                     .font(.system(size: 60))
                     .foregroundStyle(.orange)
-                
+
                 if let user = authService.currentUser {
+                    if !firstName.isEmpty || !lastName.isEmpty {
+                        Text("\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces))
+                            .font(.headline)
+                    }
                     Text(user.email)
-                        .font(.headline)
+                        .font(firstName.isEmpty && lastName.isEmpty ? .headline : .subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                
+
                 // Subscription badge — shows tier name + level
                 HStack(spacing: 4) {
                     Image(systemName: subscriptionService.isPremium ? "star.fill" : "star")
@@ -307,8 +324,61 @@ struct AccountView: View {
                 )
                 .foregroundStyle(subscriptionBadgeColour)
             }
-            
+
             Divider()
+
+            // Profile editing (name for everyone; church for premium)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Your Details").font(.headline)
+                HStack {
+                    TextField("First name", text: $firstName)
+                    TextField("Last name", text: $lastName)
+                }
+                .textFieldStyle(.roundedBorder)
+
+                if isPremium {
+                    TextField("Church name", text: $church)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                HStack {
+                    Button {
+                        Task { await saveProfile() }
+                    } label: {
+                        if isSavingProfile { ProgressView().controlSize(.small) } else { Text("Save details") }
+                    }
+                    .disabled(isSavingProfile)
+                    if let msg = profileMessage {
+                        Text(msg).font(.caption).foregroundStyle(msg.hasPrefix("✓") ? .green : .red)
+                    }
+                }
+            }
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+
+            // Manage Billing (premium only) → Stripe hosted portal
+            if isPremium {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Billing").font(.headline)
+                    Text("Update your billing address, payment method, invoices, or cancel — on Stripe's secure page.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        Task { await openBilling() }
+                    } label: {
+                        HStack {
+                            Image(systemName: "creditcard")
+                            if isOpeningBilling { ProgressView().controlSize(.small) } else { Text("Manage Billing") }
+                        }
+                    }
+                    .disabled(isOpeningBilling)
+                    if let msg = billingMessage {
+                        Text(msg).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+            }
             
             // Devices Section
             VStack(alignment: .leading, spacing: 12) {
@@ -342,8 +412,6 @@ struct AccountView: View {
                     .fill(Color(nsColor: .controlBackgroundColor))
             )
             
-            Spacer()
-            
             // Sign Out Button
             Button(role: .destructive) {
                 showSignOutConfirmation = true
@@ -352,14 +420,18 @@ struct AccountView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .padding(.top, 8)
         }
         .padding()
-        .frame(width: 380, height: 500)
+        }
+        .frame(width: 380, height: 540)
         .onAppear {
+            loadProfileFields()
             Task {
                 await deviceManager.fetchDevices()
             }
         }
+        .onChange(of: authService.currentUser?.id) { _, _ in loadProfileFields() }
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
             Button("Sign Out", role: .destructive) {
                 Task {
@@ -372,7 +444,41 @@ struct AccountView: View {
             Text("Are you sure you want to sign out?")
         }
     }
-    
+
+    // MARK: - Profile actions
+
+    /// Pull the current user's saved details into the editable fields (auto-populated on login).
+    private func loadProfileFields() {
+        firstName = authService.currentUser?.firstName ?? ""
+        lastName = authService.currentUser?.lastName ?? ""
+        church = authService.currentUser?.church ?? ""
+    }
+
+    private func saveProfile() async {
+        isSavingProfile = true
+        profileMessage = nil
+        defer { isSavingProfile = false }
+        do {
+            try await authService.updateProfile(
+                firstName: firstName.trimmingCharacters(in: .whitespaces),
+                lastName: lastName.trimmingCharacters(in: .whitespaces),
+                church: isPremium ? church.trimmingCharacters(in: .whitespaces) : nil
+            )
+            profileMessage = "✓ Saved"
+        } catch {
+            profileMessage = (error as? AuthError)?.errorDescription ?? "Couldn't save. Try again."
+        }
+    }
+
+    private func openBilling() async {
+        isOpeningBilling = true
+        billingMessage = nil
+        defer { isOpeningBilling = false }
+        if let error = await subscriptionService.openBillingPortal() {
+            billingMessage = error
+        }
+    }
+
     // MARK: - Badge Helpers
     
     /// Badge text: "Admin" for admin; otherwise "Love, Premium" / "Grace, Premium" / "Mercy, Free"

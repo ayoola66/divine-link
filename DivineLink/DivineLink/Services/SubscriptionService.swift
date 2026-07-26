@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import AppKit  // NSWorkspace for opening the Stripe billing portal
 
 // MARK: - Subscription Models
 
@@ -378,6 +379,37 @@ final class SubscriptionService: ObservableObject {
     /// Legacy method for backward compatibility - defaults to Grace monthly
     func getCheckoutURL() -> URL? {
         return getCheckoutURL(tier: .grace, billingPeriod: .monthly)
+    }
+
+    /// Open Stripe's hosted Billing Portal so a premium user can manage billing address, payment
+    /// method, invoices, and cancellation. Calls the /api/stripe-portal Netlify function with the
+    /// user's Supabase token + their Stripe customer id, then opens the returned URL in the browser.
+    /// Returns nil on success, or an error message to show the user.
+    @discardableResult
+    func openBillingPortal() async -> String? {
+        guard let token = AuthService.shared.accessToken else { return "Please sign in first." }
+        guard let customerId = subscription?.stripeCustomerId, !customerId.isEmpty else {
+            return "No billing account found. This is only available after a paid subscription."
+        }
+        let url = URL(string: "https://divinelink.netlify.app/api/stripe-portal")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["customerId": customerId])
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return "Couldn't reach the billing service." }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if http.statusCode == 200, let urlString = json?["url"] as? String, let portalURL = URL(string: urlString) {
+                NSWorkspace.shared.open(portalURL)
+                return nil
+            }
+            return (json?["error"] as? String) ?? "Couldn't open the billing portal. Please try again."
+        } catch {
+            return "Network error opening billing portal. Please try again."
+        }
     }
     
     /// Billing period options

@@ -8,11 +8,54 @@ struct AuthUser: Codable {
     let id: String
     let email: String
     let createdAt: String?  // Keep as String to avoid date parsing issues
-    
+    // Profile fields stored in Supabase user_metadata (editable in-app).
+    var firstName: String?
+    var lastName: String?
+    var church: String?
+
     enum CodingKeys: String, CodingKey {
         case id
         case email
         case createdAt = "created_at"
+        case userMetadata = "user_metadata"
+    }
+
+    struct Metadata: Codable {
+        var firstName: String?
+        var lastName: String?
+        var church: String?
+        enum CodingKeys: String, CodingKey {
+            case firstName = "first_name"
+            case lastName = "last_name"
+            case church
+        }
+    }
+
+    init(id: String, email: String, createdAt: String?, firstName: String? = nil, lastName: String? = nil, church: String? = nil) {
+        self.id = id; self.email = email; self.createdAt = createdAt
+        self.firstName = firstName; self.lastName = lastName; self.church = church
+    }
+
+    // Custom decode: pull name/church out of the nested user_metadata object.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        email = try c.decode(String.self, forKey: .email)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        let meta = try c.decodeIfPresent(Metadata.self, forKey: .userMetadata)
+        firstName = meta?.firstName
+        lastName = meta?.lastName
+        church = meta?.church
+    }
+
+    // Custom encode: write name/church back into user_metadata so the keychain copy round-trips.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(email, forKey: .email)
+        try c.encodeIfPresent(createdAt, forKey: .createdAt)
+        let meta = Metadata(firstName: firstName, lastName: lastName, church: church)
+        try c.encode(meta, forKey: .userMetadata)
     }
 }
 
@@ -257,6 +300,50 @@ final class AuthService: ObservableObject {
     /// Get current access token for API calls
     var accessToken: String? {
         session?.accessToken
+    }
+
+    /// Update the signed-in user's profile (name, church) in Supabase user_metadata.
+    /// Church is only meaningful for premium users but the field is stored the same way.
+    func updateProfile(firstName: String, lastName: String, church: String?) async throws {
+        guard let accessToken = session?.accessToken else { throw AuthError.sessionExpired }
+        isLoading = true
+        defer { isLoading = false }
+
+        let url = SupabaseConfig.authURL.appendingPathComponent("user")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.allHTTPHeaderFields = SupabaseConfig.authHeaders(accessToken: accessToken)
+
+        var data: [String: Any] = [
+            "first_name": firstName,
+            "last_name": lastName
+        ]
+        if let church = church { data["church"] = church }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["data": data])
+
+        let (respData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = String(data: respData, encoding: .utf8) ?? "unknown"
+            print("❌ updateProfile failed: \(body)")
+            throw AuthError.serverError("Couldn't save your details. Please try again.")
+        }
+
+        // Response is the updated user object — refresh currentUser (and keychain copy).
+        if let updatedUser = try? JSONDecoder().decode(AuthUser.self, from: respData) {
+            currentUser = updatedUser
+            if let existing = session {
+                let newSession = AuthSession(accessToken: existing.accessToken, refreshToken: existing.refreshToken, expiresIn: existing.expiresIn, expiresAt: existing.expiresAt, user: updatedUser)
+                session = newSession
+                saveSession(newSession)
+            }
+        } else {
+            // Fallback: update locally so the UI reflects the change immediately.
+            if var u = currentUser {
+                u.firstName = firstName; u.lastName = lastName; u.church = church
+                currentUser = u
+            }
+        }
+        print("✅ Profile updated")
     }
     
     /// Refresh session if needed
