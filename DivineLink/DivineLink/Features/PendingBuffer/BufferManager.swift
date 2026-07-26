@@ -21,8 +21,8 @@ struct VerseItem: Identifiable, Equatable {
 struct PendingVerse: Identifiable, Equatable {
     let id = UUID()
     let reference: ScriptureReference
-    let verses: [VerseItem]  // Individual verses for verse-by-verse display
-    let translation: String
+    var verses: [VerseItem]  // Individual verses for verse-by-verse display (var: supports per-card version switching)
+    var translation: String  // var: switchable per card without re-detecting
     let timestamp: Date
     let detectionConfidence: DetectionConfidence  // Updated to use DetectionConfidence model
     let rawTranscript: String  // What was actually heard (for learning)
@@ -303,9 +303,31 @@ class BufferManager: ObservableObject {
     func setCurrentVerse(id: UUID, index: Int) {
         guard let verseIndex = pendingVerses.firstIndex(where: { $0.id == id }) else { return }
         let verse = pendingVerses[verseIndex]
-        
+
         if index >= 0 && index < verse.verses.count {
             pendingVerses[verseIndex].currentVerseIndex = index
         }
+    }
+
+    // MARK: - Translation Switching
+
+    /// Switch a pending verse to a different Bible translation in place.
+    /// Replaces its verse text + translation label while preserving id, reference,
+    /// confidence, push state, and (where possible) the current-verse selection.
+    /// No-op if `newVerses` is empty (e.g. the translation lacks that verse) so the
+    /// card never blanks out.
+    func updateTranslation(id: UUID, translation newTranslation: String, verses newVerses: [VerseItem]) {
+        guard !newVerses.isEmpty,
+              let index = pendingVerses.firstIndex(where: { $0.id == id }) else { return }
+
+        pendingVerses[index].verses = newVerses
+        pendingVerses[index].translation = newTranslation
+
+        // Keep currentVerseIndex in bounds if the verse count changed
+        if pendingVerses[index].currentVerseIndex >= newVerses.count {
+            pendingVerses[index].currentVerseIndex = max(0, newVerses.count - 1)
+        }
+
+        print("[Buffer] Switched \(pendingVerses[index].displayReference) → \(newTranslation)")
     }
 }
