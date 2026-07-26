@@ -1,4 +1,13 @@
 # BMAD (local only)
+.agents/skills/
+
+# Local-only scratch: Bible.db rebuild working dir (backups, downloaded sources)
+_bible_rebuild/
+
+# The 464MB Whisper MODEL is downloaded on demand (not bundled) — keep it out of git.
+# But the 2.3MB tokenizer IS bundled in the app (a build input), so it MUST be tracked,
+# otherwise clean checkouts (Xcode Cloud / other machines) fail to build.
+DivineLink/WhisperModels/openai_whisper-small.en/
 
 # Xcode
 #
