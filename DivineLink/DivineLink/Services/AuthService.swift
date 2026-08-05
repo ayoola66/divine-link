@@ -440,10 +440,26 @@ final class AuthService: ObservableObject {
         self.isAuthenticated = true
         
         print("✅ Session restored for \(session.user.email)")
-        
+
         // Refresh session in background if needed
         Task {
             try? await refreshSessionIfNeeded()
+
+            // Refresh subscription status (and stripeCustomerId) on every relaunch with a
+            // persisted session — previously this only happened on a fresh OTP verify, so a
+            // normal relaunch showed a stale cached isPremium/tier forever and stripeCustomerId
+            // (which has no cache fallback) simply never got set at all.
+            await SubscriptionService.shared.fetchSubscription()
+
+            // Re-assert this device as active on every relaunch with a persisted session —
+            // registration previously only happened at the exact moment of OTP verification,
+            // so a device deactivated (e.g. via sign-out) never got reactivated by a normal
+            // app relaunch that reused the stored session instead of a fresh OTP login.
+            do {
+                try await DeviceManager.shared.registerCurrentDevice()
+            } catch {
+                print("⚠️ Device re-registration failed on session restore: \(error)")
+            }
         }
     }
     

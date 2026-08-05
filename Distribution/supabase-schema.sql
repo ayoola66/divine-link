@@ -155,11 +155,12 @@ RETURNS TABLE (
     is_premium BOOLEAN,
     period_end TIMESTAMPTZ,
     device_count INTEGER,
-    max_devices INTEGER
+    max_devices INTEGER,
+    stripe_customer_id TEXT
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         s.status,
         COALESCE(
             s.tier,
@@ -179,7 +180,8 @@ BEGIN
             WHEN COALESCE(s.tier, CASE WHEN s.status = 'love' THEN 'love' WHEN s.status IN ('premium', 'grace', 'trial') THEN 'grace' ELSE 'mercy' END) = 'love' THEN 5
             WHEN COALESCE(s.tier, CASE WHEN s.status = 'love' THEN 'love' WHEN s.status IN ('premium', 'grace', 'trial') THEN 'grace' ELSE 'mercy' END) = 'grace' THEN 2
             ELSE 1
-        END AS max_devices
+        END AS max_devices,
+        s.stripe_customer_id AS stripe_customer_id
     FROM public.subscriptions s
     WHERE s.user_id = auth.uid();
 END;

@@ -96,8 +96,14 @@ final class DeviceManager: ObservableObject {
             throw DeviceError.deviceLimitReached
         }
         
-        // Upsert device (insert or update if exists)
-        let url = SupabaseConfig.restURL.appendingPathComponent("devices")
+        // Upsert device (insert or update if exists). PostgREST's merge-duplicates upsert
+        // needs an explicit on_conflict target when the conflicting columns aren't the primary
+        // key — without it, PostgREST falls back to the PK (id, not sent in this body), so any
+        // re-registration of an already-known device_id/user_id pair hits the table's
+        // UNIQUE(user_id, device_id) constraint as a genuine conflict and 409s instead of merging.
+        let url = SupabaseConfig.restURL
+            .appendingPathComponent("devices")
+            .appending(queryItems: [URLQueryItem(name: "on_conflict", value: "user_id,device_id")])
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.allHTTPHeaderFields = SupabaseConfig.authHeaders(accessToken: accessToken)
@@ -114,12 +120,14 @@ final class DeviceManager: ObservableObject {
             "is_active": true
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
+
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 else {
-            throw DeviceError.registrationFailed
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let responseBody = String(data: responseData, encoding: .utf8) ?? "<no body>"
+            throw DeviceError.registrationFailed(status: status, body: responseBody)
         }
         
         currentDeviceRegistered = true
@@ -335,17 +343,17 @@ final class DeviceManager: ObservableObject {
 enum DeviceError: LocalizedError {
     case notAuthenticated
     case deviceLimitReached
-    case registrationFailed
+    case registrationFailed(status: Int, body: String)
     case removalFailed
-    
+
     var errorDescription: String? {
         switch self {
         case .notAuthenticated:
             return "Please sign in to manage devices."
         case .deviceLimitReached:
             return "You've reached the maximum of 2 devices. Please remove a device to add a new one."
-        case .registrationFailed:
-            return "Failed to register this device. Please try again."
+        case .registrationFailed(let status, let body):
+            return "Failed to register this device (\(status)): \(body)"
         case .removalFailed:
             return "Failed to remove device. Please try again."
         }

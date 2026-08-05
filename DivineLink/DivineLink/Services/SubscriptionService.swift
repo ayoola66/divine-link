@@ -127,7 +127,8 @@ struct SubscriptionInfo: Codable {
     let periodEnd: Date?
     let deviceCount: Int
     let maxDevices: Int
-    
+    let stripeCustomerId: String?
+
     enum CodingKeys: String, CodingKey {
         case status
         case tier
@@ -135,6 +136,7 @@ struct SubscriptionInfo: Codable {
         case periodEnd = "period_end"
         case deviceCount = "device_count"
         case maxDevices = "max_devices"
+        case stripeCustomerId = "stripe_customer_id"
     }
 }
 
@@ -148,6 +150,10 @@ final class SubscriptionService: ObservableObject {
     // MARK: - Published Properties
     
     @Published private(set) var subscription: Subscription?
+    /// The Stripe customer id backing this subscription, if any — populated from either the
+    /// `get_my_subscription` RPC (normal path) or the direct-fetch fallback. Billing portal
+    /// access and the Stripe name/address prefill both key off this.
+    @Published private(set) var stripeCustomerId: String?
     @Published private(set) var isPremium = false
     @Published private(set) var currentTier: SubscriptionTier = .mercy
     @Published private(set) var isLoading = false
@@ -248,11 +254,21 @@ final class SubscriptionService: ObservableObject {
             
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            
+
+            var decodedInfo: SubscriptionInfo?
+            do {
+                let infoArray = try decoder.decode([SubscriptionInfo].self, from: data)
+                decodedInfo = infoArray.first
+            } catch {
+                print("⚠️ get_my_subscription decode failed: \(error) — raw response: \(String(data: data, encoding: .utf8) ?? "<none>")")
+            }
+
             // Response is an array with one item
-            if let infoArray = try? decoder.decode([SubscriptionInfo].self, from: data),
-               let info = infoArray.first {
-                
+            if let info = decodedInfo {
+
+                self.stripeCustomerId = info.stripeCustomerId
+                print("ℹ️ RPC set stripeCustomerId: \(String(describing: info.stripeCustomerId))")
+
                 // Admin always gets Love tier — never let the API downgrade them
                 if isAdmin {
                     self.isPremium = true
@@ -394,7 +410,10 @@ final class SubscriptionService: ObservableObject {
     /// unavailable (not premium, no customer, offline, or portal not set up).
     func fetchStripeCustomer() async -> StripeCustomer? {
         guard let token = AuthService.shared.accessToken,
-              let customerId = subscription?.stripeCustomerId, !customerId.isEmpty else { return nil }
+              let customerId = stripeCustomerId, !customerId.isEmpty else {
+            print("⚠️ fetchStripeCustomer: skipped — token: \(AuthService.shared.accessToken != nil), stripeCustomerId: \(String(describing: stripeCustomerId))")
+            return nil
+        }
         let url = URL(string: "https://divinelink.netlify.app/api/stripe-customer")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -403,8 +422,12 @@ final class SubscriptionService: ObservableObject {
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["customerId": customerId])
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            guard status == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                print("⚠️ fetchStripeCustomer failed — status: \(status), body: \(String(data: data, encoding: .utf8) ?? "<none>")")
+                return nil
+            }
             let addr = json["address"] as? [String: Any]
             let lines = [
                 addr?["line1"] as? String,
@@ -420,6 +443,7 @@ final class SubscriptionService: ObservableObject {
                 addressLines: lines
             )
         } catch {
+            print("⚠️ fetchStripeCustomer network error: \(error)")
             return nil
         }
     }
@@ -431,7 +455,7 @@ final class SubscriptionService: ObservableObject {
     @discardableResult
     func openBillingPortal() async -> String? {
         guard let token = AuthService.shared.accessToken else { return "Please sign in first." }
-        guard let customerId = subscription?.stripeCustomerId, !customerId.isEmpty else {
+        guard let customerId = stripeCustomerId, !customerId.isEmpty else {
             return "No billing account found. This is only available after a paid subscription."
         }
         let url = URL(string: "https://divinelink.netlify.app/api/stripe-portal")!
@@ -490,7 +514,9 @@ final class SubscriptionService: ObservableObject {
         if let subscriptions = try? decoder.decode([Subscription].self, from: data),
            let sub = subscriptions.first {
             self.subscription = sub
-            
+            self.stripeCustomerId = sub.stripeCustomerId
+            print("ℹ️ Direct-fetch set stripeCustomerId: \(String(describing: sub.stripeCustomerId))")
+
             // Admin always keeps Love tier — never let the API downgrade them
             if isAdmin {
                 self.isPremium = true
