@@ -7635,3 +7635,5 @@ Source: [.bmad-creative-writing/tasks/analyze-reader-feedback.md](.bmad-creative
 - Full brief: open the source file above (content not embedded)
 
 <!-- END: BMAD-AGENTS-OPENCODE -->
+
+## Imported Claude Cowork project instructions
