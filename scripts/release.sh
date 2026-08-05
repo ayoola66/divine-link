@@ -10,7 +10,10 @@
 # 4. Notarise with Apple
 # 5. Sign with Sparkle EdDSA
 # 6. Update appcast.xml
-# 7. Update CHANGELOG
+# 7. Update website version badges (index.html, releases.html) + add a release-notes
+#    entry — reuses the SAME release notes typed for appcast.xml, so there is only one
+#    place to type them. Old entries are kept as history, not rewritten (scripts/update_website_version.py).
+# 8. Update CHANGELOG
 #
 # Usage:
 #   ./scripts/release.sh [major|minor|patch|beta] [--skip-notarize]
@@ -458,6 +461,15 @@ mv "$TEMP_APPCAST" "$APPCAST_FILE"
 log_success "appcast.xml updated"
 
 #-------------------------------------------------------------------------------
+# Step 7b: Update website version badges + release notes list
+#-------------------------------------------------------------------------------
+log_step "Step 7b: Updating website version display"
+
+RELEASE_DATE=$(date -u "+%d %B %Y")
+python3 "$PROJECT_ROOT/scripts/update_website_version.py" \
+    "$NEW_VERSION" "$ZIP_FILENAME" "$RELEASE_DATE" "$RELEASE_NOTES"
+
+#-------------------------------------------------------------------------------
 # Step 8: Summary
 #-------------------------------------------------------------------------------
 log_step "Release Complete!"
@@ -478,14 +490,17 @@ log_info "Files created:"
 echo "  • $ZIP_PATH"
 echo "  • $RELEASES_DIR/$PROJECT_NAME-latest.zip"
 echo "  • $APPCAST_FILE (updated)"
+echo "  • $DISTRIBUTION_DIR/netlify-site/index.html + releases.html (version badges + new release-notes entry)"
 echo ""
 
 log_info "Next steps:"
 echo "  1. Update CHANGELOG.md with release notes"
-echo "  2. Commit changes: git add -A && git commit -m 'Release $NEW_VERSION'"
+echo "  2. Commit changes in this repo: git add -A && git commit -m 'Release $NEW_VERSION'"
 echo "  3. Tag release: git tag v$NEW_VERSION"
-echo "  4. Push to trigger deployment: git push && git push --tags"
-echo "  5. Verify at: https://divinelink.netlify.app/appcast.xml"
+echo "  4. Push this repo: git push && git push --tags"
+echo "  5. DEPLOY THE WEBSITE (separate repo — required, not optional):"
+echo "       ./scripts/sync-netlify-site.sh \"Release $NEW_VERSION\""
+echo "  6. Verify at: https://divinelink.netlify.app/appcast.xml and https://divinelink.netlify.app/releases.html"
 echo ""
 
 log_success "Done! 🎉"
