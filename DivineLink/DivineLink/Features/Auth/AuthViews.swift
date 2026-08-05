@@ -229,7 +229,11 @@ struct LoginView: View {
         do {
             try await authService.verifyOTP(email: email, code: otpCode)
             // Register device after successful login
-            try? await DeviceManager.shared.registerCurrentDevice()
+            do {
+                try await DeviceManager.shared.registerCurrentDevice()
+            } catch {
+                print("⚠️ Device registration failed after OTP login: \(error)")
+            }
             // Fetch subscription status
             await SubscriptionService.shared.fetchSubscription()
         } catch {
@@ -289,6 +293,7 @@ struct AccountView: View {
     @State private var billingMessage: String?
     @State private var isOpeningBilling = false
     @State private var stripeCustomer: SubscriptionService.StripeCustomer?
+    @State private var isEditingDetails = false
 
     private var isPremium: Bool { subscriptionService.isPremium || subscriptionService.isAdmin }
 
@@ -330,27 +335,62 @@ struct AccountView: View {
 
             // Profile editing (name for everyone; church for premium)
             VStack(alignment: .leading, spacing: 10) {
-                Text("Your Details").font(.headline)
                 HStack {
-                    TextField("First name", text: $firstName)
-                    TextField("Last name", text: $lastName)
-                }
-                .textFieldStyle(.roundedBorder)
-
-                if isPremium {
-                    TextField("Church name", text: $church)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                HStack {
-                    Button {
-                        Task { await saveProfile() }
-                    } label: {
-                        if isSavingProfile { ProgressView().controlSize(.small) } else { Text("Save details") }
+                    Text("Your Details").font(.headline)
+                    Spacer()
+                    if !isEditingDetails {
+                        Button {
+                            isEditingDetails = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
                     }
-                    .disabled(isSavingProfile)
-                    if let msg = profileMessage {
-                        Text(msg).font(.caption).foregroundStyle(msg.hasPrefix("✓") ? .green : .red)
+                }
+
+                if isEditingDetails {
+                    HStack {
+                        TextField("First name", text: $firstName)
+                        TextField("Last name", text: $lastName)
+                    }
+                    .textFieldStyle(.roundedBorder)
+
+                    if isPremium {
+                        TextField("Church name", text: $church)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    HStack {
+                        Button {
+                            Task {
+                                await saveProfile()
+                                if profileMessage?.hasPrefix("✓") == true { isEditingDetails = false }
+                            }
+                        } label: {
+                            if isSavingProfile { ProgressView().controlSize(.small) } else { Text("Save details") }
+                        }
+                        .disabled(isSavingProfile)
+
+                        Button("Cancel") {
+                            loadProfileFields()
+                            profileMessage = nil
+                            isEditingDetails = false
+                        }
+                        .disabled(isSavingProfile)
+
+                        if let msg = profileMessage {
+                            Text(msg).font(.caption).foregroundStyle(msg.hasPrefix("✓") ? .green : .red)
+                        }
+                    }
+                } else {
+                    // Read-only display — pulled from your saved profile, and prefilled from
+                    // Stripe's billing name the first time you had none (never overwrites once set).
+                    VStack(alignment: .leading, spacing: 4) {
+                        detailRow("Name", value: "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces))
+                        if isPremium {
+                            detailRow("Church", value: church)
+                        }
                     }
                 }
             }
@@ -452,6 +492,12 @@ struct AccountView: View {
             if isPremium { Task { await loadStripeDetails() } }
         }
         .onChange(of: authService.currentUser?.id) { _, _ in loadProfileFields() }
+        // stripeCustomerId is only ever set by an async fetch (no synchronous cache like
+        // isPremium has), so if this view appears before that fetch completes, the one-shot
+        // onAppear prefill above misses it and never retries. Catch it whenever it arrives.
+        .onChange(of: subscriptionService.stripeCustomerId) { _, newValue in
+            if newValue != nil { Task { await loadStripeDetails() } }
+        }
         .confirmationDialog("Sign Out", isPresented: $showSignOutConfirmation) {
             Button("Sign Out", role: .destructive) {
                 Task {
@@ -462,6 +508,16 @@ struct AccountView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to sign out?")
+        }
+    }
+
+    @ViewBuilder
+    private func detailRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value.isEmpty ? "Not set" : value)
+                .font(.subheadline)
+                .foregroundStyle(value.isEmpty ? .tertiary : .primary)
         }
     }
 
