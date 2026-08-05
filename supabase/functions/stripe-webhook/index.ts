@@ -199,6 +199,89 @@ async function handleCheckoutComplete(
   }
 }
 
+// Resolve a subscriptions row for a Stripe customer, falling back to an
+// email match when the customer was never linked via checkout.session.completed
+// (e.g. a subscription created directly in Stripe — comped/test accounts).
+// Never overwrites an existing link to a DIFFERENT customer, and aborts on an
+// ambiguous email match rather than guessing which account to grant.
+// Escape Postgres LIKE/ILIKE wildcards (% _ \) so a raw email is matched
+// literally — an unescaped "_" (a legal, common email character) would
+// otherwise match any single character and cause false ambiguous-match
+// aborts or, worse, a wrong-account link.
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+async function resolveSubscriptionRow(
+  supabase: any,
+  customerId: string,
+): Promise<{ userId: string; alreadyLinked: boolean } | null> {
+  const { data: byCustomer, error: byCustomerError } = await supabase
+    .from("subscriptions")
+    .select("user_id")
+    .eq("stripe_customer_id", customerId)
+    .limit(1);
+
+  if (byCustomerError) {
+    throw new Error(
+      `Failed to look up subscription by stripe_customer_id ${customerId}: ${byCustomerError.message}`,
+    );
+  }
+  if (byCustomer?.length) {
+    return { userId: byCustomer[0].user_id, alreadyLinked: true };
+  }
+
+  const email = await getCustomerEmail(customerId);
+  if (!email) return null;
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id")
+    .ilike("email", escapeLikePattern(normalizedEmail));
+
+  if (profilesError) {
+    throw new Error(
+      `Failed to look up profile by email for customer ${customerId}: ${profilesError.message}`,
+    );
+  }
+  if (!profiles?.length) return null;
+  if (profiles.length > 1) {
+    console.error(
+      `Ambiguous email match for "${normalizedEmail}" (${profiles.length} profiles); refusing to link customer ${customerId} to avoid granting the wrong account.`,
+    );
+    return null;
+  }
+
+  const userId = profiles[0].id;
+
+  const { data: subRow, error: subRowError } = await supabase
+    .from("subscriptions")
+    .select("stripe_customer_id")
+    .eq("user_id", userId)
+    .limit(1);
+
+  if (subRowError) {
+    throw new Error(
+      `Failed to look up subscriptions row for user ${userId}: ${subRowError.message}`,
+    );
+  }
+  if (!subRow?.length) return null;
+
+  const existingCustomerId = subRow[0].stripe_customer_id;
+  if (existingCustomerId && existingCustomerId !== customerId) {
+    console.error(
+      `User ${userId} already linked to a different Stripe customer (${existingCustomerId}); refusing to overwrite with ${customerId}.`,
+    );
+    return null;
+  }
+
+  console.log(
+    `Linked Stripe customer ${customerId} to user ${userId} via email fallback (no prior checkout.session.completed for this customer).`,
+  );
+  return { userId, alreadyLinked: false };
+}
+
 // Handle subscription updates
 async function handleSubscriptionUpdate(
   supabase: any,
@@ -206,15 +289,12 @@ async function handleSubscriptionUpdate(
 ) {
   const customerId = subscription.customer as string;
 
-  // Find user by Stripe customer ID
-  const { data: subs, error: subError } = await supabase
-    .from("subscriptions")
-    .select("user_id")
-    .eq("stripe_customer_id", customerId)
-    .limit(1);
-
-  if (subError || !subs?.length) {
-    console.log("Subscription not found for customer:", customerId);
+  const resolved = await resolveSubscriptionRow(supabase, customerId);
+  if (!resolved) {
+    console.log(
+      "Subscription not found for customer (direct link or email fallback):",
+      customerId,
+    );
     return;
   }
 
@@ -242,11 +322,12 @@ async function handleSubscriptionUpdate(
     cancel_at_period_end: subscription.cancel_at_period_end,
   };
   if (tier) updatePayload.tier = tier;
+  if (!resolved.alreadyLinked) updatePayload.stripe_customer_id = customerId;
 
   const { error: updateError } = await supabase
     .from("subscriptions")
     .update(updatePayload)
-    .eq("stripe_customer_id", customerId);
+    .eq("user_id", resolved.userId);
 
   if (updateError) {
     console.error("Failed to update subscription:", updateError);
@@ -295,19 +376,31 @@ async function handlePaymentSucceeded(supabase: any, invoice: Stripe.Invoice) {
     }
   }
 
-  // Ensure subscription is active after payment
-  const updatePayload: Record<string, unknown> = {
-    status: "premium",
-  };
-  if (tier) updatePayload.tier = tier;
+  const resolved = await resolveSubscriptionRow(supabase, customerId);
 
-  const { error } = await supabase
-    .from("subscriptions")
-    .update(updatePayload)
-    .eq("stripe_customer_id", customerId);
+  if (!resolved) {
+    console.log(
+      "Subscription not found for customer on payment_succeeded (direct link or email fallback):",
+      customerId,
+    );
+  } else {
+    // Ensure subscription is active after payment
+    const updatePayload: Record<string, unknown> = {
+      status: "premium",
+    };
+    if (tier) updatePayload.tier = tier;
+    if (!resolved.alreadyLinked) updatePayload.stripe_customer_id = customerId;
 
-  if (!error) {
-    console.log(`✅ Payment succeeded for customer: ${customerId}`);
+    const { error } = await supabase
+      .from("subscriptions")
+      .update(updatePayload)
+      .eq("user_id", resolved.userId);
+
+    if (!error) {
+      console.log(`✅ Payment succeeded for customer: ${customerId}`);
+    } else {
+      console.error("Failed to update subscription on payment_succeeded:", error);
+    }
   }
 
   // Fallback: checkout.session.completed can arrive without customer_email.
