@@ -15,6 +15,7 @@
 /* Begin PBXFileReference section */
 		2CDB601A300DAD3400CEE1E0 /* WhisperModels/tokenizer */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WhisperModels/tokenizer; sourceTree = "<group>"; };
 		2CE3BBD22F1C52BD00CD5B6F /* DivineLink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DivineLink.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		37E3841B4B304386A99E3F73 /* DivineLinkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DivineLinkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -36,6 +37,11 @@
 			path = DivineLink;
 			sourceTree = "<group>";
 		};
+		E88CF89E4F834CAFB3436ACA /* DivineLinkTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DivineLinkTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +54,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		97C438EC161F40DCB7BD05CB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -56,6 +69,7 @@
 			children = (
 				2CDB601A300DAD3400CEE1E0 /* WhisperModels/tokenizer */,
 				2CE3BBD42F1C52BD00CD5B6F /* DivineLink */,
+				E88CF89E4F834CAFB3436ACA /* DivineLinkTests */,
 				2CE3BBD32F1C52BD00CD5B6F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -64,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				2CE3BBD22F1C52BD00CD5B6F /* DivineLink.app */,
+				37E3841B4B304386A99E3F73 /* DivineLinkTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,6 +110,29 @@
 			productReference = 2CE3BBD22F1C52BD00CD5B6F /* DivineLink.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D1ED4140B9F84BC7A794272C /* DivineLinkTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A976F1A872E24BADA95044FB /* Build configuration list for PBXNativeTarget "DivineLinkTests" */;
+			buildPhases = (
+				3CD450FA84F04FDAA726D369 /* Sources */,
+				97C438EC161F40DCB7BD05CB /* Frameworks */,
+				C2C209DFA5D041778CE6F7B4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				56F16A865535426B85E65C21 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E88CF89E4F834CAFB3436ACA /* DivineLinkTests */,
+			);
+			name = DivineLinkTests;
+			packageProductDependencies = (
+			);
+			productName = DivineLinkTests;
+			productReference = 37E3841B4B304386A99E3F73 /* DivineLinkTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -107,6 +145,10 @@
 				TargetAttributes = {
 					2CE3BBD12F1C52BD00CD5B6F = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					D1ED4140B9F84BC7A794272C = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 2CE3BBD12F1C52BD00CD5B6F;
 					};
 				};
 			};
@@ -129,6 +171,7 @@
 			projectRoot = "";
 			targets = (
 				2CE3BBD12F1C52BD00CD5B6F /* DivineLink */,
+				D1ED4140B9F84BC7A794272C /* DivineLinkTests */,
 			);
 		};
 /* End PBXProject section */
@@ -142,6 +185,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C2C209DFA5D041778CE6F7B4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -152,7 +202,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3CD450FA84F04FDAA726D369 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		54D108458EA84403A9A1C3B8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2CE3BBCA2F1C52BD00CD5B6F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2CE3BBD12F1C52BD00CD5B6F;
+			remoteInfo = DivineLink;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		56F16A865535426B85E65C21 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2CE3BBD12F1C52BD00CD5B6F /* DivineLink */;
+			targetProxy = 54D108458EA84403A9A1C3B8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		2CE3BBDB2F1C52BF00CD5B6F /* Debug */ = {
@@ -287,7 +362,7 @@
 				CODE_SIGN_ENTITLEMENTS = DivineLink/DivineLink.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 23;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = QVHM976XC5;
 				ENABLE_APP_SANDBOX = YES;
@@ -303,7 +378,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 1.6.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ORekunMedia.DivineLink;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -324,7 +399,7 @@
 				CODE_SIGN_ENTITLEMENTS = DivineLink/DivineLink.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 21;
+				CURRENT_PROJECT_VERSION = 23;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = QVHM976XC5;
 				ENABLE_APP_SANDBOX = YES;
@@ -340,7 +415,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.6.0;
+				MARKETING_VERSION = 1.6.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ORekunMedia.DivineLink;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -350,6 +425,48 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPACT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		83C3FCB953C344D3A7B6EF43 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = QVHM976XC5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.6.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ORekunMedia.DivineLinkTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DivineLink.app/Contents/MacOS/DivineLink";
+			};
+			name = Debug;
+		};
+		C7271817D1E5416B8F251414 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 23;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = QVHM976XC5;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.6.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ORekunMedia.DivineLinkTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DivineLink.app/Contents/MacOS/DivineLink";
 			};
 			name = Release;
 		};
@@ -370,6 +487,15 @@
 			buildConfigurations = (
 				2CE3BBDE2F1C52BF00CD5B6F /* Debug */,
 				2CE3BBDF2F1C52BF00CD5B6F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A976F1A872E24BADA95044FB /* Build configuration list for PBXNativeTarget "DivineLinkTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				83C3FCB953C344D3A7B6EF43 /* Debug */,
+				C7271817D1E5416B8F251414 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
