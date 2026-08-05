@@ -92,6 +92,31 @@ class HybridIntegrationManager: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // React to topology changes (same-machine vs two-machines)
+        settings.$topology
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.reconfigure()
+                }
+            }
+            .store(in: &cancellables)
+
+        // React to entitlement changes (login/logout, premium lapse/renew, admin
+        // flag, launch-time resolution). `effectiveTopology`/`effectiveKeyboardAutomationEnabled`
+        // both depend on `SubscriptionService.canUsePremiumFeatures`, which itself reads
+        // `AuthService.isAuthenticated` — neither is directly observable, so we key off
+        // objectWillChange on both services rather than enumerate every dependency.
+        subscriptionService.objectWillChange
+            .merge(with: AuthService.shared.objectWillChange)
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.reconfigure()
+                }
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Configuration
@@ -254,7 +279,7 @@ class HybridIntegrationManager: ObservableObject {
         // Audience outputs (WebSocket preferred)
         if settings.messagesAPIEnabled && subscriptionService.canUsePremiumFeatures {
             outputs.append(factory.createOutput(for: .audienceWebSocket))
-        } else if settings.keyboardAutomationEnabled {
+        } else if settings.effectiveKeyboardAutomationEnabled {
             outputs.append(factory.createOutput(for: .audienceKeyboard))
         }
         
@@ -263,7 +288,7 @@ class HybridIntegrationManager: ObservableObject {
     
     /// Try keyboard automation as fallback
     private func tryFallback(scripture: ScriptureDisplayData) async -> Bool? {
-        guard settings.keyboardAutomationEnabled else { return nil }
+        guard settings.effectiveKeyboardAutomationEnabled else { return nil }
         
         logger.info("Attempting keyboard automation fallback...")
         

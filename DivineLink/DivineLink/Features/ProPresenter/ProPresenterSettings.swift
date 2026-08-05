@@ -55,15 +55,45 @@ enum ConnectionStatus: Equatable {
     }
 }
 
+// MARK: - Topology
+
+/// Physical setup: is ProPresenter running on this same Mac, or a separate machine on the network?
+enum ProPresenterTopology: String, Codable, CaseIterable {
+    case sameMachine
+    case twoMachines
+
+    var displayName: String {
+        switch self {
+        case .sameMachine: return "Same Machine"
+        case .twoMachines: return "Two Machines (Network)"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .sameMachine:
+            return "Divine Link and ProPresenter run on this Mac. All output paths are available."
+        case .twoMachines:
+            return "ProPresenter runs on a different Mac on the same network. Keyboard automation can't reach another machine, so only Stage Display and the Messages API are used."
+        }
+    }
+}
+
 // MARK: - ProPresenter Settings
 
 /// Settings for ProPresenter connection
 class ProPresenterSettings: ObservableObject {
-    
+
     // MARK: - Published Properties
-    
+
     /// IP address of the ProPresenter machine
     @Published var ipAddress: String {
+        didSet { save() }
+    }
+
+    /// Physical setup of Divine Link relative to ProPresenter.
+    /// Two-machine mode requires Premium — see `effectiveTopology`.
+    @Published var topology: ProPresenterTopology {
         didSet { save() }
     }
     
@@ -105,6 +135,7 @@ class ProPresenterSettings: ObservableObject {
     private enum Keys {
         static let ipAddress = "propresenter.ipAddress"
         static let port = "propresenter.port"
+        static let topology = "propresenter.topology"
         static let stageDisplayEnabled = "propresenter.stageDisplayEnabled"
         static let messagesAPIEnabled = "propresenter.messagesAPIEnabled"
         static let keyboardAutomationEnabled = "propresenter.keyboardAutomationEnabled"
@@ -115,7 +146,8 @@ class ProPresenterSettings: ObservableObject {
     
     init() {
         self.ipAddress = defaults.string(forKey: Keys.ipAddress) ?? "127.0.0.1"
-        
+        self.topology = ProPresenterTopology(rawValue: defaults.string(forKey: Keys.topology) ?? "") ?? .sameMachine
+
         // Load port with default fallback
         let savedPort = defaults.integer(forKey: Keys.port)
         self.port = savedPort == 0 ? 50233 : savedPort  // ProPresenter 7 default API port
@@ -132,25 +164,44 @@ class ProPresenterSettings: ObservableObject {
     private func save() {
         defaults.set(ipAddress, forKey: Keys.ipAddress)
         defaults.set(port, forKey: Keys.port)
+        defaults.set(topology.rawValue, forKey: Keys.topology)
         defaults.set(stageDisplayEnabled, forKey: Keys.stageDisplayEnabled)
         defaults.set(messagesAPIEnabled, forKey: Keys.messagesAPIEnabled)
         defaults.set(keyboardAutomationEnabled, forKey: Keys.keyboardAutomationEnabled)
         defaults.set(autoFallbackEnabled, forKey: Keys.autoFallbackEnabled)
     }
     
+    // MARK: - Topology Enforcement
+
+    /// The topology actually in effect, after enforcing entitlement.
+    /// Two-machine mode requires Premium — a lapsed or free user is always
+    /// treated as same-machine regardless of the stored preference (which is
+    /// preserved so their choice comes back if they resubscribe).
+    var effectiveTopology: ProPresenterTopology {
+        topology == .twoMachines && SubscriptionService.shared.canUsePremiumFeatures ? .twoMachines : .sameMachine
+    }
+
+    /// Whether keyboard automation is actually usable right now.
+    /// Always false in two-machine mode regardless of the raw toggle — keyboard
+    /// automation is local keystroke simulation (Accessibility API) and is
+    /// structurally incapable of reaching ProPresenter on a different Mac.
+    var effectiveKeyboardAutomationEnabled: Bool {
+        keyboardAutomationEnabled && effectiveTopology == .sameMachine
+    }
+
     // MARK: - Convenience
-    
+
     /// Check if any output is enabled
     var hasEnabledOutput: Bool {
-        stageDisplayEnabled || messagesAPIEnabled || keyboardAutomationEnabled
+        stageDisplayEnabled || messagesAPIEnabled || effectiveKeyboardAutomationEnabled
     }
-    
+
     /// Get all enabled output types
     var enabledOutputTypes: [ProPresenterOutputType] {
         var types: [ProPresenterOutputType] = []
         if stageDisplayEnabled { types.append(.stageDisplay) }
         if messagesAPIEnabled { types.append(.audienceWebSocket) }
-        else if keyboardAutomationEnabled { types.append(.audienceKeyboard) }
+        else if effectiveKeyboardAutomationEnabled { types.append(.audienceKeyboard) }
         return types
     }
     

@@ -282,16 +282,23 @@ Divine Link requires the following macOS permissions:
 |------------|---------|--------------|
 | **Microphone** | Capture audio for speech recognition | All tiers |
 | **Speech Recognition** | Convert speech to text | All tiers |
-| **Accessibility** | Simulate keyboard for Audience push | Grace/Love tiers |
+| **Accessibility** | Simulate keyboard for Audience push | Grace/Love tiers, Same Machine setup only |
 
 ---
 
 ## 7. ProPresenter Configuration
 
+### Setup: Same Machine vs. Two Machines
+
+Before configuring the connection, choose the topology in Divine Link → Settings → ProPresenter → **ProPresenter Setup**:
+
+- **Same Machine** (default, all tiers) — Divine Link and ProPresenter run on the same Mac. All three output paths are available: Stage Display, Messages API, and Keyboard Automation.
+- **Two Machines** (Premium only) — for large events where ProPresenter runs on a separate laptop connected to the projector, and cabling between the two machines isn't practical. Keyboard Automation is **not offered** in this mode: it's local keystroke simulation (macOS Accessibility API) and is structurally incapable of reaching an app on a different Mac. Only Stage Display (HTTP) and the Messages API (WebSocket) are used — both are standard networked protocols and work reliably as long as both Macs share a network. A non-Premium user who selects Two Machines is shown the upgrade prompt and stays on Same Machine.
+
 ### Stage Screen Setup
 1. Open ProPresenter → Preferences → Network
-2. Enable "Network" and note the port (default: 1025)
-3. In Divine Link, enter the ProPresenter IP and port
+2. Enable "Network" and note the port (default: **50233** for ProPresenter 7)
+3. In Divine Link, enter the ProPresenter IP and port — use `127.0.0.1` for Same Machine, or the other Mac's LAN IP for Two Machines
 4. Test connection using the "Test Connection" button
 
 ### Audience Screen Setup
@@ -308,11 +315,12 @@ Divine Link requires the following macOS permissions:
 7. In Divine Link, verify Messages layer is detected
 8. Divine Link will use Messages API automatically
 
-**Option B: Keyboard Automation (Free Tier / Fallback)**
-1. Grant Divine Link Accessibility permission in macOS Settings
-2. Ensure ProPresenter is running
-3. Configure ProPresenter's Bible with your preferred translation
-4. Divine Link will use ⌘B to trigger ProPresenter's Bible search
+**Option B: Keyboard Automation (Free Tier / Fallback — Same Machine only)**
+1. Confirm ProPresenter Setup is set to **Same Machine** (this option is hidden entirely in Two Machines mode — see above)
+2. Grant Divine Link Accessibility permission in macOS Settings
+3. Ensure ProPresenter is running on this Mac
+4. Configure ProPresenter's Bible with your preferred translation
+5. Divine Link will use ⌘B to trigger ProPresenter's Bible search
 
 ---
 

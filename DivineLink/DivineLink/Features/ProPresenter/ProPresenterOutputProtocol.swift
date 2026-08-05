@@ -186,8 +186,8 @@ class ProPresenterOutputFactory {
         
         if settings.messagesAPIEnabled {
             outputs.append(createOutput(for: .audienceWebSocket))
-        } else if settings.keyboardAutomationEnabled {
-            // Only use keyboard if Messages API is not enabled
+        } else if settings.effectiveKeyboardAutomationEnabled {
+            // Only use keyboard if Messages API is not enabled, and never in two-machine mode
             outputs.append(createOutput(for: .audienceKeyboard))
         }
         

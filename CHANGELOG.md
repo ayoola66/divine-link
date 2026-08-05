@@ -5,6 +5,26 @@ All notable changes to Divine Link will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **ProPresenter Setup: Same Machine vs. Two Machines topology (Premium)**: Added an explicit topology setting so Divine Link knows whether ProPresenter runs on this Mac or a separate one on the network. Two Machines mode (Premium-gated) is for large events where cabling between machines isn't practical — it offers only the two genuinely networked output paths (Stage Display HTTP, Messages API WebSocket) and hides Keyboard Automation entirely, since keyboard automation is local keystroke simulation and cannot reach an app on a different Mac under any circumstances. Selecting Two Machines without Premium shows the upgrade prompt instead of changing the setting.
+
+### Fixed
+
+- **ProPresenter Configuration docs**: Corrected a stale default port reference (was documented as 1025, actual shipped default is 50233 for ProPresenter 7) and clarified that Accessibility/Keyboard Automation only applies in Same Machine setups.
+
+### Technical
+
+- `ProPresenterSettings.swift`: Added `ProPresenterTopology` enum and persisted `topology` setting; added `effectiveTopology` (clamps to Same Machine unless Premium-entitled) and `effectiveKeyboardAutomationEnabled` (always false outside Same Machine) as the single source of truth for output selection.
+- `HybridIntegrationManager.swift`, `ProPresenterOutputProtocol.swift`: All output-selection call sites (`enabledOutputTypes`, `getOutputsInPriorityOrder`, `tryFallback`, `getEnabledOutputs`) now read `effectiveKeyboardAutomationEnabled` instead of the raw toggle. Added a reactive binding on `SubscriptionService`/`AuthService` `objectWillChange` so entitlement changes (login/logout, premium lapse/renew, launch-time resolution) trigger a reconfigure rather than leaving the output set stale.
+- `ProPresenterSettingsView.swift`: Added the "ProPresenter Setup" segmented control and topology-aware connection/Keyboard Automation copy.
+- `redesign.pen`: Added the ProPresenter Setup control to Screen 04 and its state variants (Default, Selected, Premium-locked) to the off-canvas Interaction & State Coverage board.
+- Reviewed by Forge — confirmed no other call site reads the raw `keyboardAutomationEnabled` toggle for output selection, and identified the entitlement-reactivity gap that the `objectWillChange` binding above resolves.
+
+---
+
 ## [1.3.8] - 2026-03-15
 
 ### Fixed

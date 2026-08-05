@@ -11,8 +11,9 @@ struct ProPresenterSettingsView: View {
     @State private var isPushing = false
     @State private var pushResult: PushResult?
     @State private var hasAccessibilityPermission = false
-    
+
     private let subscriptionService = SubscriptionService.shared
+    @StateObject private var adManager = AdManager.shared
     
     enum PushResult {
         case success
@@ -21,20 +22,23 @@ struct ProPresenterSettingsView: View {
     
     var body: some View {
         Form {
+            // Setup (same-machine vs two-machines)
+            topologySection
+
             // Connection Settings
             connectionSection
-            
+
             // Output Paths Section
             outputPathsSection
-            
+
             // Connection Dashboard
             connectionDashboardSection
-            
+
             // Test Push Section
             testSection
-            
+
             // Accessibility Section (for keyboard automation)
-            if settings.keyboardAutomationEnabled {
+            if settings.effectiveKeyboardAutomationEnabled {
                 accessibilitySection
             }
         }
@@ -45,6 +49,41 @@ struct ProPresenterSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $adManager.showPaywall) {
+            PaywallView()
+        }
+    }
+
+    // MARK: - Topology
+
+    private var topologySection: some View {
+        Section {
+            Picker("Setup", selection: Binding(
+                get: { settings.effectiveTopology },
+                set: { newValue in
+                    if newValue == .twoMachines && !subscriptionService.canUsePremiumFeatures {
+                        adManager.requestUpgrade()
+                    } else {
+                        settings.topology = newValue
+                    }
+                }
+            )) {
+                ForEach(ProPresenterTopology.allCases, id: \.self) { topology in
+                    Text(topology.displayName).tag(topology)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(settings.effectiveTopology.description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text("ProPresenter Setup")
+        } footer: {
+            Text("Two Machines is for large events where ProPresenter runs on a separate laptop connected to the projector. Requires Premium.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
     
     // MARK: - Sections
@@ -86,7 +125,9 @@ struct ProPresenterSettingsView: View {
         } header: {
             Text("ProPresenter Connection")
         } footer: {
-            Text("Enter the IP address and port from ProPresenter → Preferences → Network. Default port is 50233.")
+            Text(settings.effectiveTopology == .sameMachine
+                 ? "Enter the IP address and port from ProPresenter → Preferences → Network. Default port is 50233. Use 127.0.0.1 since both apps run on this Mac."
+                 : "Enter the IP address of the Mac running ProPresenter (ProPresenter → Preferences → Network) and its port. Default port is 50233. Both Macs must be on the same network.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -134,22 +175,39 @@ struct ProPresenterSettingsView: View {
             }
             .disabled(!subscriptionService.canUsePremiumFeatures)
             
-            // Keyboard Automation Toggle
-            Toggle(isOn: $settings.keyboardAutomationEnabled) {
+            // Keyboard Automation Toggle — only offered in same-machine mode.
+            // It's local keystroke simulation (Accessibility API) and cannot
+            // reach ProPresenter on a different Mac, so it's structurally
+            // unavailable in two-machine mode rather than just discouraged.
+            if settings.effectiveTopology == .sameMachine {
+                Toggle(isOn: $settings.keyboardAutomationEnabled) {
+                    HStack {
+                        Image(systemName: "keyboard")
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading) {
+                            Text("Keyboard Automation")
+                            Text("Uses ⌘B to trigger PP's Bible")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } else {
                 HStack {
-                    Image(systemName: "keyboard")
-                        .foregroundStyle(.green)
+                    Image(systemName: "keyboard.badge.ellipsis")
+                        .foregroundStyle(.secondary)
                     VStack(alignment: .leading) {
                         Text("Keyboard Automation")
-                        Text("Uses ⌘B to trigger PP's Bible")
+                            .foregroundStyle(.secondary)
+                        Text("Not available in Two Machines mode — can't reach another Mac")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            
+
             // Auto-fallback Toggle
-            if settings.messagesAPIEnabled && settings.keyboardAutomationEnabled {
+            if settings.messagesAPIEnabled && settings.effectiveKeyboardAutomationEnabled {
                 Toggle(isOn: $settings.autoFallbackEnabled) {
                     HStack {
                         Image(systemName: "arrow.triangle.branch")
