@@ -372,10 +372,27 @@ The free tier (Mercy) displays sidebar advertisements to support ongoing develop
   - Modern PaywallView redesign with tier comparison
   - Stripe payment integration
 
-### Pending
-- ⏳ Story 7.2: AI-Powered Implicit Detection (MLX/Phi-3)
-- ⏳ Session History & Export
+### Pending / Roadmap
+
+#### Love — Spoken Quote → Verse Matching (Story 7.2 evolved)
+**Status:** Designed & approved (2026-08-06) — **not building yet**; parked on roadmap  
+**Tier:** Love only (unique Pro differentiator)  
+**Design:** [`docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md`](docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md)
+
+Today the app only matches ~17 hard-coded famous quotes (e.g. John 3:16). The planned feature matches *any* spoken quote against the full local Bible corpus when enough consecutive words uniquely identify a verse.
+
+| Phase | Scope | Notes |
+|-------|--------|-------|
+| **1** | Uniqueness-aware n-gram index + FTS5 verify; verse cards with % confidence; never auto-push to ProPresenter; Love Settings + website copy | Approved approach |
+| **2** | On-device embeddings for paraphrase | After Phase 1 |
+| **3** | Anaphora (“the verse we just read”) via context / MLX | Completes original Story 7.2 LLM vision |
+
+**Product rules (locked):** Love-only · card + confidence % · green ≥ 90% · prefer 7–8 words · short unique verses allowed (e.g. “Jesus wept”) · never auto-push.
+
+#### Other pending
+- ⏳ Session History & Export (Love)
 - ⏳ Auto-advance Slideshow Mode
+- ⏳ UI redesign v2.0.0 — see `REDESIGN-SPEC-v2.0.0.md`
 
 ---
 

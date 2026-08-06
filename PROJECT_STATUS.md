@@ -184,6 +184,22 @@ Public Key: fbg4DwpGznsP6/scSfKu1hbfIlW0/LgnSRS+fi/4Ciw=
 
 ---
 
+## Product Roadmap (Future — not in active build)
+
+Authoritative pending list also lives in [`Divine-Link-Context.md` §10 Development Roadmap](Divine-Link-Context.md).
+
+| Item | Tier | Status | Spec |
+|------|------|--------|------|
+| **Spoken Quote → Verse Matching** | Love | Designed & approved 2026-08-06; **parked** | [`docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md`](docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md) |
+| AI anaphora / MLX (“verse we just read”) | Love | After quote corpus Phase 1 | Story 7.2 Phase 3 |
+| Session History & Export | Love | Pending | — |
+| Auto-advance Slideshow Mode | TBD | Pending | — |
+| UI redesign v2.0.0 | All | Specced | `REDESIGN-SPEC-v2.0.0.md` |
+
+**Quote matching summary:** n-gram + FTS over local `Bible.db`; cards with confidence %; never auto-push to ProPresenter; Love-only so it stays unique to the Pro package.
+
+---
+
 ## File Structure
 
 ```
