@@ -2,17 +2,24 @@
 
 **Epic:** 7 - Advanced Detection & Personalisation  
 **Story ID:** 7.2  
-**Status:** ⚠️ Partially Complete (Basic phrase-matching only)  
+**Status:** ⚠️ Partially Complete (famous-phrase stub only) · **Roadmapped** — not in active build  
 **Complexity:** Large  
 **Priority:** P1 (Love Tier Feature)
+
+> **2026-08-06 update:** Full-corpus spoken quote → verse matching (Approach 1: n-gram + FTS, Love-only) is designed and parked on the roadmap.  
+> - Roadmap: [`Divine-Link-Context.md` §10](../../Divine-Link-Context.md)  
+> - Design: [`docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md`](../superpowers/specs/2026-08-06-quote-verse-matching-design.md)  
+> - Hub: [`Plans/Love-Quote-Matching-Plan.md`](../../Plans/Love-Quote-Matching-Plan.md)  
+> Phase 1 = corpus quote matching · Phase 2 = embeddings/paraphrase · Phase 3 = anaphora / MLX (“the verse we just read”). The MLX notes below remain relevant for Phase 3.
 
 **Current Implementation:**
 - `DivineLink/Features/Detection/ImplicitReferenceDetector.swift` - Basic phrase matching for famous verses
 
-**Remaining Work:**
-- MLX Framework integration for true AI-powered detection
-- Detection of phrases like "the verse we just read" using LLM context
-- Quantised model (Llama-3/Mistral) integration
+**Remaining Work (phased — see design spec):**
+- Phase 1: Uniqueness-aware n-gram + FTS over `Bible.db` (Love Settings, cards + %, never auto-push)
+- Phase 2: On-device embeddings for paraphrase
+- Phase 3: MLX / anaphora (“the verse we just read”) — original Story 7.2 LLM vision
+- Quantised model (Llama-3/Mistral) integration — Phase 3
 
 ---
 

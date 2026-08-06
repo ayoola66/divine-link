@@ -98,7 +98,7 @@ Ad banners (right sidebar + bottom banner) are **never** compressed, cropped, or
 |---|--------|----------|-------|
 | 09 | Settings · Account | Tier-dependent | Profile, church/org, subscription, 2FA, active sessions |
 | 10 | Settings · Audio | Tier-dependent | Input source, live meter, noise suppression, transcription engine |
-| 11 | Settings · Detection | Tier-dependent | Confidence threshold, translation priority, matching rules, ignore list |
+| 11 | Settings · Detection | Tier-dependent | Confidence threshold, translation priority, matching rules, ignore list; **Love-only:** Spoken Quote Detection controls (roadmapped — see `docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md`) |
 | 12 | Settings · Display | Tier-dependent | Light/Dark/System theme, scripture card preview |
 | 13 | Settings · Admin | Tier-dependent | Team members, roles & permissions, recent activity, advanced |
 | 14 | Settings · Updates | Tier-dependent | Sparkle channels (Stable/Beta/Nightly), auto-update, release notes |

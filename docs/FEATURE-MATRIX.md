@@ -42,7 +42,8 @@ This document serves as the **definitive source of truth** for:
 | **Chapter Only** | ✓ | ✓ | ✓ | "John chapter 3" |
 | **Inverted Verbal** | ✓ | ✓ | ✓ | "verse 31 of Romans eight" |
 | **Reference Buffer (Stateful)** | ✗ | ✓ | ✓ | Context-aware partial references |
-| **Implicit Detection (AI)** | ✗ | ✗ | ✓ | Coming in v1.3.0 |
+| **Spoken Quote Detection** | ✗ | ✗ | ✓ | Roadmapped — full-corpus quote→verse (not only famous lines). Design: `docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md` |
+| **Implicit Detection (AI / anaphora)** | ✗ | ✗ | ✓ | Later phase of Story 7.2 (MLX / “verse we just read”) |
 
 ### Detection Settings
 
@@ -137,7 +138,8 @@ This document serves as the **definitive source of truth** for:
 |---------|-------|-------|------|-------|
 | **Auto-Advance Slideshow** | ✗ | ✗ | ✓ | Planned |
 | **Church Site Licence** | ✗ | ✗ | ✓ | Planned |
-| **AI Implicit Detection** | ✗ | ✗ | ✓ | v1.3.0 (Story 7.2) |
+| **Spoken Quote Detection** | ✗ | ✗ | ✓ | Roadmapped (Love-only corpus matcher) |
+| **AI Implicit / anaphora** | ✗ | ✗ | ✓ | Story 7.2 Phase 3 |
 
 ---
 
@@ -227,7 +229,8 @@ This document serves as the **definitive source of truth** for:
 - ✅ Detection Settings Premium Gating
 - ✅ Pastor Profile Limits Enforcement (0/2/5)
 - ✅ PaywallView Tier Comparison Redesign
-- ⏳ AI-Powered Implicit Detection - Story 7.2 (Pending)
+- ⏳ Spoken Quote → Verse Matching (Love) — designed 2026-08-06, not building yet — see roadmap in `Divine-Link-Context.md` §10 + design spec
+- ⏳ AI Implicit / anaphora (Story 7.2 Phase 3) — after quote corpus Phase 1
 
 ### v1.2.0 (Released)
 - ✅ Panic Button (Clear Screen)
@@ -251,6 +254,7 @@ This document serves as the **definitive source of truth** for:
 - **Emphasise:** "Free forever" for Mercy tier
 - **Highlight:** Pastor profile limits (2 for Grace, 5 for Love)
 - **Feature:** Detection Settings as premium benefit
+- **Love differentiator (when shipped):** Spoken quote detection — recognises scripture when quoted without a reference, not only famous lines
 - **Mention:** Stripe payment (no App Store commission = better value)
 
 ### For App Store

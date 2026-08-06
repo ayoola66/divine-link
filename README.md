@@ -408,8 +408,12 @@ The system handles these common mishearings:
 ## Documentation
 
 - **[Feature Matrix](docs/FEATURE-MATRIX.md)** - Complete feature listing by tier (source of truth)
-- **[Full Context Document](Divine-Link-Context.md)** - Comprehensive application context
+- **[Full Context Document](Divine-Link-Context.md)** - Comprehensive application context (includes **§10 Development Roadmap**)
+- **[Project Status](PROJECT_STATUS.md)** - Release snapshot + future product roadmap table
+- **[v2 Redesign Spec](REDESIGN-SPEC-v2.0.0.md)** - Sidebar UI redesign (Settings · Detection links Love quote matching when built)
 - **[Changelog](CHANGELOG.md)** - Detailed version history
+
+**Parked Love feature (designed, not building yet):** Spoken Quote → Verse Matching — see roadmap §10 and [`docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md`](docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md).
 
 ## Version History
 
