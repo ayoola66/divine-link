@@ -80,7 +80,7 @@ cd ~/Library/Developer/Xcode/DerivedData/DivineLink-*/SourcePackages/artifacts/s
 
 ### 5.4 Update appcast.xml
 
-1. Open `Distribution/appcast.xml`
+1. Open `Distribution/netlify-site/appcast.xml`
 2. Add a new `<item>` entry with:
    - `sparkle:version`: The build number
    - `sparkle:shortVersionString`: The marketing version (1.0.2)

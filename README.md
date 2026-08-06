@@ -419,47 +419,6 @@ The system handles these common mishearings:
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-### Version 1.3.0 (In Development)
-- Reference Buffer (Stateful Detection) - Context-aware partial verse detection
-- Premium Feature Gating - Detection Settings require Grace/Love subscription
-- Pastor Profile Limits - Tier-based limits (Mercy: 0, Grace: 2, Love: 5)
-- Modern PaywallView - Redesigned with tier comparison
-- Stripe Payment Integration - Browser-based checkout
-
-### Version 1.2.0
-- Panic Button (Clear Screen) - ⌘⇧C or F12
-- Detection Confidence Indicator
-- WebSocket Messages API for ProPresenter
-- Hybrid Integration Manager
-
-### Version 1.1.0
-- Dynamic Ad System
-- Premium Subscription
-- Video Ad Support
-- User Authentication & Device Management
-
-### Version 1.0.2
-- Added Sparkle auto-updates with secure EdDSA signing
-- Added ad-supported free version with right sidebar and bottom banner
-- Added Premium subscription to remove ads
-- Changed default font size to Medium for better readability
-- Improved scripture detection with stricter verse number validation
-
-### Version 1.0.1
-- Added accessibility settings with font size scaling (5 levels)
-- Added ProPresenter Audience screen push via native Bible feature
-- Improved window resizability
-- Fixed scripture detection issues with numbered book prefixes
-- Enhanced ProPresenter keyboard automation reliability
-
-### Version 1.0.0 (Initial Release)
-- Real-time speech-to-text transcription
-- Scripture reference detection (multiple formats)
-- Multi-verse support with navigation
-- ProPresenter Stage screen integration
-- Service session management
-- Pastor profiles with speech corrections
-
 ---
 
 ## Licence
