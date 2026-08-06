@@ -19722,7 +19722,7 @@
       "name": "04 — Settings & ProPresenter (Current Agent)",
       "clip": true,
       "width": 1400,
-      "height": 950,
+      "height": 1250,
       "fill": "#FAFAFA",
       "cornerRadius": 12,
       "stroke": "#D9DCE5",
@@ -20769,6 +20769,265 @@
                           "name": "mainHelpTxt",
                           "fill": "#6B7280",
                           "content": "Help",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "pjvUE",
+                  "name": "setupCard",
+                  "width": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 10,
+                  "stroke": "#E5E7EB",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    16,
+                    20
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "VA1JH",
+                      "name": "setupHead",
+                      "width": "fill_container",
+                      "padding": [
+                        0,
+                        0,
+                        4,
+                        0
+                      ],
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "e8PwE",
+                          "name": "setupTitle",
+                          "fill": "#1F2937",
+                          "content": "ProPresenter Setup",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "700"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "zurb3",
+                          "name": "setupPill",
+                          "fill": "#EEF2FF",
+                          "cornerRadius": 10,
+                          "gap": 4,
+                          "padding": [
+                            2,
+                            8
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "YDyJS",
+                              "name": "setupPillIc",
+                              "width": 10,
+                              "height": 10,
+                              "icon": "laptop",
+                              "library": "lucide",
+                              "fill": "#3730A3"
+                            },
+                            {
+                              "type": "text",
+                              "id": "RQIS2",
+                              "name": "setupPillTx",
+                              "fill": "#3730A3",
+                              "content": "Same Machine",
+                              "fontFamily": "Inter",
+                              "fontSize": 10,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "S0VRY",
+                      "name": "topoRow",
+                      "width": "fill_container",
+                      "stroke": "#F1F5F9",
+                      "strokeWidth": {
+                        "bottom": 1
+                      },
+                      "strokeAlignment": "inner",
+                      "strokeLinejoin": "round",
+                      "gap": 16,
+                      "padding": [
+                        10,
+                        0
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Qldtd",
+                          "name": "topoLbl",
+                          "width": 380,
+                          "layout": "vertical",
+                          "gap": 2,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "qXADV",
+                              "name": "topoLblT",
+                              "fill": "#1F2937",
+                              "content": "Where does ProPresenter run?",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "z1Ai1",
+                              "name": "topoLblS",
+                              "fill": "#6B7280",
+                              "textGrowth": "fixed-width",
+                              "width": "fill_container",
+                              "content": "Changes which output paths are offered below",
+                              "fontFamily": "Inter",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "p8vdk",
+                          "name": "topoSegWrap",
+                          "fill": "#F1F5F9",
+                          "cornerRadius": 8,
+                          "stroke": "#E2E8F0",
+                          "strokeWidth": 1,
+                          "strokeAlignment": "inner",
+                          "gap": 2,
+                          "padding": 3,
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "tSm4t",
+                              "name": "topoSeg1",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 6,
+                              "stroke": "#D1D5DB",
+                              "strokeWidth": 1,
+                              "strokeAlignment": "inner",
+                              "padding": [
+                                5,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "LtFDA",
+                                  "name": "topoSeg1Txt",
+                                  "fill": "#1F2937",
+                                  "content": "Same Machine",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "700"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "J5ZNhn",
+                              "name": "topoSeg2",
+                              "cornerRadius": 6,
+                              "gap": 4,
+                              "padding": [
+                                5,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Phx0d",
+                                  "name": "topoSeg2Txt",
+                                  "fill": "#64748B",
+                                  "content": "Two Machines",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "icon",
+                                  "id": "a9p6g",
+                                  "name": "topoSeg2Lock",
+                                  "width": 10,
+                                  "height": 10,
+                                  "icon": "lock",
+                                  "library": "lucide",
+                                  "fill": "#F59E0B"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "mVn1o",
+                      "name": "topoDesc",
+                      "fill": "#6B7280",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Divine Link and ProPresenter run on this Mac. All output paths are available, including Keyboard Automation.",
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "M9MAR",
+                      "name": "topoPremNote",
+                      "width": "fill_container",
+                      "fill": "#FFFBEB",
+                      "cornerRadius": 8,
+                      "stroke": "#FDE68A",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "gap": 8,
+                      "padding": [
+                        8,
+                        12
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "HVKXk",
+                          "name": "topoPremIcon",
+                          "width": 12,
+                          "height": 12,
+                          "icon": "lock",
+                          "library": "lucide",
+                          "fill": "#92400E"
+                        },
+                        {
+                          "type": "text",
+                          "id": "mr8W7",
+                          "name": "topoPremTxt",
+                          "fill": "#92400E",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "Two Machines requires Premium — for large events where ProPresenter runs on a separate laptop connected to the projector. Keyboard Automation isn't offered in this mode because it can't reach another Mac.",
                           "fontFamily": "Inter",
                           "fontSize": 11,
                           "fontWeight": "600"
@@ -49649,7 +49908,7 @@
       "name": "Divine Link — Interaction & State Coverage",
       "clip": true,
       "width": 1800,
-      "height": 900,
+      "height": 1020,
       "fill": "#F5F6F8",
       "cornerRadius": 12,
       "stroke": "#D9DCE5",
@@ -53348,6 +53607,378 @@
                       "name": "txt",
                       "fill": "#9CA3AF",
                       "content": "Empty catalogue",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "IzyHw",
+          "name": "sec",
+          "width": "fill_container",
+          "fill": "#FFFFFF",
+          "cornerRadius": 12,
+          "stroke": "#E5E7EB",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner",
+          "layout": "vertical",
+          "gap": 10,
+          "padding": [
+            16,
+            20
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "Cp3cO",
+              "name": "secHd",
+              "width": "fill_container",
+              "gap": 10,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "m7uLn",
+                  "name": "txt",
+                  "fill": "#111827",
+                  "content": "ProPresenter Setup segmented control",
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": "700"
+                },
+                {
+                  "type": "text",
+                  "id": "IeBjy",
+                  "name": "txt",
+                  "fill": "#9CA3AF",
+                  "content": "Settings · ProPresenter · same-machine vs two-machines",
+                  "fontFamily": "Inter",
+                  "fontSize": 10,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Nukcc",
+              "name": "stateRow",
+              "width": "fill_container",
+              "gap": 20,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "PAVya",
+                  "name": "cell",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "K0jTsl",
+                      "name": "miniSegWrap",
+                      "fill": "#F1F5F9",
+                      "cornerRadius": 6,
+                      "stroke": "#E2E8F0",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "gap": 2,
+                      "padding": 2,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "c1VBe",
+                          "name": "miniSeg1",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 4,
+                          "stroke": "#D1D5DB",
+                          "strokeWidth": 1,
+                          "strokeAlignment": "inner",
+                          "padding": [
+                            3,
+                            7
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "nzBgw",
+                              "name": "miniSeg1Txt",
+                              "fill": "#1F2937",
+                              "content": "Same Machine",
+                              "fontFamily": "Inter",
+                              "fontSize": 9,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "C0Ekmt",
+                          "name": "miniSeg2",
+                          "cornerRadius": 4,
+                          "gap": 3,
+                          "padding": [
+                            3,
+                            7
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "zhQ4y",
+                              "name": "miniSeg2Txt",
+                              "fill": "#64748B",
+                              "content": "Two Machines",
+                              "fontFamily": "Inter",
+                              "fontSize": 9,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "Z98wO",
+                              "name": "miniSeg2Lock",
+                              "width": 8,
+                              "height": 8,
+                              "icon": "lock",
+                              "library": "lucide",
+                              "fill": "#F59E0B"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "dZvIA",
+                      "name": "txt",
+                      "fill": "#9CA3AF",
+                      "content": "Default — Same Machine",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "cf763",
+                  "name": "cell",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "FqDPv",
+                      "name": "miniSegWrap",
+                      "fill": "#F1F5F9",
+                      "cornerRadius": 6,
+                      "stroke": "#E2E8F0",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "gap": 2,
+                      "padding": 2,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "pbx67",
+                          "name": "miniSeg1",
+                          "cornerRadius": 4,
+                          "padding": [
+                            3,
+                            7
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "nzrCo",
+                              "name": "miniSeg1Txt",
+                              "fill": "#64748B",
+                              "content": "Same Machine",
+                              "fontFamily": "Inter",
+                              "fontSize": 9,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "yylkh",
+                          "name": "miniSeg2",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 4,
+                          "stroke": "#D1D5DB",
+                          "strokeWidth": 1,
+                          "strokeAlignment": "inner",
+                          "gap": 3,
+                          "padding": [
+                            3,
+                            7
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "VhuQD",
+                              "name": "miniSeg2Txt",
+                              "fill": "#1F2937",
+                              "content": "Two Machines",
+                              "fontFamily": "Inter",
+                              "fontSize": 9,
+                              "fontWeight": "700"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "BxCjB",
+                              "name": "miniSeg2Lock",
+                              "width": 8,
+                              "height": 8,
+                              "icon": "lock",
+                              "library": "lucide",
+                              "fill": "#F59E0B"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "r3eSHd",
+                      "name": "txt",
+                      "fill": "#9CA3AF",
+                      "content": "Selected — Two Machines (Premium)",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "b27mTg",
+                  "name": "cell",
+                  "layout": "vertical",
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "C7wb76",
+                      "name": "miniSegWrap",
+                      "fill": "#F1F5F9",
+                      "cornerRadius": 6,
+                      "stroke": "#E2E8F0",
+                      "strokeWidth": 1,
+                      "strokeAlignment": "inner",
+                      "gap": 2,
+                      "padding": 2,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "XIrEx",
+                          "name": "miniSeg1",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 4,
+                          "stroke": "#D1D5DB",
+                          "strokeWidth": 1,
+                          "strokeAlignment": "inner",
+                          "padding": [
+                            3,
+                            7
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Z76vbz",
+                              "name": "miniSeg1Txt",
+                              "fill": "#1F2937",
+                              "content": "Same Machine",
+                              "fontFamily": "Inter",
+                              "fontSize": 9,
+                              "fontWeight": "700"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "yNSho",
+                          "name": "miniSeg2",
+                          "cornerRadius": 4,
+                          "gap": 3,
+                          "padding": [
+                            3,
+                            7
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "WzCPJ",
+                              "name": "miniSeg2Txt",
+                              "fill": "#64748B",
+                              "content": "Two Machines",
+                              "fontFamily": "Inter",
+                              "fontSize": 9,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "icon",
+                              "id": "fbGWK",
+                              "name": "miniSeg2Lock",
+                              "width": 8,
+                              "height": 8,
+                              "icon": "lock",
+                              "library": "lucide",
+                              "fill": "#F59E0B"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "NTOwP",
+                      "name": "lockToast",
+                      "fill": "#FEF3C7",
+                      "cornerRadius": 999,
+                      "gap": 4,
+                      "padding": [
+                        2,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "llYzF",
+                          "name": "lockIc",
+                          "width": 9,
+                          "height": 9,
+                          "icon": "lock",
+                          "library": "lucide",
+                          "fill": "#92400E"
+                        },
+                        {
+                          "type": "text",
+                          "id": "blhv7",
+                          "name": "lockTxt",
+                          "fill": "#92400E",
+                          "content": "Premium required",
+                          "fontFamily": "Inter",
+                          "fontSize": 9,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "YfFMI",
+                      "name": "txt",
+                      "fill": "#9CA3AF",
+                      "content": "Premium locked — tap reverts + opens paywall",
                       "fontFamily": "Inter",
                       "fontSize": 10,
                       "fontWeight": "normal"
