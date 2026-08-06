@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-08-05
+
 ### Added
 
 - **ProPresenter Setup: Same Machine vs. Two Machines topology (Premium)**: Added an explicit topology setting so Divine Link knows whether ProPresenter runs on this Mac or a separate one on the network. Two Machines mode (Premium-gated) is for large events where cabling between machines isn't practical — it offers only the two genuinely networked output paths (Stage Display HTTP, Messages API WebSocket) and hides Keyboard Automation entirely, since keyboard automation is local keystroke simulation and cannot reach an app on a different Mac under any circumstances. Selecting Two Machines without Premium shows the upgrade prompt instead of changing the setting.

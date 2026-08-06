@@ -1,17 +1,17 @@
 # Divine Link - Project Status
 
-Last Updated: 4 April 2026
+Last Updated: 6 August 2026
 
-## Current Version: 1.3.10
+## Current Version: 1.6.2
 
 ## Current Release Snapshot
 
-- **Latest app release**: `v1.3.10` (notarised packaging hardening + website download UX refresh)
+- **Latest app release**: `v1.6.2` (build 23) — ProPresenter Same Machine vs. Two Machines topology setting (Premium)
 - **Recent release train**:
-  - `v1.3.10` - Gatekeeper-safe packaging fix (`ditto`), refreshed appcast signature, ZIP download page
-  - `v1.3.8` - external device transcription fix (timer/run loop + non-default device init guard)
-  - `v1.3.7` - audio device switch fix + BlackHole wording clarity
-  - `v1.3.6` - transcription fallback fix + notarised build
+  - `v1.6.2` - ProPresenter Setup topology control; Two Machines mode hides Keyboard Automation and gates behind Premium
+  - `v1.6.1` - bug fixes and improvements
+  - `v1.6.0` - 10 Bible versions, free email registration, account + Stripe billing management
+  - `v1.5.2` - startup "Engine loading… / Ready" indicator, ad reliability improvements
 - **Distribution**: Sparkle appcast + Netlify release artefacts are active for direct distribution.
 - **Download UX**: `/download` page offers signed ZIP download and release notes.
 

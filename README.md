@@ -1,6 +1,6 @@
 # Divine Link
 
-**Version 1.3.0** | [Changelog](CHANGELOG.md) | [Feature Matrix](docs/FEATURE-MATRIX.md) | [Full Context](Divine-Link-Context.md)
+**Version 1.6.2** | [Changelog](CHANGELOG.md) | [Feature Matrix](docs/FEATURE-MATRIX.md) | [Full Context](Divine-Link-Context.md)
 
 **Real-time Scripture Detection & ProPresenter Integration for macOS**
 
