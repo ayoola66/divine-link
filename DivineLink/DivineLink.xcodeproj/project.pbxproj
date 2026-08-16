@@ -12,6 +12,16 @@
 		2CDB601C300DAD3400CEE1E2 /* WhisperModels/tokenizer in Resources */ = {isa = PBXBuildFile; fileRef = 2CDB601A300DAD3400CEE1E0 /* WhisperModels/tokenizer */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		54D108458EA84403A9A1C3B8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2CE3BBCA2F1C52BD00CD5B6F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2CE3BBD12F1C52BD00CD5B6F;
+			remoteInfo = DivineLink;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		2CDB601A300DAD3400CEE1E0 /* WhisperModels/tokenizer */ = {isa = PBXFileReference; lastKnownFileType = folder; path = WhisperModels/tokenizer; sourceTree = "<group>"; };
 		2CE3BBD22F1C52BD00CD5B6F /* DivineLink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DivineLink.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -210,16 +220,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXContainerItemProxy section */
-		54D108458EA84403A9A1C3B8 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 2CE3BBCA2F1C52BD00CD5B6F /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 2CE3BBD12F1C52BD00CD5B6F;
-			remoteInfo = DivineLink;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXTargetDependency section */
 		56F16A865535426B85E65C21 /* PBXTargetDependency */ = {

@@ -22,16 +22,18 @@ enum PanicButtonState: Equatable {
 
 /// Service that handles the "clear" button functionality to instantly clear scripture from ProPresenter.
 ///
-/// **Important:** This clears ProPresenter displays only - Divine Link verse history is preserved.
-/// The detected verses remain visible in Divine Link so users can re-send them if needed.
+/// **Important:** This clears the audience-facing displays only (ProPresenter and DivineView) —
+/// Divine Link's verse history is preserved. The detected verses remain visible in the operator
+/// window so users can re-send them if needed.
 ///
 /// **Keyboard Shortcuts:**
 /// - F12: Primary clear button
 /// - Cmd+Escape: Alternative clear shortcut
 ///
 /// **Clear Actions:**
-/// 1. Clear ProPresenter Stage Display (via HTTP DELETE)
-/// 2. Clear ProPresenter Audience Display (via keyboard automation ⌘B toggle or Messages API)
+/// 1. Clear the DivineView presentation window (local, immediate)
+/// 2. Clear ProPresenter Stage Display (via HTTP DELETE)
+/// 3. Clear ProPresenter Audience Display (via keyboard automation ⌘B toggle or Messages API)
 ///
 /// **NOT Cleared:**
 /// - Local Divine Link verse history (remains visible for re-use)
@@ -79,9 +81,9 @@ class PanicButtonService: ObservableObject {
     
     // MARK: - Main Clear Action
     
-    /// Trigger the panic button - clears ProPresenter displays immediately
-    /// Note: This does NOT clear the local Divine Link verse history - only ProPresenter is cleared
-    /// Returns true if the clear was successful, false otherwise
+    /// Trigger the panic button — clears DivineView and the ProPresenter displays immediately.
+    /// Note: this does NOT clear the local Divine Link verse history, so verses can be re-sent.
+    /// Returns true if the clear was successful, false otherwise.
     @discardableResult
     func triggerClear() async -> Bool {
         guard state != .clearing else {
@@ -89,8 +91,9 @@ class PanicButtonService: ObservableObject {
             return false
         }
         
-        logger.info("🚨 CLEAR BUTTON TRIGGERED - Clearing ProPresenter only")
+        logger.info("🚨 CLEAR BUTTON TRIGGERED - Clearing ProPresenter and DivineView")
         state = .clearing
+        DivineViewController.shared.clear()
         
         // Play audio feedback (if enabled)
         if playAudioFeedback {
@@ -99,9 +102,8 @@ class PanicButtonService: ObservableObject {
         
         var allSuccessful = true
         
-        // NOTE: We intentionally do NOT clear the local Divine Link display
-        // The verse history should remain visible in Divine Link
-        // Only ProPresenter displays are cleared
+        // NOTE: We intentionally do NOT clear the pending buffer or verse history.
+        // Only the audience-facing surfaces are cleared: DivineView (above) and ProPresenter (below).
         
         if useHybridManager {
             // Use the new HybridIntegrationManager for multi-path clearing

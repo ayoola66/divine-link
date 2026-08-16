@@ -24,6 +24,7 @@ private enum SettingsTab: Hashable {
     case propresenter
     case pastors
     case display
+    case divineView
     case bibleVersions
     case premium
     case updates
@@ -174,6 +175,8 @@ struct SettingsView: View {
                 .tag(SettingsTab.pastors)
             Label("Display", systemImage: "textformat.size")
                 .tag(SettingsTab.display)
+            Label("DivineView", systemImage: "rectangle.inset.filled")
+                .tag(SettingsTab.divineView)
             Label("Bible Versions", systemImage: "books.vertical")
                 .tag(SettingsTab.bibleVersions)
             // Admin tab: ONLY visible when authenticated AND user is admin.
@@ -200,6 +203,7 @@ struct SettingsView: View {
             case .propresenter: ProPresenterSettingsTab()
             case .pastors: PastorProfilesTab()
             case .display: AccessibilitySettingsTab()
+            case .divineView: DivineViewSettingsTab()
             case .bibleVersions: BibleVersionsTab()
             case .premium: SubscriptionSettingsTab()
             case .updates: UpdatesSettingsTab()

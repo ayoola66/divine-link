@@ -6,7 +6,9 @@
 **Complexity:** Large
 **Estimated Effort:** 24-32 hours (+ 4-8h research spike)
 **Phase:** Phase 3 (Week 3)
-**Target Version:** v2.0.0
+**Target Version:** v1.8.0 (FreeShow) / v2.0.0 (EasyWorship + protocol cleanup)  
+**Depends on:** Story 8.7 (Divine Link Presentation Window) — build that first  
+**Canonical roadmap:** [`Plans/Presentation-Outputs-Roadmap.md`](../../../Plans/Presentation-Outputs-Roadmap.md)
 
 ---
 

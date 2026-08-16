@@ -374,6 +374,22 @@ The free tier (Mercy) displays sidebar advertisements to support ongoing develop
 
 ### Pending / Roadmap
 
+#### Presentation outputs — Divine Link Window, FreeShow, ProPresenter
+**Status:** Roadmapped 16 August 2026 — **not built yet**  
+**Spec:** [`Plans/Presentation-Outputs-Roadmap.md`](Plans/Presentation-Outputs-Roadmap.md)  
+**Stories:** 8.7 (DL Presentation Window, build first) → 8.6 (FreeShow; EasyWorship later)
+
+Three push targets, same operator habit (confirm, then Push / Panic):
+
+| Phase | Target | Notes |
+|-------|--------|--------|
+| **A — v1.7** | Divine Link Presentation Window | Black or white background; verse + reference; HDMI = full-screen on the other display. Tonight-shaped MVP (~3–5 h). |
+| **B** | Output picker | Settings: Divine Link / ProPresenter / FreeShow |
+| **C — v1.8** | FreeShow | REST `start_scripture` on port 5506 (API exists; not coded in Divine Link yet) |
+| **D** | Shared `PresentationOutputProtocol` | Only after two targets work |
+
+ProPresenter Stage / Messages / Keyboard stays as it is.
+
 #### Love — Spoken Quote → Verse Matching (Story 7.2 evolved)
 **Status:** Designed & approved (2026-08-06) — **not building yet**; parked on roadmap  
 **Tier:** Love only (unique Pro differentiator)  

@@ -1,6 +1,6 @@
 # Divine Link - Feature Matrix
 
-**Last Updated:** 6 February 2026  
+**Last Updated:** 16 August 2026  
 **Version:** 1.3.2  
 **Status:** Source of Truth Document
 
@@ -61,6 +61,14 @@ This document serves as the **definitive source of truth** for:
 | **KJV (King James Version)** | ✓ | ✓ | ✓ | Default translation |
 | **Additional Translations** | ✗ | ✓ | ✓ | ESV, NIV, NASB, NLT, NKJV, etc. |
 | **Per-Pastor Translation** | ✗ | ✓ | ✓ | Saved in pastor profiles |
+
+### Presentation Outputs
+
+| Feature | Mercy | Grace | Love | Notes |
+|---------|-------|-------|------|-------|
+| **DivineView presentation window** | ✓ (MVP) | ✓ (MVP) | ✓ (MVP) | Black/white verse window; Story 8.7; not in a numbered release yet |
+| **FreeShow push** | Roadmapped | Roadmapped | Roadmapped | REST `start_scripture`; Story 8.6 after 8.7; not coded yet |
+| **ProPresenter (Stage / Messages / Keyboard)** | ✓ | ✓ | ✓ | Shipped — see table below |
 
 ### ProPresenter Integration
 

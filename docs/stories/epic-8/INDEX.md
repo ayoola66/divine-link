@@ -37,6 +37,11 @@
 1. [Story 8.1 - Modern UI Redesign](./story-8.1-modern-ui-redesign.md) ⭐ **Foundation**
 2. [Story 8.5 - Language Localization](./story-8.5-language-localization.md)
 
+### Presentation outputs (August 2026 — build before remaining v2 platform work)
+- [Story 8.7 - Divine Link Presentation Window](./story-8.7-divine-link-presentation-window.md) ⭐ **Next**
+- [Story 8.6 - Multi-Platform Integration](./story-8.6-multi-platform-integration.md) (FreeShow after 8.7)
+- [Presentation Outputs Roadmap](../../../Plans/Presentation-Outputs-Roadmap.md)
+
 ### Phase 2: Core Features (Week 2)
 3. [Story 8.2 - Manual Scripture Search](./story-8.2-manual-scripture-search.md) ⭐ **Critical**
 4. [Story 8.3 - Service Session Management](./story-8.3-service-session-management.md)

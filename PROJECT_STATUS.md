@@ -1,6 +1,6 @@
 # Divine Link - Project Status
 
-Last Updated: 6 August 2026
+Last Updated: 16 August 2026
 
 ## Current Version: 1.6.2
 
@@ -190,6 +190,7 @@ Authoritative pending list also lives in [`Divine-Link-Context.md` §10 Developm
 
 | Item | Tier | Status | Spec |
 |------|------|--------|------|
+| **Presentation outputs (DL Window → FreeShow → PP)** | All (DL Window + FreeShow); PP as today | Roadmapped 16 Aug 2026; **DL Window is next build** | [`Plans/Presentation-Outputs-Roadmap.md`](Plans/Presentation-Outputs-Roadmap.md) · Story 8.7 then 8.6 |
 | **Spoken Quote → Verse Matching** | Love | Designed & approved 2026-08-06; **parked** | [`docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md`](docs/superpowers/specs/2026-08-06-quote-verse-matching-design.md) |
 | AI anaphora / MLX (“verse we just read”) | Love | After quote corpus Phase 1 | Story 7.2 Phase 3 |
 | Session History & Export | Love | Pending | — |

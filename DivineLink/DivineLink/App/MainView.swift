@@ -66,6 +66,8 @@ struct MainView: View {
     @ObservedObject private var bible: BibleService
     // Shared audio-device manager — drives the quick mic selector in the status row.
     @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
+    // Observed so a refused detection can say so, rather than looking like silence.
+    @ObservedObject private var detector: ScriptureDetectorService
     
     init() {
         let pipeline = DetectionPipeline()
@@ -73,6 +75,7 @@ struct MainView: View {
         _audioCapture = ObservedObject(wrappedValue: pipeline.audioCapture)
         _transcriptBuffer = ObservedObject(wrappedValue: pipeline.transcriptBuffer)
         _bible = ObservedObject(wrappedValue: pipeline.bible)
+        _detector = ObservedObject(wrappedValue: pipeline.detector)
     }
     
     /// Currently selected verse from the list
@@ -144,6 +147,7 @@ struct MainView: View {
             }
         }
         .padding(16)
+        .background(DivineViewWindowOpener())
         .saturation(pipeline.isActive ? 1.0 : 0.4)
         .overlay {
             // Loading overlay when Bible database is loading
@@ -414,6 +418,18 @@ struct MainView: View {
             PanicButton(service: panicService) {
                 Task { await panicService.triggerClear() }
             }
+
+            Button {
+                DivineViewController.shared.requestOpenWindow()
+            } label: {
+                HStack {
+                    Image(systemName: "rectangle.inset.filled")
+                    Text("DivineView")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("Open the DivineView presentation window (⇧⌘D)")
             
             // Sign In (main window) — when not logged in, blue and distinct; opens login sheet on top
             if !authService.isAuthenticated {
@@ -825,6 +841,13 @@ struct MainView: View {
                     .foregroundStyle(.tertiary)
             }
             
+            // A refusal to detect is otherwise indistinguishable from silence, which leaves
+            // the operator guessing. This row says what was heard and why it was not shown,
+            // then clears itself. Deliberately not tappable: nothing here is safe to push.
+            if let rejection = detector.lastRejection {
+                rejectionRow(rejection)
+            }
+            
             // Scrollable list
             if pipeline.buffer.pendingVerses.isEmpty {
                 // Empty state
@@ -894,6 +917,35 @@ struct MainView: View {
         .frame(minHeight: 150)
     }
     
+    /// Transient, non-interactive notice that a detection was refused.
+    /// Never steals focus and carries no push affordance, so it cannot interfere with the
+    /// operator's workflow — it is purely an explanation for the silence.
+    private func rejectionRow(_ rejection: DetectionRejection) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+                .scaledCaptionFont()
+                .accessibilityHidden(true)
+            
+            Text(rejection.summary)
+                .scaledCaptionFont()
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.orange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Detection refused. \(rejection.summary)")
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.2), value: rejection.id)
+    }
+    
     // MARK: - Verse Actions
     
     private func pushSelectedVerse() {
@@ -912,6 +964,8 @@ struct MainView: View {
     private func pushVerseAll(_ verse: PendingVerse) {
         print("[Push All] \(verse.displayReference) (\(verse.verses.count) verses)")
         
+        DivineViewController.shared.presentAll(from: verse)
+
         // Push to ProPresenter
         Task {
             do {
@@ -938,6 +992,8 @@ struct MainView: View {
         let reference = verse.reference
         let singleRef = "\(reference.book) \(reference.chapter):\(currentVerse.verseNumber)"
         print("[Push One] \(singleRef)")
+
+        DivineViewController.shared.presentOne(from: verse)
         
         // Push to ProPresenter
         Task {

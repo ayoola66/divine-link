@@ -143,16 +143,24 @@ Support UK/US English variants:
 
 ---
 
-### **8.6 - Multi-Platform Integration** (Large, P1)
-Expand beyond ProPresenter:
-- **EasyWorship** integration (API research + implementation)
-- **FreeShow** integration (WebSocket or API)
-- Presentation platform selector in Settings
-- Abstract output layer (`PresentationOutputProtocol`)
-- Platform-specific adapters
-- Connection testing per platform
+### **8.7 - Divine Link Presentation Window** (Small–Medium, P0) — **build first**
+Own simple presentation GUI so churches can put verses on a projector without ProPresenter:
+- Black or white background
+- Verse text + reference pushed from Push One / Push All
+- Panic clears the window
+- HDMI = full-screen the window on the second display
 
-**Key Files:** `EasyWorshipClient.swift`, `FreeShowClient.swift`, `PresentationOutputFactory.swift`
+**Spec:** [`Plans/Presentation-Outputs-Roadmap.md`](../../../Plans/Presentation-Outputs-Roadmap.md)  
+**Key Files:** `PresentationDisplayController.swift`, `PresentationDisplayView.swift`
+
+### **8.6 - Multi-Platform Integration** (Large, P1) — **after 8.7**
+Expand beyond ProPresenter:
+- **FreeShow** first (documented REST `start_scripture` on port 5506)
+- **EasyWorship** later (research spike still required)
+- Presentation platform selector in Settings (Divine Link / ProPresenter / FreeShow)
+- Abstract output layer (`PresentationOutputProtocol`) only after two targets work
+
+**Key Files:** `FreeShowClient.swift`, later `EasyWorshipClient.swift`, `PresentationOutputFactory.swift`
 
 ---
 

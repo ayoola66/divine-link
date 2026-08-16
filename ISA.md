@@ -1,346 +1,617 @@
 ---
+task: "Divine Link — live spoken-scripture detection and presentation"
+slug: 20260816-010000_divine-link-project-isa
 project: Divine Link
-task: Small universal installer + Apple-Silicon on-demand Whisper model download
-effort: E3
-phase: execute
-progress: 120/149
-mode: algorithm
-started: 2026-07-18
-updated: 2026-08-06
+effort: E4
+effort_source: explicit
+phase: verify
+progress: 48/226
+mode: interactive
+started: 2026-08-16T00:00:00Z
+updated: 2026-08-16T07:58:00Z
 ---
 
 ## Problem
 
-DivineLink v1.3.10 ships (website live, notarised app, Stripe links live) but the owner cannot make reliable sales because: (1) the Supabase free-tier backend has **paused from inactivity** — its host returns NXDOMAIN — which breaks login (email OTP), subscription verification, device tracking, and the Stripe→premium webhook; (2) uncertainty about whether the custom domain expired; (3) the app's core value — detecting spoken scripture references in church — is reported to mis-detect words.
+A church media operator running scripture on a projector has one job during a service and no slack in which to do it. The preacher says "turn with me to the book of Psalms, chapter 9, verse 8 to 12"; within a few seconds the congregation expects the passage on screen. Today that means an operator typing a reference into ProPresenter while listening for the next one, and a congregation that watches the wrong verse, a blank screen, or a stale slide whenever the operator falls behind.
+
+Divine Link exists to close that gap: capture the room's audio, transcribe it on device, detect the spoken reference, look the verses up in a bundled SQLite Bible, and present them — either through ProPresenter or through Divine Link's own DivineView window on a second display. The operator stays in the loop and confirms every push. Version 1.6.2 ships that loop end to end, and DivineView landed as an MVP on 16 August 2026.
+
+The immediate problem that forced this ISA into existence is that the recognition path was not trustworthy. On 15–16 August 2026 a live utterance of "the book of Psalms chapter 9, verse 8 to 12" produced **Amos 9:1** on screen. The passage was wrong, the range was gone, and nothing in the interface signalled that anything had failed. Five compounding defects were diagnosed:
+
+1. **Non-deterministic fuzzy book matching.** `BookNameNormaliser.fuzzyMatch` iterated a Swift `Dictionary` of aliases. Swift randomises dictionary iteration order per process, so the mishearing "sam" — which sits at Levenshtein distance 1 from aliases belonging to six different books, including Amos and Psalms — resolved to a different book on different launches. The same audio produced different scripture depending on when the app was started.
+2. **Short aliases as fuzzy targets.** One- and two-character aliases such as "am" (Amos) and "ho" (Hosea) were eligible fuzzy targets. Almost any short mishearing lands within two edits of something in that set, so the matcher was confidently wrong at scale.
+3. **No chapter-aware disambiguation.** Nothing used the chapter the preacher had actually spoken to settle a tie, even though chapter counts are already in the database. "Chapter 91" is impossible for Amos (9 chapters) and unremarkable for Psalms (150), and that fact was available and unused.
+4. **Poisoned reference buffer.** `ReferenceBuffer` was written at parse time, before the reference had been checked against the Bible database. An impossible reference such as "Amos 91" therefore became the cached context that later partial references — "verse 8 to 12" — resolved against, and stayed poisoned for the full five-minute context window.
+5. **Verse range discarded by a fallback.** `reinterpretConcatenatedRef` exists to rewrite the speech-recognition artefact "Book123" into "Book 1:23". It fired even when an explicit verse range had already been parsed, and hard-coded `verseEnd: nil`, so "Amos 91:8-12" collapsed to "Amos 9:1" and the spoken range vanished silently.
+
+Individually each defect looks like a rough edge. Together they turned a correctness-critical recognition path into a coin toss whose failures were invisible to the operator. The repository also carries a second, structural problem: two unit test files exist in total (`DivineViewTests.swift`, `NumberedBookDetectionTests.swift`), so almost none of the detection surface is currently verifiable by anything other than a live service.
 
 ## Vision
 
-A prospective buyer visits the live site, downloads and installs the app, signs in, pays via Stripe, and is immediately recognised as premium — while the app accurately hears spoken scripture references during a live service. First real sales flow without manual intervention.
+An operator opens Divine Link before the service, selects the desk feed, and does not look at the laptop again except to press Push. The preacher speaks; the reference appears as a card with the verses already loaded and a confidence figure attached; the operator presses Push and the passage is on the projector before the congregation has finished turning pages. When Divine Link is unsure, it says so plainly and shows nothing rather than showing the wrong book — and the operator learns, over one service, that a card on screen can be trusted without being read twice. The euphoric surprise is the moment an operator realises they have stopped pre-reading every card.
 
 ## Out of Scope
 
-The v2.0.0 sidebar UI redesign (`redesign.pen`, `REDESIGN-SPEC-v2.0.0.md`) — deferred until v1 is solid and selling. Wiring the custom domain `divinelinkapp.com` to Netlify — optional; the Netlify URL already serves everything sales needs.
+- **No auto-push.** Every push to any target is operator-confirmed. A 90% auto-push threshold is discussed in `Plans/Presentation-Outputs-Roadmap.md` §7 but is deliberately not part of this ideal state.
+- **No FreeShow integration.** Roadmapped as Phase C in `Plans/Presentation-Outputs-Roadmap.md` and Story 8.6; the REST contract (`POST :5506`, `start_scripture`) is documented but no `FreeShowClient.swift` exists. Criteria referencing FreeShow are marked as future and are excluded from this ideal state.
+- **No EasyWorship, NDI, OBS or output-protocol rewrite.** Story 8.6 research-spike territory; Phase D explicitly says two working targets must exist before the protocol is extracted.
+- **No Windows port.** Divine Link is macOS-only. Confirmed as a competitor capability gap in `Plans/Competitor-Gap-Analysis-Pewbeam.md` §4.2, and deliberately deferred.
+- **No semantic or paraphrase quote matching across the full canon.** `ImplicitReferenceDetector` matches a hardcoded list of 17 phrases in `BibleVocabularyData.swift` with `minimumPhraseWords = 5`. Love Quote Matching Phase 1 is roadmapped, not built, and is not in this ideal state.
+- **No AI sermon notes, slide generation, or cloud transcription.** Audio never leaves the machine except where Apple's `SFSpeechRecognizer` falls back to server-based recognition when on-device models are unavailable; that fallback is a known behaviour, not a feature to extend.
+- **No themes, motion backgrounds or images in DivineView.** Black or white, verse, reference, translation. Nothing else.
+- **No changes to the monetisation model.** Mercy/Grace/Love tiers and Stripe billing are existing behaviour; this ISA does not restructure them.
+- **No modification of the bundled `Bible.db` contents.** It is read-only and treated as a fixture.
+
+## Principles
+
+- **A wrong verse on screen is worse than no verse.** Recognition should reject ambiguity rather than resolve it. Silence is a recoverable failure; a confident wrong answer is not, because the operator has no signal to act on.
+- **Non-determinism in a recognition path is a correctness bug, not a UX nicety.** Any code path where the same input can yield different outputs across process launches is broken regardless of how often it happens to be right.
+- **The operator is the last line of defence and must be given something to defend with.** Confidence must be visible, uncertainty must be legible, and the panic path must be one keystroke.
+- **Validate before you remember.** State that feeds future decisions — cached context, buffered references — must be checked against reality before it is written, because bad state outlives the utterance that produced it.
+- **Never discard what the speaker actually said.** A repair heuristic may add interpretation; it must not remove information that was explicitly spoken.
+- **Local first.** Detection, lookup and presentation work with the network unplugged. The bundled database is the product's floor, not its cache.
+- **Own a surface before integrating another.** DivineView exists so that a church with a laptop and a projector is a first-class user, not a user waiting for an integration.
 
 ## Constraints
 
-- Supabase restore and any dashboard action can only be performed by the account owner (I cannot log in).
-- Transcription-engine code changes cannot be validated without a real Xcode build + live audio test on the owner's machine (BlackHole loopback + speaking).
-- macOS Speech framework (`SFSpeechRecognizer`) has per-request audio-duration limits — the restart loop is a workaround, not a free choice.
-- Free-tier Supabase re-pauses after ~7 days of inactivity — a durable fix implies a paid tier or a keep-alive ping.
+- macOS-only, SwiftUI + AppKit, distributed outside the App Store via Sparkle with an EdDSA-signed appcast on Netlify.
+- Transcription is Apple `SFSpeechRecognizer` with a WhisperKit path (`WhisperTranscriber`); `requiresOnDeviceRecognition` is only set when `supportsOnDeviceRecognition` is true, otherwise recognition falls back to server-based rather than failing silently.
+- The Bible corpus is a read-only bundled SQLite file at `DivineLink/Resources/Bible.db` with tables `books`, `verses`, `translations`, 66 books, and five bundled translations (KJV, WEB, ASV, BSB, LSV) of 31,086–31,104 verses each. Premium translations (WEBBE, YLT, DBY, DRA, BBE) are downloaded, not bundled.
+- Concurrency: `TranscriptionService`, `DivineViewController`, `DivineViewSettings`, `PanicButtonService` and `PushActionCoordinator` are `@MainActor`-isolated. `SFSpeechRecognizer` callbacks arrive off the main thread and must be dispatched before touching that state.
+- Detection is driven by `NSRegularExpression` over the transcript with a 300 ms Combine debounce; there is no ML model in the reference-detection path.
+- Reference context expires after `ReferenceBuffer.contextTimeout`, default 300 seconds, persisted under `ReferenceBufferTimeout`.
+- Settings persist through `UserDefaults` with namespaced keys (`divineView.*`, `detection.*`, `panicButton.*`, `ReferenceBuffer*`).
+- ProPresenter integration must keep three paths working — Stage Display over HTTP, Messages API over WebSocket, and keyboard automation — behind `HybridIntegrationManager`, with topology (`sameMachine` / `twoMachines`) gated to Premium.
+- DivineView must not steal key focus when a verse is pushed; `orderFrontRegardless()` is required for the `versePushed` reason so the operator window keeps Space/Enter/Delete and ProPresenter keyboard automation is not interrupted.
+- Feature gating follows the Mercy (Free) / Grace (Premium, £9.99) / Love (Pro, £19.99) tiers defined in `docs/FEATURE-MATRIX.md`.
+- All user-facing copy is British English.
 
 ## Goal
 
-Restore end-to-end sales (auth + payment + premium grant) on the live Netlify URL, correct the domain misconception, and land a validated fix for scripture word-detection accuracy — all on v1, leaving v2 for later.
+Divine Link detects a spoken scripture reference from live room audio and puts the correct passage — correct book, correct chapter, complete spoken verse range, correct translation — in front of the operator within the latency budget, refuses to display anything when the reference is ambiguous or implausible, and pushes to ProPresenter and DivineView only on explicit operator confirmation, with the whole detection path covered by unit tests that fail if any of the five 16 August 2026 defects reappear.
 
 ## Criteria
 
-- [x] ISC-1: Supabase host reachability probed — result recorded (NXDOMAIN = paused). Probe: `curl` host → HTTP 000 / `dig` NXDOMAIN.
-- [x] ISC-2: Custom-domain expiry checked via WHOIS — ACTIVE to 2027-03-18 (NOT expired). Probe: `whois divinelinkapp.com`.
-- [x] ISC-3: App + site audited for `divinelinkapp.com` refs — **0 found**; everything already on `divinelink.netlify.app`. Probe: `grep -rIn`.
-- [x] ISC-4: Site funnel pages return 200 (/, download, terms, privacy, success, cancel, compare, releases). Probe: `curl` each.
-- [x] ISC-5: All four Stripe checkout links return 200. Probe: `curl buy.stripe.com/...`.
-- [x] ISC-6: App Sparkle feed URL points to live appcast (netlify.app/appcast.xml → 200). Probe: `grep` Info.plist + `curl`.
-- [x] ISC-7: Transcription code read; word-loss root cause identified (restart-on-every-final tears down session, drops audio). Probe: `Read` TranscriptionService.swift.
-- [x] ISC-8: Bible language model path reviewed; fallback + compilation logic understood. Probe: `Read` BibleLanguageModel.swift.
-- [x] ISC-9: Supabase project restored — host resolves, `auth/v1/health` → 200. Verified 2026-07-18 after owner reactivation.
-- [x] ISC-9.1: Backend schema deployed & functional — `ads`/`app_heartbeats` → 200, RPC `get_all_active_ads` → 200, RPC `get_my_subscription` → 200, Stripe webhook fn → 400 (deployed), OTP endpoint live. profiles/subscriptions/devices RLS-protected (404 to anon = correct).
-- [DEFERRED-VERIFY] ISC-10: Email OTP login succeeds in-app end-to-end. Follow-up: owner runs app, signs in. Endpoint verified live; in-app flow needs real run.
-- [DEFERRED-VERIFY] ISC-11: A test Stripe purchase flips the account to premium via webhook. Follow-up: owner does a test-mode purchase; webhook + RPC verified deployed.
-- [x] ISC-12: Supabase re-pause prevented — GitHub Actions daily keep-alive (`divine-link-site/.github/workflows/supabase-keepalive.yml`) pushed + verified with 2 green `workflow_dispatch` runs (11s, 10s). Pings app_heartbeats + auth health daily 06:00 UTC; fails loudly if down.
-- [x] ISC-13: Transcription fix applied — seamless session handoff (new request+task swapped in before old retired; audio feed + isTranscribing kept alive; immediate handoff on isFinal, damped recycle only on silence/error). Verified: 0 dangling refs, full API contract intact, braces 51/51, swift -parse clean.
-- [DEFERRED-VERIFY] ISC-14: Fix validated by live speaking test showing scripture refs detected without word loss. Follow-up: owner builds in Xcode + speaks a sermon passage. Cannot probe without owner's build + audio.
-- [x] ISC-17: Reverse-order detection added — "book verse X chapter Y" (e.g. "John verse 16 chapter 5") → John 5:16. New `.bookVerseChapter` pattern + `parseBookVerseChapterMatch`; requires BOTH keywords so no false positives. Verified: braces 178/178, edits parse clean (only pre-existing regex-literal false-positive at L1198). [DEFERRED-VERIFY live: owner speaks the phrase.]
-- [x] ISC-18: Concurrency warning fixed — `TranscriptBuffer` timer uses `MainActor.assumeIsolated` (ListeningFeedView.swift). Xcode showed 1 warning; fixed at source.
-- [ ] ISC-15: Anti: No change touches or ships any v2.0.0 redesign surface.
-- [x] ISC-16: Anti: No new hardcoded reference to the dead custom domain is introduced.
-- [x] ISC-19: Notarisation fixed — stale keychain profile was the cause; fresh `DivineLink-Notary` profile (API key) validated via `notarytool history`. release.sh rewired to it. Also fixed release.sh appcast awk bug (BSD awk can't carry multi-line -v → now writes item to file + getline).
-- [x] ISC-20: v1.4.0 built, notarised (`stapler validate` OK), Sparkle-signed, deployed. Live: latest.zip=13120037, appcast serves 1.4.0 + matching notarised signature, /download 200. App opens on double-click (no Gatekeeper prompt).
-- [DEFERRED-VERIFY] ISC-11: Real Stripe test purchase flips account to premium. Owner action when ready — infra verified (webhook deployed, RPC live).
+### Build and repository health
 
-### Feature: Per-card Bible version switcher (2026-07-19, church field-test request #1)
+- [x] ISC-1: `xcodebuild -project DivineLink/DivineLink.xcodeproj -scheme DivineLink build` exits 0.
+- [x] ISC-2: `BibleService.swift` declares `maxChapter(forBookNamed:)` exactly once within `class BibleService`.
+- [x] ISC-3: `xcodebuild test -scheme DivineLink` exits 0 with zero failing tests.
+- [ ] ISC-4: The build emits zero Swift compiler warnings in `Features/Detection/`.
+- [ ] ISC-5: `Bible.db` is present in the built app bundle's `Resources` directory.
+- [ ] ISC-6: No source file under `Features/` contains a `TODO` marker referencing the Psalms/Amos defects.
+- [ ] ISC-7: `git status --porcelain` is clean after a build (no generated artefacts tracked).
+- [x] ISC-8: The `DivineLinkTests` target contains at least one test file per detection concern (normalisation, partial resolution, concatenation repair, lookup), not the two files present today.
 
-- [x] ISC-21: `BibleService.getVerse/getVerseRange/getVerses` accept an optional `translation:` override (default nil = global selection); all existing callers unaffected. Probe: `grep` signatures + BUILD SUCCEEDED.
-- [x] ISC-22: `BufferManager.updateTranslation(id:translation:verses:)` swaps a pending verse's text + translation in place, no-ops on empty input, clamps `currentVerseIndex`. Probe: `Read` method + build.
-- [x] ISC-23: `PendingVerse.verses` and `.translation` are mutable (`var`) so a card can switch version without re-detecting. Probe: `grep` struct fields.
-- [x] ISC-24: `VerseRowView` renders a per-card translation Menu (`translationPicker`) and is instantiated with `availableTranslations` + `onChangeTranslation`. Probe: `grep` + build.
-- [x] ISC-25: `changeTranslation` re-fetches the same reference in the chosen version and updates only that card. Probe: `Read` MainView helper + build.
-- [x] ISC-26: Anti: switching a card's version does NOT mutate the app-wide `@AppStorage("selectedTranslation")`. Probe: `changeTranslation` never writes `selectedTranslation` (grep confirms).
-- [x] ISC-27: Whole app type-checks and compiles with the changes. Probe: `xcodebuild ... build` → BUILD SUCCEEDED.
-- [DEFERRED-VERIFY] ISC-28: Live — operator taps a detected card's version chip, the verse re-renders in the new translation and can flick back and forth. Follow-up: owner runs the app and switches a card. Cannot probe without owner's build + runtime.
+### Speech capture and device selection
 
-### Feature: Dynamic verse-card sizing + clean Bible.db re-import (2026-07-19, exposed by version switcher)
+- [ ] ISC-9: `AudioDeviceManager.refreshDevices()` returns a non-empty `availableDevices` array on a Mac with a built-in microphone.
+- [ ] ISC-10: Each entry in `availableDevices` is an `AVCaptureDevice` of audio media type.
+- [ ] ISC-11: `selectDefaultDevice()` sets `selectedDevice` to the system default input when no device has been saved.
+- [ ] ISC-12: `selectDevice(_:)` persists the chosen device identifier and the same device is selected after an app relaunch.
+- [ ] ISC-13: Selecting a device that has since been unplugged falls back to the system default rather than leaving `selectedDevice` nil.
+- [ ] ISC-14: `AudioCaptureService` begins publishing on `audioBufferPublisher` within 2 seconds of start.
+- [ ] ISC-15: The first published `AVAudioPCMBuffer` has a non-zero frame length.
+- [ ] ISC-16: RMS computed over a buffer captured while audio is playing is greater than zero.
+- [ ] ISC-17: `AudioLevelIndicator` reflects a non-zero level while audio is present and returns to zero within 1 second of silence.
+- [ ] ISC-18: Microphone permission denial surfaces a user-visible error rather than a silent no-op.
+- [ ] ISC-19: Changing the input device mid-session is debounced by 300 ms before it reaches Core Audio (`DetectionPipeline.setupDeviceObserver`).
 
-- [x] ISC-29: Detected-verse card sizes dynamically — selected card shows full text (`.lineLimit(isSelected ? nil : 2)` + `fixedSize(vertical)`); unselected stay 2-line previews. Probe: `grep` MainView + parse clean.
-- [x] ISC-30: `Bible.db` `verses` table rebuilt from clean public-domain sources (KJV+ASV scrollmapper, WEB getbible.net); `books` table preserved unchanged. Probe: `bun rebuild.ts` output + schema diff.
-- [x] ISC-31: Zero duplicate (translation,book,chapter,verse) rows — was ~70k dup groups. Probe: `GROUP BY ... HAVING COUNT>1` → 0.
-- [x] ISC-32: Zero WEB footnote-contaminated verses — was 861. WEB John 3:16 = "…his one and only Son…". Probe: GLOB `*[a-z][0-9]:[0-9]*` → 0.
-- [x] ISC-33: Zero KJV pilcrow (¶) verses — was 5,750. Probe: `LIKE '%¶%'` → 0.
-- [x] ISC-34: Verse counts sane — KJV 31,102 / ASV 31,086 / WEB 31,095 (ASV/WEB legitimately omit critical-text verses). Probe: `COUNT GROUP BY translation_id`.
-- [x] ISC-35: `books` table intact (66 rows) + schema/index byte-identical so `BibleService` reads unchanged; DB shrank 40MB→16MB. Probe: `.schema` + `COUNT(books)`.
-- [x] ISC-36: Original DB backed up outside the app bundle (`_bible_rebuild/Bible.db.pre-reimport.bak`). Probe: `ls`.
-- [DEFERRED-VERIFY] ISC-37: App rebuilt in Xcode renders clean WEB text (no footnote) when a card is switched to WEB. Follow-up: owner rebuilds + switches a card.
+### Transcription and transcript buffer
 
-### Feature: Live-transcript duplication fix (2026-07-19, church field-test bug #2)
+- [ ] ISC-20: `TranscriptionService.requestPermission()` returns true after speech authorisation is granted.
+- [ ] ISC-21: `start(with:)` sets `isTranscribing` to true and establishes an audio buffer subscription.
+- [ ] ISC-22: `beginRecognitionSession()` returns false and sets `error = .recognizerNotAvailable` when the recogniser is unavailable.
+- [ ] ISC-23: `requiresOnDeviceRecognition` is only set true when `speechRecognizer.supportsOnDeviceRecognition` is true.
+- [ ] ISC-24: When on-device recognition is unsupported, the service logs the fallback and still produces transcript text.
+- [ ] ISC-25: Partial results update `transcript` and publish a `TranscriptionSegment` with `isFinal == false`.
+- [ ] ISC-26: A final result publishes a `TranscriptionSegment` with `isFinal == true` even when the text is identical to the last partial.
+- [ ] ISC-27: `restartSeamlessly()` creates the new recognition session before retiring the old one, so `appendAudioBuffer` always has a live request.
+- [ ] ISC-28: A seamless restart drops zero audio buffers — buffer count in equals buffer count appended across the handoff boundary.
+- [ ] ISC-29: A seamless restart resets `lastTranscript` to empty so the new session's partials do not stack on the old text.
+- [ ] ISC-30: `isTranscribing` remains true across a seamless restart.
+- [ ] ISC-31: The display buffer commits exactly one line per recognition session (no duplicated transcript across a session boundary).
+- [ ] ISC-32: Error code 1110 ("no speech") schedules a damped restart on a 0.3 s timer rather than restarting immediately.
+- [ ] ISC-33: `kAFAssistantErrorDomain` code 216 is swallowed and does not surface as a user-visible error.
+- [ ] ISC-34: `stop()` cancels the restart timer, the recognition task and the audio subscription, and leaves `isTranscribing` false.
+- [ ] ISC-35: The Bible language model is applied to the recognition request when `BibleLanguageModel.isReady` is true.
+- [ ] ISC-36: A reference spoken across a session-restart boundary is still detected once the transcript reassembles.
 
-- [x] ISC-38: `TranscriptionService.handleRecognitionResult` always emits a FINAL segment on `isFinal` (even when identical to last partial), so the display buffer commits one line per session. Probe: `Read` + build.
-- [x] ISC-39: `TranscriptBuffer` partials REPLACE the live line (cumulative-aware); commits exactly one finalised line per STT session; the buggy 1.5s sentence timer (which committed growing cumulative snapshots as separate lines) is removed. Probe: `Read` + `grep` sentenceTimer → 0 refs.
-- [x] ISC-40: Silence/error handoff (no explicit isFinal) still commits the prior session — detected when the cumulative resets shorter and no longer extends the current line. Probe: `Read` update() logic.
-- [x] ISC-41: Anti: transcript no longer stacks nested cumulative snapshots ("A", "A B", "A B C" as separate lines). Probe: code path eliminated (one commit per session boundary).
-- [x] ISC-42: Detection path untouched — still consumes `fullTranscriptPublisher`, not the display buffer; fix is display-only. Probe: `grep` DetectionPipeline wiring unchanged.
-- [x] ISC-43: Whole app compiles. Probe: `xcodebuild ... build` → BUILD SUCCEEDED.
-- [DEFERRED-VERIFY] ISC-44: Live — speaking continuously yields clean, non-duplicated transcript lines. Follow-up: owner rebuilds + speaks a passage.
+### Reference detection — explicit written forms
 
-### Feature: Quick mic selector + continuous transcript (2026-07-19, church field-test asks #3/#4)
+- [ ] ISC-37: "John 3:16" yields `ScriptureReference(book: "John", chapter: 3, verseStart: 16, verseEnd: nil)`.
+- [ ] ISC-38: "John 3:16-18" yields `verseStart: 16, verseEnd: 18`.
+- [ ] ISC-39: "1 John 3:16" resolves to book "1 John", not "John".
+- [ ] ISC-40: "Psalm 23:1" and "Psalms 23:1" both resolve to the same canonical book.
+- [ ] ISC-41: "Song of Solomon 2:1" resolves as a single multi-word book name.
+- [ ] ISC-42: "Romans 8" yields a `chapterOnly` detection with `chapter: 8` and no verse.
+- [ ] ISC-43: A reference embedded mid-sentence ("as it says in John 3:16, God so loved") is detected.
+- [ ] ISC-44: Two distinct references in one transcript segment produce two detections.
+- [ ] ISC-45: The same reference repeated within the debounce window produces exactly one detection.
+- [ ] ISC-46: `DetectionResult.rawMatch` contains the exact substring matched from the transcript.
 
-- [x] ISC-45: Quick audio-input selector (`micSelector`) added to the status row beside Audio — a Menu bound to shared `AudioDeviceManager` (lists devices, checkmarks current, Refresh action); selection switches input live via the pipeline's existing `$selectedDevice` observer. No Settings trip needed. Probe: `Read` + build.
-- [x] ISC-46: Live transcript renders CONTINUOUS — `TranscriptTextView` joins finalised lines with spaces (flowing prose) instead of newlines; live partial appended dim as the trailing edge. Probe: `Read` updateNSView + build.
-- [x] ISC-47: Word-click → pencil → correction edit flow preserved (selection-based; `lineOffsetMap` ranges still tracked per line). Probe: `Read` — selection/onCorrection path untouched.
-- [x] ISC-48: App compiles (added `import AVFoundation` to MainView for `AVCaptureDevice`). Probe: `xcodebuild ... build` → BUILD SUCCEEDED.
-- [DEFERRED-VERIFY] ISC-49: Live — mic dropdown switches device + transcript reads clean/continuous during real (paused) speech. Follow-up: owner rebuilds + tests.
+### Reference detection — spoken and verbal forms
 
-### Feature: Restore pause-based line breaking (delta-tracked) (2026-07-19, owner preferred pre-update readability)
+- [ ] ISC-47: "John chapter 3 verse 16" resolves to John 3:16 via the `verbal` pattern.
+- [ ] ISC-48: "Genesis 1 verse 1" resolves to Genesis 1:1 via the `verbalShort` pattern (no "chapter" keyword).
+- [ ] ISC-49: "John three sixteen" resolves to John 3:16 via the `spokenWords` pattern.
+- [ ] ISC-50: "Genesis twenty one one" resolves to Genesis 21:1, not Genesis 20:11.
+- [ ] ISC-51: "John 316" resolves to John 3:16 via the `spoken` pattern.
+- [ ] ISC-52: "John 316 to 18" resolves to John 3:16-18 via the `spokenRange` pattern with `verseEnd: 18`.
+- [ ] ISC-53: "verse 31 of Romans 8" resolves to Romans 8:31 via the `invertedVerbal` pattern.
+- [ ] ISC-54: "verse 31 of Romans eight" resolves to Romans 8:31 with the chapter given as a word.
+- [ ] ISC-55: "John verse 16 chapter 5" resolves to John 5:16 via the `bookVerseChapter` pattern.
+- [ ] ISC-56: "Second Timothy chapter 3" resolves to "2 Timothy 3", not "Timothy 3".
+- [ ] ISC-57: "First Corinthians 13" resolves to "1 Corinthians 13".
+- [ ] ISC-58: "Third John verse 4" resolves to "3 John 1:4".
+- [ ] ISC-59: Hyphenated number words ("twenty-one") and spaced number words ("twenty one") both parse to 21.
+- [ ] ISC-60: "the book of Psalms chapter 9, verse 8 to 12" resolves to Psalms 9:8-12 — the exact utterance that produced Amos 9:1 on 16 August 2026.
 
-- [x] ISC-50: Transcript breaks a NEW LINE at each ~1.4s speech pause again (owner found continuous space-join "muddy"). Rendering reverted to one phrase per line. Probe: `Read` + build.
-- [x] ISC-51: Anti: no duplication/stacking despite mid-session line breaks — `TranscriptBuffer` commits only the DELTA beyond `committedPrefix` (not whole cumulative snapshots), with common-prefix resync on revisions + new-session reset. Probe: `Read` update()/commitDelta().
-- [x] ISC-52: Whole app compiles. Probe: `xcodebuild ... build` → BUILD SUCCEEDED; ListeningFeedView braces 45/45.
-- [DEFERRED-VERIFY] ISC-53: Live — pauses create new readable lines like the pre-update version, without duplication. Follow-up: owner rebuilds + speaks with pauses.
-- [ ] ISC-54: DECIDED (2026-07-20) — integrate WhisperKit (MIT/free, on-device, offline) with model **small.en**. Plan: owner adds SPM package `github.com/argmaxinc/argmax-oss-swift` (product WhisperKit) in Xcode → I write `WhisperKitTranscriptionService` drop-in (same publishers, fed by existing AudioCaptureService buffers resampled 44.1/48k→16k mono) behind an engine toggle with Apple SFSpeechRecognizer fallback → build-fix → test → tune. Model bundled into app as a follow-up for pure-offline install (first run otherwise downloads small.en once). Verified: MIT license, macOS 14+ (app already targets), transcribe(audioArray:[Float],decodeOptions:) API, Apple-Silicon-optimised. Owner HARD CONSTRAINT (2026-07-20): must work FULLY OFFLINE + standalone (install on a Mac, it just works), no internet dependency except the existing 7-day update/premium check. This RULES OUT Apple server recognition (option a). Owner initially declined a switch thinking WhisperKit = "another AI tool / internet-dependent" — CORRECTION: WhisperKit runs Whisper on-device via CoreML, fully offline, model bundled in app (exactly how Superwhisper works). So WhisperKit SATISFIES the offline/standalone requirement AND fixes neatness (punctuation, accuracy, no cumulative-partial churn / no session-recycling boundary artifacts). Recommended path. Apple on-device `SFSpeechRecognizer` is the wrong tool for long-form church audio (built for short dictation; loops on continuous audio; needs session-recycling handoff that creates boundary duplication).
-- [ ] ISC-55: The duplication screenshot the owner sent (2026-07-20) appears to PRE-DATE the delta-based line-break fix (ISC-50/51). ACTION: owner must rebuild + retest with clean paused speech. If stacking persists post-rebuild → add overlap-dedup guard at commit (session-handoff boundary overlap). Follow-up. (Note: WhisperKit engine below supersedes the Apple-path transcript concerns.)
+### Reference detection — contextual partials
 
-### Feature: WhisperKit offline engine integrated (2026-07-20)
+- [ ] ISC-61: After a full reference is detected, "verse 18" resolves to the same book and chapter, verse 18.
+- [ ] ISC-62: After a full reference, "verses 5 to 7" resolves with `verseStart: 5, verseEnd: 7`.
+- [ ] ISC-63: "the next verse" advances the verse number by one against the cached context.
+- [ ] ISC-64: "the previous verse" decrements the verse number by one against the cached context.
+- [ ] ISC-65: A partial reference with no cached context produces no detection.
+- [ ] ISC-66: A partial reference resolved against context older than `contextTimeout` (default 300 s) produces no detection.
+- [ ] ISC-67: `ReferenceBuffer.isEnabled == false` disables partial resolution entirely.
+- [ ] ISC-68: `contextTimeout` reads from `UserDefaults` key `ReferenceBufferTimeout` and defaults to 300 when unset.
+- [ ] ISC-69: A chapter-only utterance ("chapter 9") after a full reference resolves against the cached book.
+- [x] ISC-70: All five context-write sites route through `cacheContext(for:)` — no direct `referenceBuffer.updateContext` call exists outside that helper.
+- [ ] ISC-71: A resolved partial reference inherits the book from context and never re-runs fuzzy book matching.
+- [ ] ISC-72: Starting a new service session clears the reference context.
 
-- [x] ISC-56: `WhisperTranscriber` (new file) consumes existing `AudioCaptureService.audioBufferPublisher`, resamples to 16k mono via `AudioProcessor.resampleAudio`+`convertBufferToArray`, runs `WhisperKit.transcribe(audioArray:decodeOptions:)` on a rolling ~28s window every 1.5s, model small.en. Probe: `Read` + BUILD SUCCEEDED (WhisperKit API matched first try).
-- [x] ISC-57: `TranscriptionService` branches engine — default WhisperKit (UserDefaults `useWhisperKit`, default true), Apple SFSpeechRecognizer auto-fallback if the model fails to load; `requestPermission`/`isAvailable` don't let denied Speech-Recognition block Whisper. Probe: `Read` + build.
-- [x] ISC-58: Anti: no downstream changes — Whisper routes through the SAME publishers (`transcript`, `fullTranscriptPublisher`, `transcriptPublisher`, `isTranscribing`), so detection, transcript view (delta line-breaking), mic selector, and word-edit are untouched. Probe: DetectionPipeline/MainView unchanged + build.
-- [DEFERRED-VERIFY] ISC-59: Live — Whisper yields punctuated, clean, accurate transcript with pause-delimited lines; verse detection still fires. Owner rebuilds + speaks. FIRST RUN downloads small.en once (needs internet that one time; then cached).
-- [x] ISC-60a: WhisperKit gated to Apple Silicon (`shouldUseWhisper = useWhisperSetting && isAppleSilicon`, runtime sysctl). Intel Macs → Apple STT automatically (WhisperKit EXC_BAD_ACCESS-crashes on Intel via MPSGraph; uncatchable, so gated before touching WhisperKit). Owner confirmed: has/will get Apple Silicon; Intel gets Apple engine. BUILD SUCCEEDED.
-- [x] ISC-60b: `WhisperTranscriber.bundledModelFolder()` discovers the app-bundled model (folder containing `AudioEncoder.mlmodelc`, at Resources root or one level deep) and loads via `WhisperKitConfig(modelFolder:)` — pure offline; download only as fallback. Owner already bundled the model. BUILD SUCCEEDED.
-- [DEFERRED-VERIFY] ISC-60: On Apple Silicon — Whisper loads from the bundled folder with NO network (verify tokenizer files are in the bundle too), transcribes cleanly, energy acceptable. Owner tests on M-series.
-- [ ] ISC-61: Follow-up — add a Settings toggle for the engine (currently UserDefaults `useWhisperKit`, default on) so the owner can A/B Apple vs Whisper in-app.
+### Book name normalisation and the 16 August 2026 regressions
 
-### Feature: Small universal installer + Apple-Silicon on-demand model download (2026-07-20)
+- [x] ISC-73: `fuzzyCandidates` iterates `bookMappings.keys.sorted()`, not raw dictionary order (defect 1).
+- [ ] ISC-74: Running `fuzzyCandidates("sam")` 100 times across 100 separate process launches returns an identical ordered result each time (defect 1, behavioural).
+- [x] ISC-75: `fuzzyMatch` returns nil when the tied candidates map to more than one canonical book (defect 1).
+- [x] ISC-76: `minimumFuzzyAliasLength` is 3 and aliases shorter than that are skipped in `fuzzyCandidates` (defect 2).
+- [x] ISC-77: `fuzzyCandidates("am")` returns no candidate whose matched alias is "am" (defect 2).
+- [x] ISC-78: `normalise(_:chapterHint:)` filters ambiguous candidates through `chapterCountProvider` before rejecting (defect 3).
+- [x] ISC-79: `DetectionPipeline.wireDetectorToBible()` assigns `bookNormaliser.chapterCountProvider` from `BibleService.maxChapter(forBookNamed:)` (defect 3).
+- [x] ISC-80: `normalise("sam", chapterHint: 91)` returns "Psalms" — reached by the exact-alias path, ahead of any chapter filtering, and never Amos (defect 3).
+- [x] ISC-81: `normalise("a john", chapterHint: 1)` returns nil, because chapter 1 exists in all three Johannine epistles and the tie is unresolved (defect 3, honest-rejection case).
+- [ ] ISC-82: [DROPPED — superseded by the "sam" → Psalms alias decision of 2026-08-16; bare "sam" now resolves to Psalms by design, so a nil return would be a regression rather than the ideal state. Honest rejection is now carried by ISC-81.]
+- [x] ISC-83: `cacheContext(for:)` returns early without writing when `referenceValidator` reports the reference implausible (defect 4).
+- [x] ISC-84: `wireDetectorToBible()` assigns `referenceValidator` from `BibleService.referenceExists(_:)` (defect 4).
+- [x] ISC-85: Feeding "Amos 91" into the detector leaves `ReferenceBuffer.currentContext` unchanged (defect 4).
+- [ ] ISC-86: A subsequent "verse 8 to 12" after an implausible reference resolves against the last *plausible* context, or produces nothing (defect 4).
+- [x] ISC-87: Words in `excludedWords` never normalise to a book name ("I am forty" does not yield 1 Samuel).
+- [x] ISC-88: A book name shorter than 3 characters that is not an exact alias returns nil from `normalise`.
+- [x] ISC-89: Exact aliases still resolve at length 1–2 ("Ps" → Psalms) via direct lookup, bypassing the fuzzy floor.
+- [x] ISC-90: `isExactAlias` returns true for entries in `bookMappings`, `sttMishearings` and `abbreviations`.
+- [ ] ISC-91: `suggestCorrection` never returns a book for an input whose fuzzy candidates span multiple books.
+- [ ] ISC-92: Every one of the 66 canonical book names in `Bible.db` normalises to itself.
 
-**Problem addendum:** The v1.5 build bundles the 464 MB `openai_whisper-small.en` CoreML model inside the app, producing a 493 MB installer shipped to *every* Mac — including Intel Macs that can never run WhisperKit. **Direction (owner, 2026-07-20):** ship one small universal app; Intel uses Apple Speech immediately and never sees an AI download; Apple Silicon downloads the model once on first launch with visible progress, persists it, and runs offline thereafter; a failed/deferred download must still leave the app fully usable via Apple Speech.
+### Concatenated-number repair
 
-**Design:** Bundle ONLY the 2.3 MB tokenizer (`WhisperModels/tokenizer/`, contains config.json + tokenizer_config.json + tokenizer.json — sufficient for fully-offline tokenizer load); drop the 464 MB model from the bundle. A new `WhisperModelManager` downloads the model on demand via `WhisperKit.download(variant:downloadBase:progressCallback:)` (real Foundation `Progress`, not a timer) into Application Support, and reports state. `WhisperTranscriber` loads `WhisperKitConfig(modelFolder: <downloaded>, tokenizerFolder: <bundled>, load:true, download:false)` — never inline-downloads. Engine gate becomes `useWhisperSetting && isAppleSilicon && modelInstalled`.
+- [x] ISC-93: `reinterpretConcatenatedRef` returns nil whenever the speaker supplied verse information — the guard is `!ref.verseWasSpoken, ref.verseEnd == nil` (defect 5). Reworded 2026-08-16: the shipped guard no longer tests `verseStart`, see Decisions.
+- [x] ISC-93.1: `ScriptureReference.verseWasSpoken` records whether a verse number was actually heard rather than defaulting to 1, is excluded from `Equatable`, and is set true on a repaired reference so a split can never be applied twice.
+- [x] ISC-94: "Amos 91:8-12" is not rewritten to "Amos 9:1" (defect 5).
+- [x] ISC-95: "John123" with no spoken verse is rewritten to John 1:23 when that verse exists.
+- [x] ISC-96: The rewrite candidate is only accepted when `bible.getVerses(from:)` returns a non-empty result.
+- [x] ISC-97: When no split of the concatenated number yields an existing verse, the function returns nil and nothing is displayed.
+- [x] ISC-98: A chapter number of a single digit is never split.
+- [x] ISC-99: The rejection path emits a log line naming the reference that was not split.
+- [x] ISC-100: A repaired reference carries the same book as the original — repair never changes the book.
 
-- [x] ISC-62: pbxproj bundles ONLY `WhisperModels/tokenizer` (folder ref `path` repointed), not the 464 MB model dir. Verified: clean-build `.app/Contents/Resources` has `tokenizer/tokenizer.json` (2.3 MB) and ZERO `openai_whisper-small.en`/`AudioEncoder.mlmodelc`.
-- [x] ISC-63: Built `.app` shrinks from 493 MB to **55 MB** (Debug; −89%). Threshold was <35 MB — an underestimate that ignored WhisperKit's own linked framework binaries; the owner requirement ("small universal download") is met, and the Sparkle Release zip compresses much smaller (v1.4 pre-model shipped a 13 MB zip). Verified: `du -sh` clean-build `.app` = 55 MB.
-- [x] ISC-64: New `WhisperModelManager` resolves the persisted model folder under Application Support (`…/DivineLink/models/argmaxinc/whisperkit-coreml/openai_whisper-small.en`), preferring the exact path returned by `WhisperKit.download` (persisted in UserDefaults) with a deterministic fallback. Verified: `Read` + BUILD SUCCEEDED; Forge confirmed the Hub layout `<base>/models/<repo>/<variant>` against pinned source.
-- [x] ISC-65: `WhisperModelManager.installedModelFolder()` returns a folder only if a COMPLETE model is present — all three CoreML components (AudioEncoder + MelSpectrogram + TextDecoder .mlmodelc), not just one. Strengthened per advisor #1 so a partial/interrupted download reads as NOT installed. Verified: `Read` `isCompleteModel(at:)` + build.
-- [x] ISC-66: `download()` uses `WhisperKit.download(variant:downloadBase:progressCallback:)` and publishes real byte progress (`Progress.fractionCompleted`/`completedUnitCount`/`totalUnitCount`). Verified: `Read` + build; Forge confirmed `ProgressCallback` is `@Sendable (Progress)->Void`.
-- [x] ISC-67: `@Published State` machine (`.notInstalled / .downloading(fraction,received,total) / .installed / .failed`) drives both the first-launch sheet and the Settings row. Verified: `Read` + build.
-- [x] ISC-68: Manager is Apple-Silicon gated — `isSupported` (runtime `sysctlbyname("hw.optional.arm64")`) is `false` on Intel; `download()` guards on it and the sheet is gated on it. Verified: `Read` + build.
-- [x] ISC-69: `WhisperTranscriber` loads the model from the persisted Application-Support folder first (bundled model fallback kept), tokenizer from the bundle, and NEVER inline-downloads (the old `WhisperKitConfig(model:load:)` auto-download branch is removed → on no model it calls `onError` → Apple fallback). Verified: `Read` + `grep download: false` + build.
-- [x] ISC-70: `TranscriptionService.shouldUseWhisper` = `useWhisperSetting && isAppleSilicon && WhisperModelManager.isInstalled`; not-installed → Apple Speech. Verified: `Read` gate + build.
-- [x] ISC-71: First-launch download sheet shown only when `isAppleSilicon && !isInstalled && !whisperModelOffered`; offers Download (linear progress bar + "% · X of Y" byte label) and "Use standard recognition". Verified: `Read` MainView/WhisperDownloadView + build.
-- [x] ISC-72: Intel path — sheet gate includes `WhisperModelManager.isSupported` (false on Intel), so it's never presented; Apple Speech used immediately. Verified: `Read` gate + build; Forge traced Intel path (no WhisperKit symbol touched).
-- [x] ISC-73: Anti: a failed download or a user "skip" does NOT block app use — falls back to Apple Speech, app fully functional. Hardened per Forge m2: the Whisper→Apple runtime fallback now requests Speech authorization if it was masked (`ensureSpeechAuthThenStartApple`). Verified: `Read` fallback path + build.
-- [x] ISC-74: Anti: no network on Intel, and none when the model is already installed — download happens only via explicit `manager.download()` on Apple Silicon when not installed; the transcriber load path is `download:false`. Verified: `Read` — no auto-download path exists.
-- [x] ISC-75: Resumability — re-invoking `download()` after a partial/failed attempt skips already-fetched files (Hub per-file snapshot). Manual retry is reachable from the new Settings → Enhanced Recognition row even after an explicit skip (Forge M1). Verified: `Read` + Hub snapshot semantics (per-file temp+move) confirmed by Forge.
-- [x] ISC-76: Once installed, later launches use Whisper fully offline (`download:false` + bundled tokenizer folder with config.json/tokenizer_config.json/tokenizer.json → zero network). Verified: `Read` load path + build; Forge verified `loadTokenizer` resolves the bundled folder locally and only hits the Hub if local load throws.
-- [x] ISC-77: Whole app type-checks and compiles. Verified: `xcodebuild -scheme DivineLink -configuration Debug clean build CODE_SIGNING_ALLOWED=NO` → **BUILD SUCCEEDED** (new WhisperModelManager.swift + WhisperDownloadView.swift auto-compiled via the synchronized folder group; edits to WhisperTranscriber/TranscriptionService/MainView clean).
-- [x] ISC-79: Release shipped — v1.5.1 (build 19), **universal binary** (`lipo -archs` → `x86_64 arm64`), notarised + stapled (Apple: Accepted; `stapler validate` OK), Sparkle-signed, exported app has NO model (tokenizer only). Verified.
-- [x] ISC-80: Published live — `sync-netlify-site.sh` pushed to `divine-link-site` → Netlify deployed. `https://divinelink.netlify.app/appcast.xml` latest = 1.5.1; `releases/DivineLink-1.5.1.zip` + `DivineLink-latest.zip` → HTTP 200, **11,347,920 bytes (~11 MB)** (was ~489 MB); the stale 435 MB `1.5.0.zip` and its dangling appcast item removed (now 404). Verified via `curl`.
-- [DEFERRED-VERIFY] ISC-78: Live (owner, both machines) — NOW DOWNLOADABLE at https://divinelink.netlify.app — Apple-Silicon first launch shows progress, downloads once, then transcribes offline on relaunch; Intel launches straight to Apple Speech with no download prompt. This dev machine is Intel/x86_64 so the WhisperKit runtime path cannot be probed here. Follow-up: owner runs on an M-series Mac + an Intel Mac.
+### Bible lookup correctness
 
-### Feature: Stripe webhook email-fallback linkage fix (2026-08-05, pre-launch payment verification)
+- [ ] ISC-101: `getVerse(book:chapter:verse:)` for John 3:16 in KJV returns text beginning "For God so loved the world".
+- [ ] ISC-102: `getVerses(from:)` for Psalms 9:8-12 returns exactly five verses numbered 8 through 12.
+- [x] ISC-103: A `SELECT` against `Bible.db` confirms Psalms has 150 chapters and Amos has 9.
+- [x] ISC-104: `referenceExists` returns false for Amos 91.
+- [x] ISC-105: `referenceExists` returns true for Psalms 91.
+- [x] ISC-106: `referenceExists` returns false when `verseEnd < verseStart`.
+- [x] ISC-107: `referenceExists` returns false for `verseStart < 1`.
+- [ ] ISC-108: A verse range that runs past the end of a chapter returns only the verses that exist, not an error.
+- [ ] ISC-109: `getVerseText(from:)` joins a range into a single string separated by single spaces.
+- [ ] ISC-110: `maxChapter(forBookNamed:)` returns nil for an unknown book name.
+- [ ] ISC-111: `findBookId` resolves both canonical names and the `aliases` column of the `books` table.
+- [ ] ISC-112: `isValidChapter` rejects chapter 0 and negative chapters.
+- [ ] ISC-113: The `books` table contains exactly 66 rows.
+- [ ] ISC-114: Every `verses` row references a `book_id` present in `books`.
+- [ ] ISC-115: Lookup for a verse absent from a given translation returns nil rather than a verse from another translation.
+- [ ] ISC-116: `BibleService.isLoaded` is false before `loadDatabase()` and detection short-circuits with a warning rather than crashing.
 
-**Problem addendum:** Owner is about to publish and start reaching out to churches, contingent on confirming the Stripe→Supabase payment pipeline actually works. Owner comped 2 test customers with a 100%-discount coupon (`100TEST100`, 2/2 redeemed) directly in Stripe; Supabase `subscriptions` table shows only 1 of them as `premium`. Owner confirmed OTP login works for the broken one (`coachaog.ogunrekun@gmail.com`) but the app shows Mercy/Free.
+### Translations and version management
 
-- [x] ISC-81: Root cause confirmed (RootCauseAnalysis + FirstPrinciples, cross-checked against live Stripe data) — `stripe_customer_id` is written ONLY by `handleCheckoutComplete` (gated on `checkout.session.completed`); every other handler matches by `stripe_customer_id` only, with no email fallback, so a subscription created outside the app's own Checkout flow can never be linked.
-- [x] ISC-82: Live evidence gathered via `stripe customers list --live` + `stripe events list --live` — `cus_UH3AnItho6Iap5` (coachaog.ogunrekun@gmail.com) has an active subscription with `discount.checkout_session: null` (proof it wasn't created via Checkout); `customer.subscription.updated` and `invoice.payment_succeeded` events DID fire historically and were silently no-op'd (0-row update, no error, HTTP 200 — Stripe never retried, nothing alerted).
-- [x] ISC-83: `resolveSubscriptionRow()` helper added to `stripe-webhook/index.ts` — tries `stripe_customer_id` match first, falls back to a case-insensitive `profiles.email` lookup via the Stripe customer's email when that misses.
-- [x] ISC-84: `handleSubscriptionUpdate` and `handlePaymentSucceeded` both rewired to call `resolveSubscriptionRow` and update `.eq("user_id", ...)`, backfilling `stripe_customer_id` only when the row wasn't already linked.
-- [x] ISC-85: Anti: fallback never overwrites an existing link to a DIFFERENT stripe customer (guard on `existingCustomerId !== customerId`).
-- [x] ISC-86: Anti: ambiguous email match (0 or 2+ profiles) aborts and logs rather than guessing which account to grant.
-- [x] ISC-87: Forge-caught fix — email passed to `.ilike()` is now escaped (`escapeLikePattern`) so a legal email character (`_`) can't act as a SQL wildcard and cause a false ambiguous-abort or a wrong-account link.
-- [x] ISC-88: Forge-caught fix — all three Supabase queries inside `resolveSubscriptionRow` now capture and `throw` on a genuine DB error (previously swallowed, `data` treated as authoritative), so a transient failure now returns HTTP 400 and Stripe retries, instead of silently converting a recoverable error into permanent no-op data loss.
-- [x] ISC-89: `handlePaymentSucceeded`'s existing unconditional welcome-email fallback (for Checkout sessions with no `customer_email`) still runs regardless of `resolveSubscriptionRow`'s outcome — confirmed by Forge, no early-return regression introduced.
-- [x] ISC-90: `deno check index.ts` passes clean (no Docker required).
-- [ ] ISC-91: Fix deployed to production via `supabase functions deploy stripe-webhook --use-api --no-verify-jwt` (Docker-free deploy path per owner's explicit no-Docker constraint).
-- [ ] ISC-92: Real historical Stripe event (`customer.subscription.updated` or `invoice.payment_succeeded` for `cus_UH3AnItho6Iap5`) resent via `stripe events resend --live` to the now-fixed live endpoint; this both verifies the fix AND repairs the real affected account in one action — no synthetic test data needed.
-- [ ] ISC-93: Owner confirms (Supabase Table Editor or in-app Account screen) that `coachaog.ogunrekun@gmail.com`'s subscription flips to `premium`/`grace` with `stripe_customer_id = cus_UH3AnItho6Iap5` populated.
-- [ ] ISC-94: Anti: no other user's `subscriptions` row is touched by the resend.
-- [x] ISC-95: Anti: no production secret (`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`) edited to perform this fix — deploy uses existing live secrets unchanged. Verified via `supabase db query --linked` (Docker-free CLI DB access discovered this session): `coachaog.ogunrekun@gmail.com`'s row now shows `status=premium, tier=grace, stripe_customer_id=cus_UH3AnItho6Iap5`. Owner independently confirmed via app UI ("Grace (Premium), Premium").
+- [ ] ISC-117: The five bundled translations KJV, WEB, ASV, BSB and LSV are all present in the `translations` table.
+- [x] ISC-118: Each bundled translation has at least 31,086 verse rows.
+- [ ] ISC-119: Switching the global translation changes the text returned for the same reference.
+- [ ] ISC-120: Per-card translation switching changes only that card, leaving the global selection untouched.
+- [ ] ISC-121: `BSB` and `LSV` are flagged premium and are gated for Mercy-tier accounts.
+- [ ] ISC-122: KJV, WEB and ASV are available on the Mercy tier without a subscription.
+- [ ] ISC-123: Downloadable premium versions (WEBBE, YLT, DBY, DRA, BBE) are listed but not present in the bundled database.
+- [ ] ISC-124: A downloaded version's verse count matches the declared `verseCount` for that version.
+- [ ] ISC-125: Attribution text for BSB and LSV is displayed wherever those translations are shown.
+- [ ] ISC-126: Changing translation on a pushed card updates DivineView's translation label.
+- [ ] ISC-127: An unavailable premium translation is never silently substituted with a free one.
 
-### Feature: Stripe-identity client sync + device re-registration (2026-08-05, same session, surfaced while verifying the webhook fix)
+### Confidence scoring and thresholds
 
-**Problem addendum:** Testing the Stripe fix surfaced two further gaps: (1) "Manage Billing" and the Stripe name/church prefill never worked — for ANY premium user, not just the newly-fixed one; (2) Registered Devices regressed from 1/1 to 0/2 for the same account mid-session.
+- [ ] ISC-128: Every `DetectionResult` carries a `confidence` value in the closed range 0.0–1.0.
+- [x] ISC-129: An exact-alias book match scores higher than a fuzzy match of the same reference.
+- [x] ISC-130: A fuzzy match at Levenshtein distance 2 scores lower than one at distance 1.
+- [x] ISC-130.1: The book-guess penalty and the acceptance gate stay compatible: one edit costs `0.4 × bookGuessPenaltyPerEdit` of overall confidence, which must remain below the 0.030 of headroom `chapterOnly` has above `minimumConfidence`. At the shipped 0.07 that is 0.028.
+- [ ] ISC-130.2: The confidence figures asserted in `ConfidencePenaltyTests` are the figures `parseMatch` actually produces, rather than a re-derivation of the same formula.
+- [ ] ISC-131: An implicit phrase match is only accepted when `confidence >= 0.6` (`DetectionPipeline.swift:297`).
+- [ ] ISC-132: `DetectionSettings.lowConfidenceThreshold` defaults to 0.70 and persists under `detection.lowConfidenceThreshold`.
+- [ ] ISC-133: `isLowConfidence(_:)` returns true exactly when the value is below the configured threshold.
+- [ ] ISC-134: With `autoHoldLowConfidence` enabled, a below-threshold detection is held for review rather than added as a normal card.
+- [ ] ISC-135: `showConfidenceIndicators` toggles the confidence badge on verse cards.
+- [ ] ISC-136: The confidence figure never appears on the audience-facing surface (DivineView or ProPresenter).
+- [ ] ISC-137: `resetToDefaults()` restores all five detection settings to their documented defaults.
 
-- [x] ISC-96: Root-caused — `get_my_subscription()` RPC (the path that actually succeeds on every login) never returned `stripe_customer_id`, and `SubscriptionService.fetchSubscription()` only populated `isPremium`/`currentTier` from it, never `self.subscription` — so `stripeCustomerId` was always nil regardless of DB state or relaunching. The richer direct-fetch fallback that WOULD populate it only runs if the RPC decode fails, which it doesn't.
-- [x] ISC-97: `get_my_subscription()` Postgres function updated (dropped + recreated, return signature changed) to also return `stripe_customer_id`. Applied directly to production via `supabase db query --linked` (Management API, no Docker, no dashboard needed — better than the web-login fallback originally suggested). Verified via `pg_get_function_result` showing the new column.
-- [x] ISC-98: `Distribution/supabase-schema.sql` reference copy updated to match the deployed function (source-of-truth drift avoided).
-- [x] ISC-99: `SubscriptionInfo` (Swift) gained `stripeCustomerId` field/CodingKey; `SubscriptionService` gained a dedicated `@Published stripeCustomerId` populated from both the RPC path and the direct-fetch fallback path.
-- [x] ISC-100: `fetchStripeCustomer()` and `openBillingPortal()` guards updated to read the new `stripeCustomerId` property instead of the always-nil `subscription?.stripeCustomerId`.
-- [x] ISC-101: `xcrun swiftc -parse` clean on both changed Swift files.
-- [x] ISC-102: Root-caused device regression — `loadStoredSession()` (app-launch persisted-session restore) never called device registration; only the exact moment of fresh OTP verification did (`AuthViews.swift:232`). Sign-out explicitly deactivates the device (`deactivateCurrentDevice()`); a subsequent relaunch that reuses the stored session (no fresh OTP) never reactivates it — confirmed via `supabase db query --linked` showing this account's device row `is_active: false`.
-- [x] ISC-103: Fix — `AuthService.loadStoredSession()` now calls `DeviceManager.shared.registerCurrentDevice()` (upserts `is_active: true`) on every successful session restore, not just at fresh OTP verification. Both call sites (OTP verify + session restore) changed from silent `try?` to logged `do/catch` so future failures are visible in console instead of vanishing.
-- [x] ISC-104: Owner rebuilt (confirmed clean-build-every-time workflow) and confirmed via Xcode console log the exact failure: `⚠️ Device re-registration failed on session restore: registrationFailed`. This is real evidence, not a guess — reproduced before further fixing, per doctrine.
-- [x] ISC-105: Root cause of `registrationFailed` (present on EVERY re-registration, not just session-restore) found — `registerCurrentDevice()`'s upsert POST to `/devices` never sent an `on_conflict` query parameter. PostgREST's `Prefer: resolution=merge-duplicates` upsert needs an explicit conflict target when the conflicting columns aren't the primary key; without it, PostgREST falls back to the PK (`id`, never sent in the body), so any device_id/user_id pair already in the table (i.e. every registration after the very first one) hits the `UNIQUE(user_id, device_id)` constraint as a genuine conflict and 409s instead of merging. This explains why the FIRST-ever registration on a machine always worked (plain insert) but every subsequent re-registration (sign-out/session-restore/relaunch) silently failed — pre-dating today's session entirely, `try?` just hid it until this session's logging changes surfaced it.
-- [x] ISC-106: Fix — `on_conflict=user_id,device_id` query param added to the upsert URL in `DeviceManager.registerCurrentDevice()`.
-- [x] ISC-107: `DeviceError.registrationFailed` gained associated values (HTTP status + response body) instead of a bare case, so any future failure is diagnosable from one log line without another round trip.
-- [x] ISC-108: `xcrun swiftc -parse` clean on `DeviceManager.swift` after both changes.
-- [x] ISC-109: Owner rebuilt (clean, as always) and confirmed LIVE via screenshot — Registered Devices now shows `1/2`, "Ayo's MacBook Pro, This device, Last active: 51 secs ago." The `on_conflict` fix is verified working, not just code-parsed.
-- [ ] ISC-110: Manage Billing still shows "No billing account found" on the SAME rebuild that fixed devices — proves the build is picking up new code in general, so the `stripeCustomerId` plumbing (ISC-96..101) has its own separate, still-unidentified bug. Not yet root-caused.
-- [x] ISC-111: Added logging to `fetchStripeCustomer()` (previously fully silent on every failure path — guard-nil, non-200 status, and network error).
-- [x] ISC-112: `xcrun swiftc -parse` clean on `SubscriptionService.swift` after the logging addition.
-- [x] ISC-113: Added deeper logging to `fetchSubscription()` itself — the RPC decode now uses `try` (not silent `try?`) so a decode failure prints the exact error + raw JSON, and both the RPC path and the direct-fetch-fallback path each print the `stripeCustomerId` value they actually set.
-- [x] ISC-114: Root cause of ISC-110 found from the owner's console log — `⚠️ fetchStripeCustomer: skipped — token: true, stripeCustomerId: nil` fired with no matching `ℹ️ RPC set stripeCustomerId` line anywhere nearby. `startPeriodicChecks()` (which would call `fetchSubscription()` immediately on launch) is dead code — never invoked anywhere. On a session-restore relaunch, the only thing that eventually calls `fetchSubscription()` is `AdManager`'s ad-refresh cycle, at some indeterminate later point. Meanwhile `isPremium` reads `true` immediately from a synchronous local cache (`loadCachedStatus()`), so the Account view's one-shot `.onAppear` prefill runs (because `isPremium` is already true) but `stripeCustomerId` — which has no such cache, only ever set by that not-yet-completed async fetch — is still nil at that exact moment, and nothing ever retries.
-- [x] ISC-115: Fix — `AuthViews.swift`'s Account view gained `.onChange(of: subscriptionService.stripeCustomerId)` to retry `loadStripeDetails()` whenever the value actually arrives, instead of only the one-shot `.onAppear` attempt. `xcrun swiftc -parse` clean.
-- [x] ISC-116: Owner rebuilt again (session restore, not fresh login this time) and pasted the console log — proved ISC-115's fix, while correct in principle, was moot: NONE of the new `fetchSubscription()` logging fired at all (no RPC/direct-fetch/decode-failure lines anywhere). `fetchSubscription()` was never being called on a session-restore relaunch at all — only from a fresh OTP verify or an AdManager-internal path. The Premium badge shown was purely a stale locally-cached value from `loadCachedStatus()`, not a live re-check. Same root class of bug as ISC-102 (device re-registration), just in a sibling function I hadn't extended the fix to.
-- [x] ISC-117: Fix — `AuthService.loadStoredSession()`'s background Task now also calls `SubscriptionService.shared.fetchSubscription()` on every session restore, alongside the existing device re-registration call. `xcrun swiftc -parse` clean.
-- [x] ISC-118: Owner rebuilt again — console now shows `ℹ️ RPC set stripeCustomerId: Optional("cus_UH3AnItho6Iap5")` (ISC-96..117 client/RPC fixes fully confirmed live). But Manage Billing now shows a NEW, different error: "Invalid session" (401), and `⚠️ fetchStripeCustomer failed — status: 401, body: {"error":"Invalid session"}`. Progress, not regression — the client-side bug chain is fully closed; this is a THIRD, separate surface.
-- [x] ISC-119: Root-caused — this lives entirely outside the Xcode app and outside Supabase: `netlify/functions/stripe-customer.mjs` and `stripe-portal.mjs` (source of truth at `~/Projects/divine-link-site`, staged via `Distribution/netlify-site/` + `scripts/sync-netlify-site.sh`) both call Supabase's `/auth/v1/user` with `apikey: token` — sending the USER's own access token as the `apikey` header instead of the project's anon key. Supabase's auth API requires `apikey` to identify the calling project (a fixed, public anon key), not the user; sending the user token there is rejected unconditionally, so "Invalid session" fires for every request regardless of token validity. Unconditional bug — never worked for anyone, predates this session entirely, unrelated to any Xcode rebuild (explains why nothing the owner tried in Xcode could ever have surfaced or fixed this).
-- [x] ISC-120: Fix — both functions now send the project's public anon key (same one embedded in `SupabaseConfig.swift`, safe to reuse — it identifies the project, not the user) as `apikey`, with the user's real bearer token still carrying the actual session check.
-- [x] ISC-121: Synced + deployed — `scripts/sync-netlify-site.sh` run (owner-approved: distinct repo/deploy target from anything touched earlier this session), pushed to `divine-link-site` (`fb3b436`), Netlify auto-deploy triggered. `curl` against the live endpoint post-deploy confirms it's serving (still correctly 401s a garbage token — expected). This fix needs NO Xcode rebuild; owner can just retry "Manage Billing" in the already-built app.
+### Pending buffer and operator console
 
-### Feature: Read-only account details + Edit toggle (2026-08-05, owner's original proposal, previously deferred)
+- [ ] ISC-138: A confirmed detection adds exactly one `PendingVerse` to `BufferManager.pendingVerses`.
+- [ ] ISC-139: `markAsPushed(id:)` keeps the verse in the list with a pushed indicator rather than removing it.
+- [ ] ISC-140: `remove(id:)` removes the verse and returns it.
+- [ ] ISC-141: `nextVerse(id:)` advances `currentVerseIndex` and returns false at the end of the range.
+- [ ] ISC-142: `previousVerse(id:)` decrements `currentVerseIndex` and returns false at index 0.
+- [ ] ISC-143: `setCurrentVerse(id:index:)` clamps out-of-range indices rather than crashing.
+- [ ] ISC-144: `clearAll()` empties `pendingVerses` and leaves `history` intact.
+- [ ] ISC-145: `clearHistory()` empties `history` and leaves `pendingVerses` intact.
+- [ ] ISC-146: `updateTranslation(id:translation:verses:)` replaces the verse text in place without changing the reference.
+- [ ] ISC-147: `PendingVerse.displayReference` renders a range as "John 3:16-17" and a single verse as "John 3:16".
+- [ ] ISC-148: Selecting a card and pressing the Push key pushes that card, not the first card in the list.
+- [ ] ISC-149: Deleting the selected card moves selection to a valid neighbouring card.
 
-**Problem addendum:** Owner's original workflow proposal (same session, earlier) asked for First/Last/Church name to display read-only (pulled from Stripe/saved profile) with an Edit affordance to reveal the form — I agreed with the idea but never built it, then implied it was already in place. Owner caught the gap.
+### DivineView presentation window
 
-- [x] ISC-122: `AccountView` (`AuthViews.swift`) gained `isEditingDetails` state — "Your Details" now renders read-only `Text` rows (name, church) with an Edit button by default; clicking it reveals the existing TextField form + Save/Cancel.
-- [x] ISC-123: Cancel reverts unsaved changes (`loadProfileFields()` re-pulls saved values) and exits edit mode without writing. Save exits edit mode only on confirmed success (`profileMessage` prefixed `✓`), staying open with the error visible on failure.
-- [x] ISC-124: `xcrun swiftc -parse` clean.
-- [ ] ISC-125: Owner confirms live: read-only view shows "Not set" placeholder for empty fields rather than blank space; Stripe-prefilled name now appears read-only without needing to enter edit mode first.
-- [x] ISC-126: Anti: this feature does NOT push app-side edits back to Stripe — "Manage Billing" remains the sole path for changing Stripe-side billing name/address; in-app Save writes only to Supabase (`profiles.first_name/last_name`, `church`).
+- [ ] ISC-150: `Window → DivineView` opens a window distinct from the operator console.
+- [x] ISC-151: `present(reference:text:translation:)` sets `isShowingVerse` false when the text is blank or whitespace-only.
+- [ ] ISC-152: `presentAll(from:)` renders the full range text and the range reference.
+- [x] ISC-153: `presentOne(from:)` guards on `currentVerse` and leaves the existing verse on screen when the pending verse has no items.
+- [ ] ISC-154: `presentOne(from:)` renders a single-verse reference of the form "John 3:17".
+- [x] ISC-155: `clear()` empties reference, verse text and translation and sets `isShowingVerse` false.
+- [ ] ISC-156: The empty state shows the background fill only, with no residual verse text.
+- [x] ISC-157: `DivineViewSettings.background` persists to `UserDefaults` key `divineView.background`.
+- [ ] ISC-158: Black background renders white text and white background renders black text.
+- [x] ISC-159: `openOnPush` persists to `divineView.openOnPush` and defaults to true on first launch.
+- [ ] ISC-160: With `openOnPush` false, pushing a verse does not increment `windowOpenTick`.
+- [ ] ISC-161: With `openOnPush` true and the window already open, a push calls `orderFrontRegardless()` and does not activate the app.
+- [ ] ISC-162: An operator-initiated open (`reason: .userRequested`) calls `makeKeyAndOrderFront` and activates the app.
+- [ ] ISC-163: A miniaturised DivineView window is deminiaturised on either open reason.
+- [ ] ISC-164: Verse body text scales with window size and never truncates at 1280×720 for a five-verse passage.
+- [ ] ISC-165: The translation label is hidden when the translation string is empty.
+- [ ] ISC-166: DivineView renders correctly when dragged to a second display and full-screened.
 
-### Feature: Automated website version-badge + release-notes sync (2026-08-05, owner-reported staleness)
+### ProPresenter integration and the panic path
 
-**Problem:** Owner shared the release with a tester and noticed the site footer/release notes still said "v1.3.8" (15 March) despite shipping v1.6.1 — `release.sh` had always updated `appcast.xml` (Sparkle) but never touched the human-facing `index.html`/`releases.html` version badges or the hand-written release-notes list, so they'd been silently stale since v1.3.8.
+- [ ] ISC-167: Push All sends a formatted stage message containing the reference and the full range text.
+- [ ] ISC-168: Push One sends a single-verse stage message of the form "John 3:17\n<text>".
+- [ ] ISC-169: Push One auto-advances to the next verse after a successful send.
+- [ ] ISC-170: A failed ProPresenter push still writes the verse to DivineView and still marks the card pushed locally.
+- [ ] ISC-171: A failed push surfaces an error the operator can see and retry.
+- [ ] ISC-172: `PanicButtonService.triggerClear()` clears DivineView before any network call is attempted.
+- [ ] ISC-173: `triggerClear()` clears the ProPresenter stage display via HTTP DELETE.
+- [ ] ISC-174: `triggerClear()` clears the ProPresenter audience display via the configured path (Messages API or keyboard automation).
+- [ ] ISC-175: `triggerClear()` does not clear `pendingVerses` or `history`.
+- [ ] ISC-176: A second `triggerClear()` while `state == .clearing` is ignored.
+- [ ] ISC-177: Panic state returns to `.idle` within 1.5 seconds of completion.
+- [ ] ISC-178: F12 and Cmd+Escape both trigger the clear.
+- [ ] ISC-179: `HybridIntegrationManager.clearAllDisplays()` returning false sets `state` to `.error` with a message.
+- [ ] ISC-180: `ProPresenterSettings.topology == .twoMachines` hides keyboard automation and requires a Premium entitlement.
 
-- [x] ISC-127: Root-caused — three literal `v1.3.8` strings (`index.html` footer badge, `releases.html` hero badge, `releases.html` footer badge) plus a hand-crafted `releases.html` changelog list, none wired into `release.sh`'s existing appcast-update step.
-- [x] ISC-128: Built `scripts/update_website_version.py` — updates all three version-badge spans via regex (idempotent, matches the CSS class not a hardcoded old value, so it keeps working release after release) and inserts a new `release-item` entry at the top of `releases.html`, demoting the previous entry's "Latest" badge/class rather than rewriting history.
-- [x] ISC-129: Reuses the SAME release-notes HTML the owner already types for `appcast.xml` (`release.sh`'s existing prompt) — one input, three places kept in sync (Sparkel appcast, website badges, website changelog). No new manual step for future releases.
-- [x] ISC-130: Wired into `release.sh` as Step 7b, running automatically after the appcast update, before the release summary. Script's own header comment + "Next steps" output updated to document it and to make the still-manual `sync-netlify-site.sh` deploy step explicit (was previously easy to forget now that website files are also touched).
-- [x] ISC-131: Backfilled now for the already-shipped v1.6.1 (ran the script manually once, verified via `git diff` the output was well-formed HTML before syncing) — old v1.3.8 entry preserved as history, new v1.6.1 entry added and marked Latest.
-- [x] ISC-132: Synced + pushed to `divine-link-site` (commit `652f9df`), Netlify deploy confirmed live via polling `curl` — `index.html`, `releases.html` hero, and `releases.html` footer all now correctly show v1.6.1.
+### Persistence and settings
 
-### Feature: ProPresenter Setup — Same Machine vs Two Machines topology (2026-08-06, owner scoping session)
+- [ ] ISC-181: All DivineView settings survive an app relaunch.
+- [ ] ISC-182: All detection settings survive an app relaunch.
+- [ ] ISC-183: `panicButton.playAudio` and `panicButton.showVisual` default to true when unset.
+- [ ] ISC-184: The selected audio input device survives an app relaunch.
+- [ ] ISC-185: The selected translation survives an app relaunch.
+- [ ] ISC-186: ProPresenter IP, port and topology survive an app relaunch.
+- [ ] ISC-187: A corrupt or unparseable `UserDefaults` value falls back to the documented default rather than crashing.
+- [ ] ISC-188: No setting is written to `UserDefaults` under an un-namespaced key.
+- [ ] ISC-189: Service session state (pastor profile, service type) is restored on relaunch within the tier's profile limit.
 
-**Problem:** Owner asked what the current state of ProPresenter WiFi/network connectivity was. Investigation showed three output paths exist (Stage Display HTTP, Messages API WebSocket, Keyboard Automation via macOS Accessibility), but Keyboard Automation is local keystroke simulation and is structurally incapable of reaching ProPresenter on a different Mac — the app had no concept of "same machine" vs "two machines" and could silently fall back to a keyboard-automation path that would do nothing across machines. Owner's decision: same-machine stays the reliable default; two-machine control is offered to Premium users using only the two genuinely-networked paths, with Keyboard Automation excluded entirely rather than offered-and-flaky.
+### Performance and latency
 
-- [x] ISC-133: `ProPresenterSettings` gained `ProPresenterTopology` enum (`sameMachine`/`twoMachines`) + persisted `topology` setting, default `.sameMachine`.
-- [x] ISC-134: `effectiveTopology` clamps to `.sameMachine` unless `topology == .twoMachines` AND `SubscriptionService.shared.canUsePremiumFeatures`; the raw preference persists across entitlement changes so it returns if the owner resubscribes.
-- [x] ISC-135: `effectiveKeyboardAutomationEnabled` = `keyboardAutomationEnabled && effectiveTopology == .sameMachine` — single source of truth for output selection.
-- [x] ISC-136: Every output-selection call site (`ProPresenterSettings.enabledOutputTypes`/`hasEnabledOutput`, `HybridIntegrationManager.getOutputsInPriorityOrder`/`tryFallback`, `ProPresenterOutputFactory.getEnabledOutputs`) reads `effectiveKeyboardAutomationEnabled`, never the raw toggle.
-- [x] ISC-137: `HybridIntegrationManager` reconfigures on `settings.$topology` change (debounced 500ms, matching the existing IP/port binding pattern).
-- [x] ISC-138: `HybridIntegrationManager` reconfigures on `SubscriptionService`/`AuthService` `objectWillChange` (merged) — closes the entitlement-timing gap Forge identified (launch-time auth race + premium lapse/renew not triggering a refresh).
-- [x] ISC-139: `ProPresenterSettingsView` "ProPresenter Setup" segmented Picker — selecting Two Machines without Premium calls `adManager.requestUpgrade()` instead of changing the setting; the binding's getter reads `effectiveTopology` so the control visually reverts to Same Machine.
-- [x] ISC-140: Keyboard Automation toggle is replaced with an explanatory disabled row ("Not available in Two Machines mode — can't reach another Mac") when `effectiveTopology != .sameMachine`, rather than left visible-but-disabled.
-- [x] ISC-141: `accessibilitySection` (the Accessibility-permission prompt) visibility is gated on `effectiveKeyboardAutomationEnabled`, not the raw toggle — never shown when keyboard automation can't fire anyway.
-- [x] ISC-142: Connection-section footer copy and IP guidance differ by topology (127.0.0.1 hint for Same Machine; "enter the other Mac's IP" for Two Machines); default port corrected in-app copy stays 50233 (ProPresenter 7).
-- [x] ISC-143: `xcodebuild -project DivineLink.xcodeproj -scheme DivineLink -configuration Debug build` → BUILD SUCCEEDED, both before and after the ISC-138 entitlement-reactivity fix.
-- [x] ISC-144: Forge (GPT-5.4, source-read, background review) audited every `keyboardAutomationEnabled` usage codebase-wide (7 hits) and confirmed the safety guarantee holds structurally at all 4 selection sites; surfaced the ISC-138 gap as the only real finding (plus one UI nit, no action needed).
-- [x] ISC-145: `redesign.pen` Screen 04 gained a "ProPresenter Setup" card (segmented control, description, Premium-lock note) matching the shipped copy; verified via screenshot and a pairwise bounding-box overlap check across all 17 top-level canvas frames (zero overlaps).
-- [x] ISC-146: `redesign.pen` off-canvas Interaction & State Coverage board gained a "ProPresenter Setup segmented control" section (Default / Selected-Premium / Premium-locked states); verified via screenshot, zero canvas overlap.
-- [x] ISC-147: Documentation updated — `Divine-Link-Context.md` ProPresenter Configuration section (topology guidance added; stale default port corrected 1025→50233) and `CHANGELOG.md` `[Unreleased]` section.
-- [DEFERRED-VERIFY] ISC-148: Owner confirms live on real two-machine LAN hardware: Stage Display and Messages API successfully reach ProPresenter on the second Mac, and Keyboard Automation is confirmed absent from Settings in that mode. No second physical Mac available to this session — follow-up: owner's next live event with a two-machine setup.
-- [x] ISC-149: Anti: no code path can select `.audienceKeyboard` as an output when `effectiveTopology == .twoMachines` — verified by Forge's call-site audit (ISC-144); all four selection sites gate exclusively through `effectiveKeyboardAutomationEnabled`.
+- [ ] ISC-190: Time from end of a spoken reference to the verse card appearing is under 2 seconds at p50.
+- [ ] ISC-191: The same measurement is under 3.5 seconds at p95.
+- [ ] ISC-192: The detection debounce is 300 ms and is measured, not assumed.
+- [ ] ISC-193: A single Bible lookup for a five-verse range completes in under 20 ms.
+- [ ] ISC-194: `Push` to DivineView renders within one display frame of the button press.
+- [ ] ISC-195: `triggerClear()` blanks DivineView in under 100 ms, independent of ProPresenter round-trip time.
+- [ ] ISC-196: Sustained 60-minute transcription does not grow resident memory by more than 100 MB.
+- [ ] ISC-197: CPU usage while listening in a silent room stays under 15% on Apple silicon (the damped-restart path must not spin).
+
+### Anti-criteria
+
+- [x] ISC-198: Anti: an ambiguous fuzzy book match is never silently resolved to an arbitrary book — `fuzzyMatch` must return nil, not `candidates.first`.
+- [ ] ISC-199: Anti: no code path in the detection stack iterates a Swift `Dictionary` and depends on the resulting order. (`BibleService.findBookId` no longer does; `ImplicitReferenceDetector.bestMatch` still does — see ISC-199.2 and Verification.)
+- [x] ISC-199.1: `BibleService.findBookId` resolves by exact match first and otherwise walks `bookCache.keys.sorted()` keeping the longest match, so it returns the same id on every launch.
+- [ ] ISC-199.2: `ImplicitReferenceDetector.bestMatch(in:)` returns the same famous-verse match on every launch when a transcript contains more than one eligible phrase.
+- [x] ISC-200: Anti: a fallback rewrite never discards an explicitly spoken verse range.
+- [x] ISC-201: Anti: `ReferenceBuffer` is never written with a reference that failed `referenceExists`.
+- [x] ISC-202: Anti: an alias of fewer than 3 characters is never used as a fuzzy match target.
+- [ ] ISC-203: Anti: a detection is never displayed when the book was resolved by fuzzy match and the reference failed `referenceExists`.
+- [ ] ISC-204: Anti: no verse is pushed to ProPresenter, DivineView or any other target without an explicit operator action.
+- [ ] ISC-205: Anti: DivineView never takes key focus when a verse is pushed.
+- [ ] ISC-206: Anti: the panic clear never empties the operator's verse history.
+- [ ] ISC-207: Anti: the confidence percentage never appears on an audience-facing surface.
+- [ ] ISC-208: Anti: audio is never written to disk or transmitted to a Divine Link-operated server.
+- [ ] ISC-209: Anti: the app never requires a network connection to detect, look up and display a verse from a bundled translation.
+- [ ] ISC-210: Anti: no FreeShow, EasyWorship, NDI or OBS client code ships in this ideal state.
+- [ ] ISC-211: Anti: `ImplicitReferenceDetector` never fires on a phrase of fewer than 5 words.
+- [ ] ISC-212: Anti: a premium translation is never rendered for a Mercy-tier account.
+- [ ] ISC-213: Anti: no user-facing string uses American spelling.
+- [ ] ISC-214: Anti: a transcription session restart never duplicates a committed transcript line.
+- [ ] ISC-215: Anti: the detector never returns a reference whose book is absent from `Bible.db`.
+
+### Antecedent criteria
+
+- [ ] ISC-216: Antecedent: the operator can see, for every card, whether the book came from an exact alias or a fuzzy match — trust requires knowing which decisions the machine guessed at.
+- [ ] ISC-217: Antecedent: rejection is visible. When the detector refuses an ambiguous reference, the operator sees that something was heard and discarded, not silence indistinguishable from a missed cue.
+- [ ] ISC-218: Antecedent: the panic clear is reachable without moving the mouse or leaving the operator window.
+- [ ] ISC-219: Antecedent: the first three detections of a service are correct, because an operator who is burned early pre-reads every card for the rest of the service.
+- [ ] ISC-220: Antecedent: the card carries the full spoken range, so the operator never has to reconstruct what was asked for from what was displayed.
+- [ ] ISC-221: Antecedent: DivineView is legible from the back of a 20-metre room at the default type scale on a 1080p projector.
+- [ ] ISC-222: Antecedent: nothing in the operator window animates or moves except in response to an operator action, so peripheral vision is not a distraction during the sermon.
 
 ## Test Strategy
 
 | isc | type | check | threshold | tool |
-|-----|------|-------|-----------|------|
-| ISC-1 | backend | host resolves + health | HTTP 200 | curl/dig |
-| ISC-9 | backend | auth health after restore | HTTP 200 | curl |
-| ISC-11 | payment | webhook writes premium row | row exists | Supabase SQL |
-| ISC-13 | code | restart no longer nils request mid-audio | grep/read | Read |
-| ISC-14 | UX | spoken refs appear | detection fires | live run |
+|---|---|---|---|---|
+| ISC-1 | build | Xcode build of the DivineLink scheme | exit 0 | `xcodebuild build` |
+| ISC-2 | static | count declarations of `maxChapter(forBookNamed:)` in BibleService | exactly 1 | `rg -c` |
+| ISC-3 | build | full unit test run | exit 0, 0 failures | `xcodebuild test` |
+| ISC-4 | build | warning count in Detection sources | 0 | `xcodebuild` log grep |
+| ISC-5 | packaging | Bible.db present in built bundle | file exists | `ls` on `.app/Contents/Resources` |
+| ISC-6 | static | TODO markers referencing the defects | 0 matches | `rg TODO` |
+| ISC-7 | repo | working tree clean post-build | empty output | `git status --porcelain` |
+| ISC-8 | static | test file coverage per detection concern | ≥4 files | `ls DivineLinkTests` |
+| ISC-9–ISC-13 | integration | device enumeration, default selection, persistence, unplug fallback | expected device identity | XCTest against `AudioDeviceManager` |
+| ISC-14–ISC-17 | integration | buffer publication, frame length, RMS, level decay | non-zero / ≤1 s | XCTest with a synthetic audio source |
+| ISC-18 | manual | permission denial path | visible error | manual run with permission revoked |
+| ISC-19 | unit | device-change debounce interval | 300 ms | XCTest with a virtual scheduler |
+| ISC-20–ISC-24 | integration | permission, session start, on-device gating, fallback logging | expected flags | XCTest against `TranscriptionService` |
+| ISC-25–ISC-26 | unit | segment publication for partial and final results | one segment each | XCTest on `handleRecognitionResult` |
+| ISC-27–ISC-31 | unit | seamless handoff ordering, zero buffer loss, `lastTranscript` reset, single committed line | exact counts | XCTest with a fake recogniser |
+| ISC-32–ISC-33 | unit | error-code routing | damped restart / swallowed | XCTest with injected `NSError` |
+| ISC-34 | unit | teardown leaves no live subscriptions | all nil | XCTest |
+| ISC-35 | unit | contextual strings applied when model ready | applied | XCTest with a stub model |
+| ISC-36 | integration | reference spanning a restart boundary | 1 detection | XCTest with scripted segments |
+| ISC-37–ISC-46 | unit | table-driven parse of explicit forms | exact `ScriptureReference` | XCTest against `ScriptureDetectorService` |
+| ISC-47–ISC-60 | unit | table-driven parse of spoken and verbal forms | exact `ScriptureReference` | XCTest against `ScriptureDetectorService` |
+| ISC-61–ISC-69 | unit | partial resolution against seeded context, including expiry and disable | expected reference or nil | XCTest against `ReferenceBuffer` + detector |
+| ISC-70 | static | direct `updateContext` calls outside `cacheContext` | 0 matches | `rg 'referenceBuffer.updateContext'` |
+| ISC-71–ISC-72 | unit | context inheritance and session-boundary clear | expected book / nil | XCTest |
+| ISC-73, ISC-75, ISC-76, ISC-78 | static | source-level assertions on the normaliser | present | Read of `ScriptureDetectorService.swift` |
+| ISC-74 | behavioural | 100 cold launches, compare ordered candidates | identical each run | shell loop over a test binary |
+| ISC-77, ISC-80–ISC-82 | unit | normaliser behaviour with and without chapter hints | expected book or nil | XCTest against `BookNameNormaliser` |
+| ISC-79, ISC-84 | static | pipeline wiring of provider and validator | both assigned | Read of `DetectionPipeline.swift` |
+| ISC-83 | static | early return in `cacheContext` gated on validator | present | Read of `ScriptureDetectorService.swift` |
+| ISC-85–ISC-86 | unit | buffer state after an implausible reference | unchanged context | XCTest with a stub validator |
+| ISC-87–ISC-92 | unit | excluded words, length floor, exact aliases, 66-book round trip | expected book or nil | XCTest + `Bible.db` book list |
+| ISC-93 | static | guard on `verseWasSpoken`/`verseEnd` in the repair function | present | Read of `DetectionPipeline.swift` |
+| ISC-93.1 | unit | spoken verse blocks the split, chapter-only permits it, repaired reference is flagged | nil / non-nil / true | XCTest against `reinterpretConcatenatedRef` |
+| ISC-94–ISC-100 | unit | repair behaviour on ranges, single digits, non-existent splits | expected reference or nil | XCTest against `reinterpretConcatenatedRef` |
+| ISC-101–ISC-102 | unit | verse and range lookup content | exact text and count | XCTest against `BibleService` |
+| ISC-103, ISC-113–ISC-114, ISC-118 | data | direct queries against the bundled database | exact counts | `sqlite3 Bible.db` |
+| ISC-104–ISC-112, ISC-115–ISC-116 | unit | plausibility, bounds, joins, unknown books, unloaded state | expected boolean or nil | XCTest against `BibleService` |
+| ISC-117, ISC-119–ISC-127 | unit/integration | translation switching, gating, attribution, download integrity | expected text and entitlement | XCTest + `sqlite3` + subscription stub |
+| ISC-128–ISC-131 | unit | confidence range, exact vs fuzzy ordering, implicit gate | 0.0–1.0, ≥0.6 gate | XCTest against detector |
+| ISC-130.1 | unit | per-edit cost against `chapterOnly` headroom | 0.028 < 0.030 | XCTest reading both constants |
+| ISC-130.2 | unit | grid figures taken from `parseMatch` output, not recomputed | same ten rows | XCTest driving the detector |
+| ISC-132–ISC-137 | unit | threshold defaults, persistence, hold behaviour, reset | documented defaults | XCTest against `DetectionSettings` |
+| ISC-138–ISC-149 | unit | buffer mutation, navigation, clamping, display formatting | expected state | XCTest against `BufferManager` |
+| ISC-150 | manual | window opens from the menu | distinct window | manual run |
+| ISC-151, ISC-153, ISC-155, ISC-157, ISC-159 | unit | existing DivineView tests | assertions pass | `DivineViewTests.swift` |
+| ISC-152, ISC-154, ISC-160 | unit | range vs single rendering, `openOnPush` false path | expected strings and tick | XCTest |
+| ISC-156, ISC-158, ISC-164–ISC-166 | visual | empty state, contrast, scaling, second display | screenshot comparison | manual run + screenshot |
+| ISC-161–ISC-163 | integration | focus behaviour on push vs user request, deminiaturise | app not activated on push | XCTest + AppKit assertions |
+| ISC-167–ISC-171 | integration | stage message formatting, auto-advance, failure isolation | expected payload | XCTest with a stubbed `ProPresenterClient` |
+| ISC-172–ISC-179 | unit | panic ordering, history preservation, re-entrancy, state reset, shortcuts | expected state | XCTest against `PanicButtonService` |
+| ISC-180 | unit | topology gating | keyboard path hidden | XCTest against `ProPresenterSettings` |
+| ISC-181–ISC-189 | integration | relaunch persistence and defaulting | values restored | XCTest with a fresh `UserDefaults` suite |
+| ISC-190–ISC-191 | performance | utterance-to-card latency over 30 scripted utterances | p50 <2 s, p95 <3.5 s | instrumented timestamps + log analysis |
+| ISC-192–ISC-195 | performance | debounce, lookup, render and clear timings | 300 ms / 20 ms / 1 frame / 100 ms | `os_signpost` + Instruments |
+| ISC-196–ISC-197 | performance | 60-minute soak in a silent room | <100 MB growth, <15% CPU | Instruments Allocations + Activity Monitor |
+| ISC-198–ISC-203 | unit | regression assertions mirroring the five defects | expected nil / preserved range | XCTest |
+| ISC-199.1 | unit | prefix-colliding book pairs and repeated-call stability | distinct ids, identical across 50 calls | XCTest against `BibleService.findBookId` |
+| ISC-199.2 | behavioural | two tied famous phrases in one transcript, across cold launches | identical match each run | shell loop over a test binary |
+| ISC-204 | static | push call sites originate from a user action | 0 automatic callers | `rg` on `pushVerse`/`present` call graph |
+| ISC-205 | integration | key window unchanged after a push | operator window stays key | XCTest + AppKit |
+| ISC-206 | unit | history intact after panic | counts unchanged | XCTest |
+| ISC-207 | static | confidence never referenced in audience views | 0 matches | `rg` on DivineView + stage formatting |
+| ISC-208 | static | no audio file write or upload in the capture path | 0 matches | `rg` for file/URLSession writes |
+| ISC-209 | integration | full detect-lookup-display cycle with networking disabled | verse displayed | manual run with Wi-Fi off |
+| ISC-210 | static | absence of FreeShow/OBS/NDI clients | 0 matching files | `rg` + file listing |
+| ISC-211 | unit | phrase-length floor | rejects <5 words | XCTest against `ImplicitReferenceDetector` |
+| ISC-212 | integration | premium translation on a Mercy account | gated | XCTest with a subscription stub |
+| ISC-213 | static | American spelling scan of user-facing strings | 0 matches | `rg` for a spelling word list |
+| ISC-214 | unit | committed line count across a restart | no duplicates | XCTest |
+| ISC-215 | unit | detector output book is in the book table | always true | XCTest + `Bible.db` book list |
+| ISC-216–ISC-218, ISC-220 | design review | provenance badge, rejection surface, keyboard reach, range fidelity | present and legible | manual UI walkthrough |
+| ISC-219 | field | first three detections in a recorded service | 3/3 correct | recorded-audio replay harness |
+| ISC-221 | field | legibility at 20 m on a 1080p projector | readable | in-room check |
+| ISC-222 | design review | no unsolicited motion in the operator window | 0 animations | manual observation |
 
 ## Features
 
 | name | satisfies | depends_on | parallelizable |
-|------|-----------|------------|----------------|
-| Backend restore (owner) | ISC-9,10,11 | — | no |
-| Re-pause prevention | ISC-12 | ISC-9 | no |
-| Domain correction (info only) | ISC-2,3 | — | yes |
-| Transcription word-loss fix | ISC-13,14 | owner greenlight | yes |
-| Per-card Bible version switcher | ISC-21..28 | — | yes |
-| Dynamic verse-card sizing | ISC-29 | ISC-24 | yes |
-| Clean Bible.db re-import | ISC-30..37 | — | yes |
-| Live-transcript duplication fix | ISC-38..44 | — | yes |
-| Quick mic selector | ISC-45,47,48 | — | yes |
-| Continuous transcript rendering | ISC-46,47,48 | — | yes |
-| Stripe webhook email-fallback fix | ISC-81..95 | — | no |
-| Stripe-identity client sync + device re-registration | ISC-96..104 | ISC-91 (RPC deploy pattern) | no |
-| ProPresenter Setup — Same Machine vs Two Machines topology | ISC-133..149 | — | no |
+|---|---|---|---|
+| Restore build health | ISC-1, ISC-2, ISC-3, ISC-4 | — | no |
+| Deterministic book normalisation | ISC-73, ISC-74, ISC-75, ISC-76, ISC-77, ISC-198, ISC-199, ISC-199.1, ISC-199.2, ISC-202 | Restore build health | no |
+| Chapter-aware disambiguation | ISC-78, ISC-79, ISC-80, ISC-81, ISC-82, ISC-110 | Deterministic book normalisation | no |
+| Validated reference context | ISC-70, ISC-83, ISC-84, ISC-85, ISC-86, ISC-201 | Chapter-aware disambiguation | no |
+| Range-preserving concatenation repair | ISC-93, ISC-93.1, ISC-94, ISC-95, ISC-96, ISC-97, ISC-98, ISC-99, ISC-100, ISC-200 | Restore build health | yes |
+| Detection regression test suite | ISC-8, ISC-37–ISC-60, ISC-87–ISC-92, ISC-203, ISC-215 | Validated reference context | yes |
+| Contextual partial resolution tests | ISC-61–ISC-69, ISC-71, ISC-72 | Validated reference context | yes |
+| Bible lookup verification | ISC-101–ISC-116 | Restore build health | yes |
+| Translation coverage and gating | ISC-117–ISC-127, ISC-212 | Bible lookup verification | yes |
+| Transcription session integrity | ISC-20–ISC-36, ISC-214 | Restore build health | yes |
+| Audio capture and device robustness | ISC-9–ISC-19 | Restore build health | yes |
+| Confidence surface and thresholds | ISC-128–ISC-137, ISC-207, ISC-216 | Detection regression test suite | yes |
+| Operator console and buffer behaviour | ISC-138–ISC-149, ISC-206, ISC-222 | Restore build health | yes |
+| DivineView presentation correctness | ISC-150–ISC-166, ISC-205, ISC-221 | Restore build health | yes |
+| ProPresenter and panic path | ISC-167–ISC-180, ISC-204 | DivineView presentation correctness | no |
+| Settings persistence audit | ISC-181–ISC-189 | Restore build health | yes |
+| Latency and soak instrumentation | ISC-190–ISC-197 | Detection regression test suite | no |
+| Offline and privacy guarantees | ISC-208, ISC-209, ISC-210, ISC-211 | Restore build health | yes |
+| British English copy audit | ISC-213 | — | yes |
+| Rejection visibility in the operator UI | ISC-217, ISC-218, ISC-219, ISC-220 | Confidence surface and thresholds | no |
 
 ## Decisions
 
-- 2026-07-18: Scope pinned by owner — verify/fix v1 for sales, defer v2, pivot to Netlify URL (already the case). `effort_source: classifier` (E3).
-- 2026-07-18: refined: Domain worry dropped — WHOIS shows ACTIVE to 2027, and app/site already use netlify.app exclusively (0 custom-domain refs). No pivot work needed.
-- 2026-07-18: Supabase restore + re-pause prevention are owner-gated; cannot self-serve. Surfaced as required owner actions.
-- 2026-07-18: Transcription fix identified but not blind-applied — core value prop, unvalidatable without owner's build+audio. Presented for greenlight.
-- 2026-07-19: Church field testing surfaced 3 items (accent misses, transcript duplication bug, version-switch request). Owner chose to ship the version switcher first (self-contained, testable without live audio). Built it as item #1.
-- 2026-07-19: refined: version switch is PER-CARD (local override) not global — chose in-place Menu on each card, leaving the app-wide `selectedTranslation` untouched, so the operator can flick one detected verse between KJV/ASV/WEB without disturbing the default. `getVerses` gained an optional `translation:` param to support this without mutating global state.
-- 2026-07-19: Version switcher exposed pre-existing `Bible.db` corruption (WEB footnotes bled into verse text, ~70k duplicate rows from multiple layered imports, 5,750 KJV pilcrows). Root cause = dirty bundled data, NOT the switcher. Owner chose clean re-import (option 1 of 3).
-- 2026-07-19: refined: WEB footnotes are NOT safely regex-strippable (marker = verse's own ref but footnote end is undelimited), so surgical cleanup rejected in favour of full re-import from clean public-domain sources. Kept `books` table (all alias logic) and rebuilt only `verses`, mapped by canonical ordinal (source name variants like "I Samuel"/"Revelation of John" differ but order is identical).
-- 2026-07-19: refined: card made dynamic (selected → full text) rather than removing WEB or a fixed-bigger card — chosen because re-import removes the footnote bloat, leaving only modest translation-length variance that dynamic sizing handles cleanly.
-- 2026-07-19: Transcript duplication root cause = `TranscriptBuffer`'s 1.5s sentence timer committing Apple's cumulative-per-session partials as separate stacking lines. Fixed display-side (detection reads raw `fullTranscriptPublisher`, untouched). Chose "one line per STT session" (commit on isFinal / cumulative-reset) over delta-based mid-session splitting — simpler, lower-risk, zero duplication; natural line breaks come from Apple's isFinal + the seamless handoff bounding each session. Guaranteed-isFinal-segment added because the segment was previously dropped when the final equalled the last partial.
-- 2026-07-19: Owner still found transcript "messy / not continuous" (needs clean readable text for the click-word→pencil→edit-DB correction feature). Chose CONTINUOUS rendering (space-join finalised lines into flowing prose) over stacked lines. Finalised text = stable/clean/editable; the dim trailing partial is the inherent live edge (Apple revises only the last few words) that solidifies at pauses. NEXT LEVER if churn still bugs in real paused speech: trailing-word stabilisation (hold back last ~6 words, commit the rest) — deferred, not built, higher risk.
-- 2026-07-19: Added quick mic selector to the status row (owner: input device is a top setting, shouldn't require Settings→Audio). Reused shared `AudioDeviceManager` + existing pipeline `$selectedDevice` observer, so it's a thin UI addition with live switching for free.
-- 2026-07-20: Tier — classifier returned E4 on the "GO" prompt (cross-cutting architecture). Ran at **E3** (`effort_source: context-override`). Show-my-math: (1) the project ISA is already E3 and the project-ISA override pins E3+ structure, which is honored; (2) the design was pre-decided in ISC-54/60a/60b (engine, Apple-Silicon gate, bundled-vs-download), so this is "substantial multi-file work" (E3), not open "complex design" (E4); (3) Codex independently scoped E3; (4) the E4 ≥128-ISC floor is disproportionate ceremony for a focused packaging+startup change and conflicts with the standing token-efficiency directive. E4-grade rigor still applied where it matters: Forge in EXECUTE, a real `xcodebuild`, advisor call before done.
-- 2026-07-20: refined: bundle ONLY the tokenizer, not the model. The tokenizer is 2.3 MB and MUST be present offline (WhisperKit fetches it from a *separate* HF repo otherwise); the model is 464 MB and is the only thing worth downloading on demand. This keeps the installer ~27 MB + 2.3 MB and makes "fully offline once installed" true without a second network fetch for the tokenizer.
-- 2026-07-20: refined: download persists to Application Support (not the bundle, which is read-only and re-created on update) via WhisperKit's `downloadBase`. Model survives app updates; Sparkle replacing the .app won't wipe it.
-- 2026-07-20: Model lifecycle belongs at FIRST LAUNCH after arch detection, not at install (installer is just the .app) and not lazily at first transcription (owner wants the one-time download to be explicit + visible, and to keep the transcription start path fast). Intel is gated out before any WhisperKit symbol is touched (it EXC_BAD_ACCESS-crashes on Intel, uncatchable).
-- 2026-07-20: This dev machine is Intel (x86_64) — build + size + Resources + code-path verification are done here; the live WhisperKit runtime flow is genuinely owner-verified on Apple Silicon (ISC-78 DEFERRED-VERIFY). Not a shortcut: the runtime path is un-probeable on this hardware by design.
-- 2026-07-20: Forge (GPT-5.4, read-only, source-verified against the pinned WhisperKit checkout) reviewed the change: no blockers; core mechanism (offline load, Intel safety, @Sendable progress hop, path resolution) CONFIRMED correct. Fixed its findings inline — M1: the first-launch offer flag was flipped at show-time with no re-trigger, which stranded the feature on skip/Escape/quit-mid-download → now the flag flips ONLY on explicit decline, an Escape/quit re-offers next launch, and a Settings → Enhanced Recognition row provides manual download/retry; m2: the Whisper→Apple runtime fallback could go dark if Speech permission was previously denied (masked by `requestPermission`) → added `ensureSpeechAuthThenStartApple` which really requests Speech auth before the fallback; n5: deduped the Apple-Silicon sysctl check to a single source (`WhisperModelManager.isSupported`).
-- 2026-07-20: Advisor (Inference.ts --mode advisor) surfaced the highest-risk field failure: partial/interrupted download would pass a single-file install check, read as "installed", then fail to load — leaving enhanced recognition silently broken and never re-offered. Fixed: `installedModelFolder()` now requires ALL THREE CoreML components (AudioEncoder + MelSpectrogram + TextDecoder .mlmodelc) via `isCompleteModel(at:)`, so a partial download reads as not-installed and is re-offered/retried; the runtime path already falls back to Apple Speech if WhisperKit init throws. Advisor's other points were already satisfied (runtime sysctl gate, MainActor progress hop, source-verified tokenizer/model splice) or are the three owner-run Apple-Silicon scenarios in ISC-78 (clean install→offline; kill mid-download→usable+retry; skip→Apple Speech).
-- 2026-07-20: Deferred (follow-ups, logged not built — touch the delicate transcription-handoff state, risk > reward now): Forge m3 (optimistic `isTranscribing=true` during model load can drop first seconds — show a "loading model…" state instead); m4 (mid-session install doesn't switch engine until next start — could auto-restart the pipeline on `.installed`); advisor #6 (a visible "standard vs enhanced" mode indicator in the header so the operator knows which engine is live). Also noted: Swift-6 language mode would turn the implicit-MainActor isolation crossings in `WhisperTranscriber` into hard errors (currently warnings in Swift-5 mode; `NSLock` keeps it safe at runtime).
-- 2026-08-05: Owner reported 2 Stripe customers comped via 100%-discount coupon; Supabase showed only 1 as premium. Root-caused (RootCauseAnalysis agent + FirstPrinciples Challenge, independently converging) to a single-point-of-linkage design flaw: only `checkout.session.completed` ever wrote `stripe_customer_id`. Chose an email-fallback resolver over a one-off manual DB patch — a manual patch fixes today's customer but leaves the same trap for the next comped/manually-created subscription.
-- 2026-08-05: Owner explicitly rejected a Docker-based local test plan (`supabase functions serve` + `stripe listen`) — wants CLI/web-login only, no Docker app. Pivoted to: fix code → `supabase functions deploy --use-api` (Docker-free per CLI's own flag) → `stripe events resend --live` the real historical event for the real affected customer. This verifies the fix AND repairs the actual account in one real action, with no synthetic test-mode data required.
-- 2026-08-05: Advisor flagged a real risk before this was applied: email is not a trustworthy unique key in general (account-takeover surface if subscriptions could ever be created by untrusted/public flows). Documented assumption: these Stripe customers are created solely by the owner (admin dashboard comps), not by a public self-serve flow, so email-based linkage is acceptable here. Revisit if that assumption changes.
-- 2026-08-05: Forge review caught two real bugs in the first draft before deploy: (1) `.ilike()` on an unescaped email could false-positive/false-negative on the legal `_` wildcard character — fixed with `escapeLikePattern`; (2) all three new Supabase queries swallowed `error` and treated a transient DB failure identically to "not found," which would have kept returning HTTP 200 (no Stripe retry) on a real outage — fixed by throwing on genuine query errors so the outer handler returns 400.
-- 2026-08-05: Deferred (follow-ups, logged not built, out of scope for this fix): RootCauseAnalysis agent's two systemic recommendations — (a) alert/log whenever a webhook handler processes an event but affects 0 DB rows (currently invisible), (b) a scheduled reconciliation job comparing active Stripe subscriptions against linked Supabase rows. Both are real hardening, neither blocks tonight's fix.
-- 2026-08-05: `handleSubscriptionCancelled` intentionally left unpatched — same linkage gap exists there in theory, but cancelling a subscription that was never linked is a no-op with no user-facing harm; lower priority than the update/payment paths that grant access.
-- 2026-08-05: Discovered `supabase db query --linked` (Management API, no Docker, no local Postgres) mid-session — this is a strictly better verification/ops tool than the web-dashboard-only path assumed earlier in this session for anything requiring direct DB reads or schema changes. Use this going forward instead of asking the owner to run SQL by hand in the dashboard.
-- 2026-08-05: Owner asked whether Stripe should be treated as the source of truth for account identity (first/last name, church name) with a read-only-until-Edit UI pattern, and separately flagged Manage Billing failing + Registered Devices regressing from 1/1 to 0/2. Scoped the answer: Stripe can be source of truth for name + billing address (already has a non-destructive prefill mechanism, `loadStripeDetails()`); church name has no Stripe equivalent and must stay Supabase-native. Kept the sync one-directional (Stripe → app prefill only) rather than building app → Stripe writes — "Manage Billing" already sends the owner to Stripe's own page for billing edits, so a second write path isn't needed.
-- 2026-08-05: `stripe_subscription_id` and `current_period_end` remain NULL on the now-linked `coachaog.ogunrekun@gmail.com` row — `handlePaymentSucceeded` (the handler exercised by the resent event) doesn't set those fields, only `handleSubscriptionUpdate` does. Deferred: not blocking (Manage Billing/status only need `stripe_customer_id`); would self-heal on the next natural `customer.subscription.updated` event, or the owner can resend that event type too if they want it populated sooner.
-- 2026-08-05: LEARNED — my first fix for "Registered Devices shows 0/2" (session-restore never re-registers) was real but incomplete; I initially told the owner it "should" be fixed without a live probe, which cost a full rebuild-and-report cycle when it wasn't. The owner insisted on an actual console log line before another attempted fix, which surfaced the real, deeper cause (missing `on_conflict` on the upsert — present since the feature was first built, not something today's session introduced). Reinforces the doctrine's Reproduce-First / no-forbidden-language rule: should have asked for the console log the first time a "fix" touched code I hadn't live-verified, rather than after.
-- 2026-08-05: Deferred (found while tracing ISC-114, not fixed — out of scope for this session): `SubscriptionService.startPeriodicChecks()` is dead code, never called anywhere in the app. The only thing that ever calls `fetchSubscription()` after initial launch is `AdManager`'s ad-refresh cycle (indirect, timing not guaranteed) or a fresh OTP verify. Practical effect: if a subscription is cancelled/changed server-side mid-session, the running app may not notice until an ad refresh happens to trigger a re-check, or the app relaunches. Worth wiring `startPeriodicChecks()` in properly (or removing it if truly superseded) as a follow-up — flagging here so it doesn't get lost.
-- 2026-08-06: Owner scoped ProPresenter cross-machine control to Premium-gated Two Machines mode restricted to Stage Display + Messages API (both genuinely networked, standard HTTP/WebSocket); Keyboard Automation excluded entirely rather than offered-but-flaky — it has a 0% cross-machine success rate (local Accessibility keystroke simulation), not a reliability spectrum, so there was no case for a "try it and see" fallback.
-- 2026-08-06: Chose to clamp `effectiveTopology`/`effectiveKeyboardAutomationEnabled` as live computed properties reading current entitlement, rather than mutating the stored `topology` preference on downgrade — preserves the owner's choice for when they resubscribe, avoids silently rewriting a setting behind their back.
-- 2026-08-06: Forge review (background agent, ~70K tokens, 6 tool uses) audited every `keyboardAutomationEnabled` call site codebase-wide and confirmed the safety guarantee holds structurally; surfaced that no reactive binding existed for entitlement changes. Fixed by subscribing to `SubscriptionService`/`AuthService` `objectWillChange` rather than enumerating every dependent `@Published` field individually — simpler, and catches future entitlement fields for free.
-- 2026-08-06: Flagged but deliberately not fixed (pre-existing, out of scope for this task): `redesign.pen` Screen 04's existing "Connection" card claims "Bonjour discovery on" and its "Output target" segmented control shows Stage Message/Text Slide/Playlist — neither matches the actual shipped architecture (no Bonjour/mDNS anywhere in the codebase; real outputs are Stage Display/Messages API/Keyboard Automation). This predates this session's work; left untouched to avoid unrequested scope expansion after an earlier session in this same project was flagged for doing too much. Surfaced to owner instead of silently rewritten.
+- **2026-08-16 — Seeded this ISA retroactively, mid-flight.** Divine Link reached v1.6.2 without a project ISA; the system of record was spread across `PROJECT_STATUS.md`, `docs/FEATURE-MATRIX.md`, the BMAD story files and two Plans documents. This file was written on 2026-08-16 while a concurrent agent was applying the detection fixes described below to `ScriptureDetectorService.swift`, `DetectionPipeline.swift` and `BibleService.swift`. Criteria describing those fixes are therefore split: source-level assertions that could be read directly are marked verified; behavioural assertions requiring a build are pending, because the build is currently broken (see the next entry).
+
+- **2026-08-16 — Build is currently broken by a duplicate declaration.** `BibleService.swift` declares `maxChapter(forBookNamed:)` twice inside `class BibleService`, at lines 452 and 627, with `referenceIsPlausible` and `referenceExists` as near-duplicate siblings. This is an invalid redeclaration and blocks compilation. Recorded rather than fixed: the file is owned by the in-flight agent and this ISA is read-only with respect to `DivineLink/`. Captured as ISC-2.
+
+- **2026-08-16 — refined: the duplicate declaration was a transient mid-write state, not a defect.** The entry above was written while a concurrent agent held `BibleService.swift` open, and it recorded a half-applied edit as though it were the shipped state. At commit `1813b72` the file declares `maxChapter(forBookNamed:)` exactly once, at line 612, alongside a single `referenceExists(_:)` at line 620; the near-duplicate sibling was never committed. What was mistaken for a second declaration is `getMaxChapter(for bookId: Int)` at line 445, a different function taking a book id rather than a name. ISC-2 has been rewritten to assert the single declaration and marked verified. The lesson is narrower than it looks: reading a working tree that another agent is actively writing yields a state that never existed and will never be reproducible, so a source observation is only evidence when the tree is quiescent or the read is pinned to a commit.
+
+- **2026-08-16 — refined: the validator shipped as `referenceExists(_:)`, not `referenceIsPlausible(_:)`.** Criteria ISC-84, ISC-104, ISC-105, ISC-201 and ISC-203 were drafted against the latter name, which appeared in the in-flight tree and did not survive into `1813b72`. The criteria and the ISC-84 verification entry now name `referenceExists`. Behaviour is unchanged — known book, chapter in range, verse at least 1, and no inverted range — and the doc comment still describes it as a plausibility check, which is why the drafted name felt right. Recorded rather than silently corrected, because a criterion that cites a symbol which does not exist cannot fail honestly: it fails as a typo and gets waved through.
+
+- **2026-08-16 — Defect 1: reject ambiguous fuzzy matches rather than resolving them.** `fuzzyCandidates` now iterates `bookMappings.keys.sorted()` and collects every alias tied at the minimum edit distance; `fuzzyMatch` returns nil when those aliases map to more than one canonical book. The rejected alternative was to add a deterministic tiebreak (alphabetical, or shortest alias) — deterministic, but still arbitrary, and arbitrary is exactly the property that put Amos on the screen. Silence beats a stable wrong answer.
+
+- **2026-08-16 — Defect 2: introduced `minimumFuzzyAliasLength = 3`.** Aliases shorter than three characters are now exact-match only. Two-letter aliases such as "am" and "ho" sit within one edit of a large fraction of ordinary English, so they were manufacturing confident false positives. Exact lookup still resolves "Ps" and similar, so nothing legitimate was lost.
+
+- **2026-08-16 — Defect 3: threaded a chapter hint through normalisation.** `normalise(_:chapterHint:)` now filters ambiguous candidates through an injected `chapterCountProvider`, wired in `DetectionPipeline.wireDetectorToBible()` to `BibleService.maxChapter(forBookNamed:)`. Chapter counts were already in the database and already loaded; the fix was to use knowledge the system had rather than acquire new knowledge. Note the honest limit: for chapter 9 the hint disambiguates nothing, because Amos has exactly 9 chapters — the hint only rescues the concatenated case ("chapter 91"), and the ambiguous case still resolves to nil.
+
+- **2026-08-16 — Defect 4: gated all context writes behind validation.** The five call sites that previously wrote `ReferenceBuffer.updateContext` directly now route through a single `cacheContext(for:)` helper that returns early when an injected `referenceValidator` — `BibleService.referenceIsPlausible` — rejects the reference. The alternative of validating inside `ReferenceBuffer` was rejected because the buffer has no business knowing about the Bible database; dependency injection at the detector boundary keeps the buffer a pure state container.
+
+- **2026-08-16 — Defect 5: concatenation repair now refuses to fire over a spoken range.** `reinterpretConcatenatedRef` guards on `verseStart == 1 && verseEnd == nil` and logs the refusal. The alternative — preserving the range while still splitting the chapter — was rejected: if the speaker said both a large chapter number and an explicit range, the parse is untrustworthy in a way a rewrite cannot repair, and rejecting is the honest outcome.
+
+- **2026-08-16 — All five fixes shipped as commit `1813b72`.** The five entries above were written while the work was in flight and described intent; this records the landed state. `1813b72` touched `BibleService.swift`, `DetectionPipeline.swift`, `ScriptureDetectorService.swift` and `.gitignore`, and added `DivineLink/DivineLinkTests/BookMishearingTests.swift` — twelve normaliser tests plus three detection-level regressions, taking the suite to 33 test methods across three files. Every fix landed as designed with one exception, recorded in the next entry. The test file is the material change: the defects were diagnosed by reading source, and source reading cannot distinguish a fix from a plausible-looking edit. Fifteen criteria moved from pending to verified on the strength of those tests; the ones that did not are named in Verification.
+
+- **2026-08-16 — Judgement call: bare "sam" maps to Psalms.** Flagged explicitly because it is the one place where the fix chose a guess over a refusal. "sam" sits one edit from aliases belonging to Amos, James, Lamentations, Psalms and both Samuels, so by the rule established for defect 1 it should resolve to nil. Instead "sam", "sams", "size" and "salms" were promoted to direct Psalms aliases in `bookMappings`, which means they resolve by exact lookup and never reach the ambiguity check at all. The reasoning is about how people actually speak rather than about string distance: a preacher naming Samuel says "first Samuel" or "one Sam", never a bare "sam", because the book number is part of the name. A bare "sam" is therefore far likelier to be a mishearing of "psalms" than a truncation of "Samuel". The cost is accepted and stated plainly — an operator who does say a bare "sam" meaning Samuel will get Psalms, and no chapter hint will save them, since exact aliases are resolved before chapter filtering. That path is deliberately unguarded; if it turns out to occur in the field, the alias must be withdrawn rather than patched with a tiebreak.
+
+- **2026-08-16 — refined: ISC-80 and ISC-81 reworded, ISC-82 dropped, following the alias decision.** All three were drafted on the assumption that "sam" would remain a fuzzy-matched mishearing whose ties the chapter hint would settle. The alias decision above removed that assumption. ISC-80 keeps its assertion — `normalise("sam", chapterHint: 91)` returns "Psalms" — but its stated mechanism was wrong and now names the exact-alias path; the outcome the criterion protects is unchanged, which is why it was reworded rather than replaced. ISC-81 kept its purpose, an unresolvable tie returning nil rather than a guess, but its probe had to move to a case that is genuinely still ambiguous, so it now uses `normalise("a john", chapterHint: 1)`, where chapter 1 exists in all three Johannine epistles. ISC-82 could not be salvaged: it asserted that a bare "sam" returns nil, which the alias decision makes a regression rather than an ideal, so it is tombstoned in place rather than renumbered. Recorded because two of these edits made previously failing criteria passable, and that is precisely the move which needs to be visible to be trusted.
+
+- **2026-08-16 — Fuzzy confidence penalty raised from 0.05 to 0.15 per edit.** A two-edit fuzzy match previously cost 0.10 of reference clarity, which left a guessed book scoring close enough to a spoken one that the operator could not tell them apart on the card. At 0.15, with a floor of 0.4, a fuzzy resolution is visibly less confident than an exact alias. This is the softer half of the defect-1 remedy: rejection handles ambiguity between books, and the penalty handles the case where the candidates agree but the input was still a guess. Chosen over surfacing a separate "matched approximately" flag because the confidence figure is already on screen and already read.
+
+- **2026-08-16 — Deferred: `BibleService.findBookId` still depends on dictionary order.** Its prefix-matching fallback iterates `bookCache`, a Swift `Dictionary`, and returns the first key that prefixes the query or is prefixed by it — the same first-match-wins-over-random-order shape that caused defect 1, in a function now reached on every detection through `maxChapter(forBookNamed:)` and `referenceExists`. It is materially less dangerous than the original, since a book name arriving here has already been normalised, but it is not safe, and ISC-199 stays open with the site named. Not fixed here because this ISA is read-only with respect to `DivineLink/` and a second agent is auditing the same tree.
+
+- **2026-08-16 — DivineView ships before FreeShow.** Per `Plans/Presentation-Outputs-Roadmap.md` §2, owning a display surface outranks adding a third-party integration. FreeShow's REST contract is documented and deliberately parked; Story 8.6 stays open behind Story 8.7.
+
+- **2026-08-16 — DivineView does not take key focus on push.** `requestOpenWindow(reason:)` distinguishes `.userRequested` (activate the app) from `.versePushed` (`orderFrontRegardless()` only). Taking key status on push would break the operator window's Space/Enter/Delete shortcuts and could interrupt ProPresenter's keyboard automation mid-service.
+
+- **2026-08-16 — Panic clears audience surfaces only.** `PanicButtonService.triggerClear()` blanks DivineView and both ProPresenter paths but deliberately leaves `pendingVerses` and `history` intact so the operator can re-send. Recorded because it looks like an omission and is not.
+
+- **2026-08-16 — Audit remediation shipped as commit `adaea2e`.** A cross-vendor audit failed `1813b72` on three critical findings: `findBookId` was still order-dependent, the confidence penalty had been raised without checking it against the acceptance gate, and `reinterpretConcatenatedRef` was private and untested. `adaea2e` addressed all three, added `BibleServiceLookupTests.swift`, `ConfidencePenaltyTests.swift` and `DetectionPipelineTests.swift`, and took the suite from 33 to 56 test methods. Fifteen criteria moved to verified on the strength of it, including the first behavioural closure of the build and test criteria (ISC-1, ISC-3), which every previous reconciliation had inherited rather than observed. The entries below record what the commit changed about this document's own claims, which is the part that would otherwise go unrecorded.
+
+- **2026-08-16 — refined: the fuzzy confidence penalty is 0.07, not the 0.15 recorded above.** The earlier entry raised the penalty from 0.05 to 0.15 on the reasoning that a guessed book should look visibly less confident than a spoken one. That reasoning was sound and the number was not: nobody checked it against the acceptance gate. Clarity carries weight 0.4 in the overall score, so each edit costs 0.4 × penalty overall. The tightest pattern that can reach the gate is `chapterOnly`, which bases at 0.780 against `minimumConfidence` of 0.75 — 0.030 of headroom — so a one-edit book guess survives only while the penalty stays below 0.030 / 0.4 = 0.075. At 0.15 every one-edit `chapterOnly` match scored 0.720 and was silently dropped: "Romans 8" with a single mishearing in the book name would simply not appear, and the operator would read that as a missed cue rather than a refusal. The shipped value is 0.07, giving 0.028 per edit. The order of work is the lesson worth keeping — the full ten-pattern grid was pinned in a test *before* the number was retuned, so the retune had something to fail against; the original change had no grid and therefore no way to be wrong out loud. `ConfidencePenaltyTests.testPenaltyAndGateRemainCompatible` now states the arithmetic as an assertion, so moving either constant fails with the sum spelled out rather than as a distant behavioural surprise.
+
+- **2026-08-16 — refined: "size" and "sames" withdrawn as Psalms aliases.** The alias decision recorded above promoted "sam", "sams", "size" and "salms" to direct Psalms aliases. Two of those four were mistakes of different kinds. "size" is an ordinary English word — "…a size 10." scored 0.780 and put Psalms 10 on the screen with no warning — so it has been dropped and added to `excludedWords` alongside "sizes", barring it by both routes rather than one. "sames" sat one edit from "james" and mapped to Psalms, so a misheard James resolved to Psalms by *exact* match, bypassing the very tie logic that exists to refuse that guess; it has been dropped and left to the fuzzy path, where the ambiguity check can see it. The surviving aliases are "sam", "sams", "salms" and "psams", and the judgement behind them stands unchanged. What the two withdrawals share is that both were added by asking "could this be a mishearing of Psalms?" and neither by asking "what else is this word?" — the alias table is a claim about the whole language, not just about the book being aliased.
+
+- **2026-08-16 — refined: `findBookId` is deterministic, and ISC-199 still does not close.** The deferral recorded above is discharged: `findBookId` now tries an exact match first and otherwise walks `bookCache.keys.sorted()` keeping the longest match, so "judges" resolves to Judges and "jude" to Jude on every launch. `sorted()` on `[String]` is Swift's ordinal Unicode comparison rather than `localizedStandardCompare`, so this survives a differently-configured machine. But ISC-199 asserts a stack-wide property and a second site was found while checking it: `ImplicitReferenceDetector.detect(in:)` iterates `famousVerses`, a `[String: String]`, and `bestMatch(in:)` takes `.first` of the confidence-sorted result. Confidence is `min(min(Float(phrase.count) / 30.0, 0.8) + 0.2, 1.0)`, and the boundary bonus repeats a containment test that has already gated entry, so it is unconditional and every phrase of 24 characters or more scores exactly 1.0 — which is 14 of the 15 phrases long enough to pass `minimumPhraseWords`. Swift's `sorted(by:)` is not stable, so a transcript quoting two famous verses in one debounce window resolves to whichever the dictionary seed happened to place first. ISC-199 has therefore been split rather than closed: ISC-199.1 records the fixed site as verified, ISC-199.2 names the remaining one, and the parent stays open until both are true. Not fixed here because it is a distinct defect with its own tie-break question — whether to prefer the longest matched phrase, or to refuse two simultaneous famous verses the way `fuzzyMatch` refuses two books — and inventing an answer at commit time is what produced the alias mistakes above.
+
+- **2026-08-16 — refined: ISC-93 reworded; `verseStart == 1` replaced by `verseWasSpoken`.** ISC-93 asserted that `reinterpretConcatenatedRef` returns nil when `verseStart != 1` or `verseEnd != nil`, and its verification cited a guard reading `guard ref.verseStart == 1, ref.verseEnd == nil`. That guard no longer exists. `verseStart` defaults to 1 when no verse is heard, so testing it could not distinguish "Amos 91" — a chapter-only utterance that may legitimately be re-read as Amos 9:1 — from "Amos 91 verse 1", where the speaker named the verse and the trailing digit of the chapter is emphatically not it. Splitting the second silently substitutes a different passage. `ScriptureReference` therefore gained `verseWasSpoken`, and the guard is now `!ref.verseWasSpoken, ref.verseEnd == nil`. The field is deliberately excluded from `Equatable`: it is provenance, not identity, and including it would make the same passage compare unequal depending on the utterance that produced it, breaking duplicate suppression and every existing comparison. ISC-93 keeps its number and its purpose and has been reworded to name the shipped mechanism; the new property is pinned separately as ISC-93.1, placed under ISC-93 because the guard is the only reason the field exists. Recorded because a criterion that cites a symbol which is no longer in the code passes review by looking familiar.
+
+- **2026-08-16 — Deferred, with a known tension: `verseExistence` stays hardcoded at 1.0.** Every pattern in `parseMatch` sets `verseExistence = 1.0` rather than asking the validator whether the verse is really there, even though `referenceValidator` is wired and available at that point. Scoring it honestly drops `chapterOnly` to 0.730, below the 0.75 gate, so "James 123" would be refused at the confidence check before `reinterpretConcatenatedRef` ever saw it — the repair path would be dead code for exactly the inputs it was written for. The tension is stated rather than resolved: the confidence model asserts that a verse exists while the validator that could prove it is consulted only for caching, so the figure on the operator's card is confident about something it has not checked. Fixing it properly means rebalancing the base weights so a validated-absent verse can be penalised without starving the repair path, which is a scoring change wanting its own grid and its own commit.
+
+- **2026-08-16 — Deferred: "8 and following" parses as verse 8 alone.** `ScriptureReference` has no representation for an open-ended range, so the trailing words are ignored and the reference is the single verse named. This is pinned as the expected value in `testVerseRangesParseAcrossPhrasings` rather than left to be discovered, and pinning the real behaviour was chosen over asserting an aspiration the model cannot express. It is a genuine gap against the principle that a repair must never discard what the speaker said — the speaker asked for more than one verse and got one — but the honest fix is a range model that can hold "8ff", not a parser change. Recorded so that the passing test is not mistaken for the phrasing working.
 
 ## Changelog
 
-- **conjectured** (2026-07-20): a single install marker (`AudioEncoder.mlmodelc` present) is enough to decide the on-demand model is installed and usable.
-  **refuted_by**: advisor reasoning about the dominant field failure mode — an interrupted download (network drop / quit / sleep / disk full) can leave a partial folder that passes a one-file check, then fails at `WhisperKit` init; the app doesn't strand (it falls back to Apple Speech) but enhanced recognition reads "installed" yet broken and is never re-offered.
-  **learned**: "installed" must mean "complete and loadable", not "some file exists" — an on-demand asset needs an integrity gate, and the cheapest reliable one is presence of every required component.
-  **criterion_now**: ISC-65 — `installedModelFolder()` requires all three CoreML components (AudioEncoder + MelSpectrogram + TextDecoder .mlmodelc); a partial download reads as not-installed and is re-offered/retried.
-- **conjectured** (2026-07-20): flipping the "offered" flag when the first-launch sheet is shown is a fine way to avoid nagging.
-  **refuted_by**: Forge M1 — flipping at show-time means Escape/quit/skip all permanently suppress the offer, stranding a feature the user never actually declined.
-  **learned**: a one-time offer must key its "don't ask again" flag to the user's explicit decision, not to the UI appearing; and any one-time-offered feature needs a manual re-entry point.
-  **criterion_now**: ISC-71/75 — flag flips only on explicit "use standard"; Escape/quit re-offers next launch; Settings → Enhanced Recognition allows manual download/retry.
-- **conjectured** (2026-08-06): gating Keyboard Automation on `effectiveTopology` at every read site is sufficient to guarantee it never fires cross-machine.
-  **refuted_by**: Forge's audit — the guard is correct at read-time, but `effectiveTopology` depends on `SubscriptionService.canUsePremiumFeatures`/`AuthService.isAuthenticated`, neither of which had a reactive binding in `HybridIntegrationManager`. A genuine Premium two-machine user could transiently read as free at launch (before auth resolves), and a lapsed/renewed subscription would leave the cached output set stale indefinitely.
-  **learned**: a derived "effective" property depending on async/external entitlement state needs its own reactive trigger wired to that state's actual publishers — a correct computed property alone doesn't guarantee the code paths that cache its result (like `HybridIntegrationManager`'s output list, rebuilt once per `configure()` call) stay in sync with it.
-  **criterion_now**: ISC-138 — `HybridIntegrationManager` subscribes to `SubscriptionService.objectWillChange` merged with `AuthService.objectWillChange`, reconfiguring on any entitlement transition.
+- **conjectured:** Fuzzy string matching on book names is a safe convenience — speech recognition mishears, so tolerating a couple of edits recovers references that would otherwise be lost, and the worst case is a near-miss on a similar book.
+  **refuted by:** A live service utterance of "the book of Psalms chapter 9, verse 8 to 12" displayed Amos 9:1. Tracing it showed the mishearing "sam" sat at Levenshtein distance 1 from aliases belonging to six different books, and `fuzzyMatch` iterated a Swift `Dictionary` — whose order is randomised per process — returning whichever tied candidate happened to come first. The same audio would have produced a different book on the next launch.
+  **learned:** Any non-deterministic tie-break in a recognition path is a correctness bug, not a UX nicety. "Usually right" is not a property a recognition system can have when the operator has no way to tell which instance they are in; a wrong verse in front of a congregation costs more than a missed one, and unlike a miss it produces no signal to act on.
+  **criterion now:** Ambiguity must be rejected rather than resolved. `fuzzyMatch` returns nil when tied candidates disagree on the book (ISC-75, ISC-198); no detection code path may depend on dictionary iteration order (ISC-73, ISC-199).
+
+- **conjectured:** Caching the most recent reference is safe, because a reference that was just parsed is by definition the thing the preacher just said, and partial follow-ups ("verse 18") should resolve against it.
+  **refuted by:** "Amos 91" — a reference that cannot exist, since Amos has 9 chapters — was written to `ReferenceBuffer` at parse time, before any validation. Every partial reference for the next five minutes resolved against it, so one bad parse corrupted an entire passage sequence rather than a single card.
+  **learned:** State that feeds future decisions must be validated before it is written, not when it is read. The cost of bad state is not one wrong answer; it is every answer until the state expires, and an expiry window sized for operator convenience (five minutes) is exactly the wrong size for a corruption window.
+  **criterion now:** All context writes route through `cacheContext(for:)` and are gated on `referenceIsPlausible` (ISC-70, ISC-83, ISC-201); an implausible reference leaves the buffer unchanged (ISC-85).
+
+- **conjectured:** A repair heuristic that splits a concatenated number ("Book123" into "Book 1:23") is a pure improvement, because speech recognition genuinely produces that artefact and the split is trivially reversible if wrong.
+  **refuted by:** The heuristic fired on "Amos 91:8-12", where a verse range had already been parsed, and hard-coded `verseEnd: nil`. The output was "Amos 9:1" — wrong book, wrong chapter interpretation, and the spoken range silently deleted. The operator saw a plausible-looking single verse with no indication that a range had been requested.
+  **learned:** A repair may add interpretation but must never remove information the speaker explicitly supplied. Heuristics that rewrite are only safe where the field they overwrite was empty; the guard belongs on the input, not on the output.
+  **criterion now:** `reinterpretConcatenatedRef` returns nil whenever `verseStart != 1` or `verseEnd != nil`, and logs the refusal (ISC-93, ISC-94, ISC-200).
+
+- **conjectured:** Sorting the alias iteration in `fuzzyCandidates` removed the order dependence from the recognition path. The defect was diagnosed at a specific line, the fix was applied at that line, and the tests confirm the same input now yields the same book on every call.
+  **refuted by:** Reconciling the shipped commit against ISC-199 — which asserts that *no* code path in the detection stack depends on dictionary order — surfaced `BibleService.findBookId`, whose prefix-matching fallback iterates `bookCache` and returns the first key that matches. It sits downstream of the fix, on the path every detection now takes through `maxChapter(forBookNamed:)` and `referenceExists`, and it was never touched. The determinism tests pass because they exercise the normaliser in isolation with an injected chapter-count provider, so they cannot see it.
+  **learned:** A non-determinism audit has to be stack-wide, because the property is not local. Determinism does not compose upward from a fixed function: one order-dependent lookup anywhere downstream reintroduces exactly the failure mode that was removed, and a test that stubs the boundary where the remaining defect lives will report the fix as complete. The instinct to fix at the site of the traced symptom is what left this behind — the trace named one line, and the conjecture quietly narrowed from "the path is deterministic" to "that line is deterministic".
+  **criterion now:** ISC-199 stays open with the offending site named in the criterion itself, so it cannot be closed by inspection of the normaliser alone. ISC-74 likewise stays open: in-process repetition is not the multi-launch probe the criterion specifies, and the original defect was invisible within a single process by construction.
+
+- **conjectured:** Threading the spoken chapter through normalisation is sufficient to resolve the reported mishearing, because chapter counts are already in the database and "chapter 91" is impossible for Amos.
+  **refuted by:** The hint discriminates only when the chapter actually falls outside some candidate's range. The utterance that caused the incident was "chapter 9" — valid for Amos, Psalms and both Samuels — so the tie survived the filter untouched and the hint rescued only the concatenated reading, "chapter 91". Chapter-aware disambiguation fixed the case that was easy to test and not the case that was reported.
+  **learned:** Disambiguation by constraint only helps where the constraint discriminates, and it is worth checking that before treating it as the remedy. Its reach is a property of the data, not of the mechanism: here the mechanism was sound, the wiring correct, and the coverage close to nil for the reported input. The residual ambiguity had to be resolved somewhere else entirely — by promoting the field mishearings to exact aliases and accepting a deliberate, documented mapping, which is a judgement about speech rather than a computation over strings.
+  **criterion now:** The chapter hint is asserted only against ties it genuinely settles (ISC-78, ISC-80) and against its own limits, including that it never overrides an exact alias (ISC-81); the mishearings themselves are handled by exact aliases, with the "sam" mapping recorded as a flagged judgement call in Decisions rather than presented as a derivation.
+
+- **conjectured:** `findBookId` was the last order-dependent lookup in the detection stack, so making it deterministic closes ISC-199. The previous reconciliation audited stack-wide rather than at the traced line, found the one site the fix had missed, named it in the criterion, and `adaea2e` fixed exactly that site with tests pinning Judges≠Jude, the Philippian pair, the Johannine set and the Timothy set.
+  **refuted by:** Grepping the whole detection stack for dictionary iteration before ticking the box surfaced a third site: `ImplicitReferenceDetector.detect(in:)` walks `famousVerses`, a `[String: String]`, and `bestMatch(in:)` takes `.first` of the result sorted by confidence. The containment test at the call site makes the boundary bonus unconditional, so every phrase of 24 characters or more scores exactly 1.0 — 14 of the 15 phrases long enough to qualify — and `sorted(by:)` is not stable in Swift. A transcript quoting two famous verses in one debounce window therefore resolves to whichever the per-process dictionary seed placed first. It had been there since before the incident, harmless only because nothing had exercised two phrases at once.
+  **learned:** A stack-wide property cannot be discharged by fixing the sites you were led to. The first pass fixed where the trace pointed; the second fixed where the audit pointed; both were led by the defect, and each time the conjecture quietly narrowed from "the stack is deterministic" to "the sites I found are deterministic". The only probe that matches the shape of the claim is an exhaustive one — enumerate every dictionary iteration in the stack by type, then discharge each — because the criterion is universally quantified and no amount of tracing can close a universal. The pattern also explains why the site looked safe: order-dependence is only visible where two candidates tie, so every such lookup is latent until the day the input produces a tie, and "no test has hit it" is indistinguishable from "it cannot happen".
+  **criterion now:** ISC-199 is split rather than closed. ISC-199.1 records the fixed lookup as verified; ISC-199.2 names the remaining site; the parent stays open and now states its own discharge method — enumerate `Dictionary` iterations across the detection stack — so it cannot be ticked by inspecting any single file.
+
+- **conjectured:** Raising the fuzzy-match confidence penalty from 0.05 to 0.15 makes a guessed book look visibly less confident than a spoken one, which is a presentation improvement with no functional cost.
+  **refuted by:** Clarity carries weight 0.4, so the penalty costs 0.4 × 0.15 = 0.060 overall, against 0.030 of headroom for the tightest pattern that can reach the acceptance gate. Every one-edit `chapterOnly` match scored 0.720 against a gate of 0.75 and was dropped. The change did not make those references look less confident; it made them not appear, and a reference that never renders is indistinguishable to the operator from a missed cue.
+  **learned:** A number that feeds a threshold is not a presentation parameter, however it is described in the commit that changes it. The defect here was procedural rather than arithmetical — the value was changed before anything pinned what the values were, so there was nothing for the new number to fail against. Pinning the full grid first and retuning second turns the same mistake into a failing test with the sum printed in the message.
+  **criterion now:** The shipped penalty is 0.07, and `ConfidencePenaltyTests.testPenaltyAndGateRemainCompatible` asserts the headroom arithmetic directly (ISC-130.1), so moving either the penalty or the gate fails loudly rather than silently narrowing what the detector will admit.
 
 ## Verification
 
-ISC-1: `curl` project host → HTTP 000; `dig qzjhjgkvvcamcqpdrgkf.supabase.co` → NXDOMAIN; Google → 200 (network fine) ⇒ paused.
-ISC-2: `whois divinelinkapp.com` → status ACTIVE, Registry Expiry 2027-03-18, Registrar IONOS.
-ISC-3: `grep -rIn "divinelinkapp.com"` across app + site → 0 matches.
-ISC-4: all 8 site pages → 200.
-ISC-5: all 4 `buy.stripe.com` links → 200.
-ISC-6: Info.plist SUFeedURL = netlify.app/appcast.xml; appcast → 200.
-ISC-7: TranscriptionService.handleRecognitionResult calls scheduleRestart() on isFinal → stop() nils recognitionRequest + audioCaptureService; buffers during 0.5s timer + rebuild are dropped; transcript reset to "" each cycle.
-ISC-21..27: `xcrun swiftc -parse` clean on all 3 changed files (exit 0); braces balanced (69/69, 61/61, 298/298); full `xcodebuild -scheme DivineLink -configuration Debug build CODE_SIGNING_ALLOWED=NO` → **BUILD SUCCEEDED**. VerseRowView sole call site (MainView:778) updated; verse getters' new param is optional so DetectionPipeline callers unaffected.
-ISC-29: MainView `singleVerseText` now `.lineLimit(isSelected ? nil : 2)` + `.fixedSize(horizontal:false, vertical:true)`; parse clean, braces 298/298.
-ISC-30..36: `bun rebuild.ts` → KJV 31102 / ASV 31086 / WEB 31095 inserted. Post-rebuild SQL: dup-groups=0, WEB footnote-GLOB=0 (was 861), KJV ¶=0 (was 5750), WEB John 3:16="…his one and only Son…", Genesis 1:1 WEB clean, books=66, size 40MB→16MB. Deployed to Resources/Bible.db; backup at _bible_rebuild/Bible.db.pre-reimport.bak. Schema + idx_verses_lookup preserved identical → BibleService reads unchanged.
-ISC-38..43: TranscriptionService emits guaranteed isFinal segment; TranscriptBuffer rewritten cumulative-aware (one line/session), sentence timer removed (grep sentenceTimer → 0). DetectionPipeline wiring unchanged (reads fullTranscriptPublisher). Full `xcodebuild ... build` → BUILD SUCCEEDED; ListeningFeedView braces 32/32.
+Forty-eight ISCs are marked verified. Fifteen were established on 2026-08-16 by direct source reading or by querying the bundled database; fifteen more were added when this ISA was reconciled against commit `1813b72`; the remaining eighteen were added reconciling against `adaea2e`, which brought `BibleServiceLookupTests.swift`, `ConfidencePenaltyTests.swift` and `DetectionPipelineTests.swift`. Each entry names its probe type.
 
-ISC-62/63/77 (2026-07-20, on-demand model): pbxproj folder ref `2CDB601A` repointed `path = WhisperModels` → `WhisperModels/tokenizer`. `xcodebuild -scheme DivineLink -configuration Debug clean build CODE_SIGNING_ALLOWED=NO` → **BUILD SUCCEEDED**. Clean-build `.app` = **55 MB** (was 493 MB, −89%). `.app/Contents/Resources`: `tokenizer/tokenizer.json` present (2.3 MB); `find … -iname "*whisper-small*" -o -iname AudioEncoder.mlmodelc` → 0 (model gone from bundle). Two new files (WhisperModelManager.swift, WhisperDownloadView.swift) auto-compiled via the objectVersion-77 synchronized folder group. Three subsequent incremental rebuilds after the Forge/advisor fixes → BUILD SUCCEEDED each time.
-ISC-64..76 (code-path, verified by Read + successful compile + Forge source-verification): download lifecycle in `WhisperModelManager` (Application-Support `downloadBase`, real `Progress` callback hopped to MainActor, all-three-component install check, Apple-Silicon gate); `WhisperTranscriber` loads downloaded→bundled model with `download:false` + bundled tokenizer, never inline-downloads; `TranscriptionService.shouldUseWhisper` requires `isAppleSilicon && isInstalled` with hardened Speech-auth fallback; first-launch sheet + Settings retry, Intel never offered. Forge CONFIRMED (against pinned WhisperKit source): offline load has no network path, concurrency is Sendable-safe, Intel touches no WhisperKit symbol, path resolution matches Hub layout.
-ISC-78: DEFERRED-VERIFY — owner runs three scenarios on Apple Silicon (advisor-recommended): (a) clean first launch → progress bar → offline transcribe on relaunch; (b) kill download mid-progress → relaunch → app usable + Settings retry works; (c) skip/deny → Apple Speech works. Plus one Intel launch → straight to Apple Speech, no prompt. Un-probeable on this Intel dev machine.
+All source citations are pinned to the tree at `adaea2e`. That re-pinning was not cosmetic: `adaea2e` added roughly 250 lines to `ScriptureDetectorService.swift` above the normaliser, so every citation into that file from the previous pass was displaced by 200 to 280 lines and pointed at unrelated code, and the test files were reordered enough that the `BookMishearingTests` line numbers were wrong too — `testShortAliasesAreExactMatchOnly` moved from 88 to 159, `testChapterHintSettlesJohannineEpistles` from 121 to 197. Every citation below has been re-read against the current tree rather than adjusted by an offset. The lesson is recorded rather than merely fixed: a line number is a claim with a shelf life of one commit, so entries that can cite a symbol or a test name do so, and bare line numbers are used only where nothing more stable exists.
 
-ISC-133..142: `Read`-back of `ProPresenterSettings.swift`, `HybridIntegrationManager.swift`, `ProPresenterOutputProtocol.swift`, `ProPresenterSettingsView.swift` confirms every described property, computed guard, and UI change is present as specified.
-ISC-143: `xcodebuild -project DivineLink.xcodeproj -scheme DivineLink -configuration Debug build` → **BUILD SUCCEEDED** (run twice: once after the initial topology change, once after the ISC-138 entitlement-reactivity fix).
-ISC-144: Forge background agent report (genuine check, 6 tool uses, 70,018 tokens) — read every relevant call site, the reactive bindings, `canUsePremiumFeatures`, the Picker binding, and the accessibility gate; confirmed the core safety guarantee holds, found the ISC-138 gap plus one UI nit (no action needed).
-ISC-145..146: Pencil `get_screenshot` on the Screen 04 (`QkzmU`) and Interaction & State Coverage board (`d2qZSh`) nodes both rendered clean, no clipping; pairwise bounding-box overlap check across all 17 top-level `redesign.pen` frames → zero overlaps, both immediately after insertion and after the resulting height adjustments.
-ISC-147: `Read`-back of `Divine-Link-Context.md` and `CHANGELOG.md` confirms the edits landed as described.
-ISC-148: DEFERRED-VERIFY — no second physical Mac available this session; owner to confirm on real two-machine LAN hardware at the next large-event setup.
-ISC-149: Forge's call-site audit (ISC-144) is the anti-criterion's evidence — all 4 output-selection sites gate exclusively through `effectiveKeyboardAutomationEnabled`, which is `false` whenever `effectiveTopology == .twoMachines`.
+Every other ISC in this document is unverified and pending.
+
+- **ISC-1** — behavioural. `xcodebuild -project DivineLink/DivineLink.xcodeproj -scheme DivineLink -destination 'platform=macOS' build` exits 0 on the working tree, with the DivineView sources and the operator rejection row compiled in. First time this criterion has been observed rather than inherited.
+- **ISC-2** — static. `rg -c 'func maxChapter\(forBookNamed'` over `BibleService.swift` returns 1; the declaration is at line 638. `getMaxChapter(for bookId: Int)` at line 471 is a distinct function taking a book id, and was what the superseded ISC-2 mistook for a second declaration.
+- **ISC-3** — behavioural. `xcodebuild test -scheme DivineLink -destination 'platform=macOS'` reports `** TEST SUCCEEDED **` with 65 test methods passing and zero failures, across eight classes: `BibleServiceLookupTests`, `BookMishearingTests`, `SpokenPsalmsRangeTests`, `ConfidencePenaltyTests`, `DetectionPipelineWiringTests`, `ConcatenatedReferenceRepairTests`, `DivineViewTests` and `NumberedBookDetectionTests`. Every test-backed entry below was additionally read for its logic, so none of them rests on the count alone.
+- **ISC-8** — static. `DivineLinkTests/` holds eight test classes across six files covering all four named concerns: normalisation (`BookMishearingTests.swift`, `NumberedBookDetectionTests.swift`), partial resolution (`BookMishearingTests.testPriorAmosContextDoesNotBiasTowardsAmos` at `:376` and the context tests around it), concatenation repair (`DetectionPipelineTests.swift`, class `ConcatenatedReferenceRepairTests` at `:80`) and lookup (`BibleServiceLookupTests.swift`). The two-file state the criterion was written against no longer holds.
+- **ISC-70** — static. Repo-wide search returns six `cacheContext(for:` call sites — `ScriptureDetectorService.swift:815`, `:921`, `:1014`, `:1059`, `:1088` and `DetectionPipeline.swift:378` — and exactly one `referenceBuffer.updateContext` call, at `ScriptureDetectorService.swift:1253`, inside the helper. The sixth call site is new in `adaea2e`: the pipeline caches the *corrected* reference after a successful split, which is still routed through the same gate, so the criterion holds with one more caller than when it was written.
+- **ISC-73** — static. `ScriptureDetectorService.swift:1598`: `for alias in sortedAliases`, where `sortedAliases` (lines 1580-1585) returns a cached `bookMappings.keys.sorted()` built at line 1582. The cache is new in `adaea2e` and does not weaken the property — the order is computed once from the same sorted call and invalidated by `addMapping`. The locale question is answered explicitly in the doc comment at lines 1571-1577: `sorted()` on `[String]` is Swift's ordinal Unicode comparison, not `localizedStandardCompare`, so the order does not vary by machine.
+- **ISC-75** — static. `ScriptureDetectorService.swift:1629-1634`: `let books = Set(candidates.map(\.canonical)); guard books.count == 1 else { … return nil }`. Cross-book ties return nil, with the rejected book list logged.
+- **ISC-76** — static. `ScriptureDetectorService.swift:1569`: `private static let minimumFuzzyAliasLength = 3`, enforced at line 1599 by `guard alias.count >= Self.minimumFuzzyAliasLength`.
+- **ISC-77** — static, reinforced by unit. The guard at `ScriptureDetectorService.swift:1599` `continue`s past every alias shorter than three characters before any distance is computed, so "am" cannot appear as a matched alias for any input. `BookMishearingTests.testShortAliasesAreExactMatchOnly` (`BookMishearingTests.swift:159`) asserts that no candidate for "amo", "hos", "aim" or "hoe" has an alias under three characters.
+- **ISC-78** — static. `ScriptureDetectorService.swift:1549-1558`: when `books.count > 1`, candidates are filtered by `chapterHint <= maxChapter` through `chapterCountProvider`, and the function falls through to `return .rejected(.ambiguous(books:))` at line 1562 when the filter does not leave exactly one book.
+- **ISC-79** — static. `DetectionPipeline.swift:69-71`: `detector.bookNormaliser.chapterCountProvider = { [weak self] bookName in self?.bible.maxChapter(forBookNamed: bookName) }`. Behaviourally confirmed by `DetectionPipelineWiringTests.testChapterCountProviderIsWiredAndCorrect` (`DetectionPipelineTests.swift:46`), which unwraps the shipped closure and asserts Psalms 150, Amos 9, Judges 21 and Jude 1 — closing the gap the previous pass noted, that the detector-level tests leave this closure nil.
+- **ISC-80** — unit. `BookMishearingTests.testSamIsNeverAmos` (`:38`) asserts `normalise("sam", chapterHint: 91)` and `normalise("sams", chapterHint: 91)` are not Amos; `testPsalmsMishearingsResolveToPsalms` (`:28`) asserts "sam" resolves to "Psalms". The mechanism is the exact-alias return at `ScriptureDetectorService.swift:1512-1513` against the alias declared at line 1351, which precedes all chapter filtering — confirmed independently by `testChapterHintNeverOverridesAnExactAlias` (`:237`), where an impossible chapter 91 leaves "amos" resolving to Amos.
+- **ISC-81** — unit. `BookMishearingTests.testChapterHintSettlesJohannineEpistles` (`:197`) injects a provider giving 1 John 5 chapters and 2–3 John one each, then asserts `XCTAssertNil(normaliser.normalise("a john", chapterHint: 1))`. The rejection path is `ScriptureDetectorService.swift:1549-1562`, which falls through to `.rejected(.ambiguous(books:))` when the chapter filter does not leave exactly one book. Re-read against `adaea2e`: the wording still matches the shipped code, and the only change is that the nil now arrives via a `MatchOutcome` carrying the candidate list rather than a bare nil, which is what feeds the operator-facing rejection row.
+- **ISC-83** — static. `ScriptureDetectorService.swift:1240-1259`: `cacheContext(for:)` begins `if let validate = referenceValidator, !validate(reference) { … return }` at lines 1241-1251, before calling `referenceBuffer.updateContext` at line 1253. The early return now also publishes an operator-facing rejection (lines 1243-1249) before returning, which does not touch the buffer.
+- **ISC-84** — static, reinforced by unit. `DetectionPipeline.swift:64-67`: `detector.referenceValidator = { … return self.bible.referenceExists(reference) }`. The symbol is `referenceExists(_:)`, declared at `BibleService.swift:653`; earlier drafts of this criterion named `referenceIsPlausible(_:)`, which never shipped. `DetectionPipelineWiringTests.testReferenceValidatorIsWiredAndCorrect` (`DetectionPipelineTests.swift:35`) unwraps the shipped closure and asserts it accepts Psalms 91:8-12 and Judges 5:1 and refuses Amos 91.
+- **ISC-85** — unit. `BookMishearingTests.testImplausibleReferenceIsNotCachedAsContext` (`:308`) clears the buffer, feeds "Amos 91 verse 1" through the detector and asserts `ReferenceBuffer.shared.currentContext` is nil. Honest limit: the test injects a stub validator rejecting Amos above chapter 9 rather than using `BibleService.referenceExists`, so it proves the gate, not the wiring; the wiring is covered separately by ISC-84.
+- **ISC-87** — unit. `BookMishearingTests.testEverydayWordsNeverBecomeBooks` (`:175`) asserts nil for "am", "is", "to", "so", "the" and "and". The criterion's stated example is asserted end to end by `NumberedBookDetectionTests.testIAmFortyDoesNotDetect1Samuel` (`:101`). Source gate at `ScriptureDetectorService.swift:1491` and `:1499`, against the set declared at line 1286.
+- **ISC-88** — static, reinforced by unit. `ScriptureDetectorService.swift:1507-1509`: `if lowercased.count <= 2 && bookMappings[lowercased] == nil { return .rejected(.tooShort) }`, before any fuzzy path. Stricter than the criterion requires, since it consults only `bookMappings`; the two-character cases are exercised by `testEverydayWordsNeverBecomeBooks`.
+- **ISC-89** — static, reinforced by unit. The length gate at `ScriptureDetectorService.swift:1507` admits a two-character input present in `bookMappings`, and the direct lookup at lines 1512-1513 returns it; "ps" is mapped to Psalms at line 1338. `testShortAliasesAreExactMatchOnly` (`:159`) asserts the equivalent case, `normalise("ho") == "Hosea"`.
+- **ISC-90** — static, reinforced by unit. `ScriptureDetectorService.swift:1643-1650` returns true when the trimmed input is present in `bookMappings`, `BibleVocabularyData.sttMishearings` or `BibleVocabularyData.abbreviations`. `testIsExactAliasDistinguishesGuessesFromCertainties` (`:246`) asserts true for "psalms" and "sam", false for "aim" and "a john".
+- **ISC-93** — static, reinforced by unit. `DetectionPipeline.swift:332-335`: `guard !ref.verseWasSpoken, ref.verseEnd == nil else { Logger.pipeline.info("Not splitting …"); return nil }`. `ConcatenatedReferenceRepairTests.testSplitIsRefusedWhenASingleVerseWasSpoken` (`DetectionPipelineTests.swift:123`) asserts both directions of the flag on otherwise identical references — `Amos 91` with `verseWasSpoken: true` returns nil, with `false` returns non-nil — which is the pair that could not be written while the guard tested `verseStart`.
+- **ISC-93.1** — static, reinforced by unit. `BibleService.swift:97` declares `let verseWasSpoken: Bool`, defaulted to `false` at line 99 so no existing call site changes meaning, and the hand-written `==` at lines 124-129 compares only book, chapter, `verseStart` and `verseEnd`, with the reason stated at lines 120-123. `DetectionPipeline.swift:348` sets it true on the repaired candidate, asserted by `testRepairedReferenceIsMarkedAsHavingASpokenVerse` (`:149`); the guard at line 332 then makes a second split impossible. The parse sites that set it true are `ScriptureDetectorService.swift:537`, `:546`, `:591`, `:909`, `:1004` and `:1156`, each carrying a comment naming the utterance shape that justifies it.
+- **ISC-94** — static, reinforced by unit. The guard at `DetectionPipeline.swift:332-335` returns nil for any reference carrying a `verseEnd`, unconditionally, so "Amos 91:8-12" cannot be rewritten. `ConcatenatedReferenceRepairTests.testSplitIsRefusedWhenARangeWasSpoken` (`DetectionPipelineTests.swift:112`) now asserts the literal case directly, which closes the honest limit recorded here by the previous pass — it had only the Psalms path via `BookMishearingTests.testMisheardPsalmsKeepsTheWholeVerseRange` (`:278`), which remains as the end-to-end demonstration.
+- **ISC-95** — unit. `testSplitRecoversConcatenatedChapterAndVerse` (`DetectionPipelineTests.swift:99`) feeds `James 123` with no spoken verse through the real pipeline, against the real database, and asserts James 1:23 with a nil `verseEnd`. Honest limit: the criterion names "John123" and the test uses James 123. The split is book-agnostic — the book is copied unchanged at `DetectionPipeline.swift:344` — so the mechanism is proven, but the literal input in the criterion is not asserted.
+- **ISC-96** — static. `DetectionPipeline.swift:350`: `if !bible.getVerses(from: candidate).isEmpty { return candidate }`. No other return path in the loop, so a candidate that does not resolve to real verses cannot be accepted.
+- **ISC-97** — static, reinforced by unit. The loop at `DetectionPipeline.swift:339-353` falls through to `return nil` at line 354. `testSplitReturnsNilWhenNoCandidateResolves` (`:137`) uses chapter 999, which splits every way into chapter-verse pairs no book has, and asserts nil.
+- **ISC-98** — static, reinforced by unit. `DetectionPipeline.swift:338`: `guard chapterStr.count >= 2 else { return nil }`. `testSplitIsRefusedForASingleDigitChapter` (`:143`) asserts nil for Amos 9.
+- **ISC-99** — static. `DetectionPipeline.swift:333`: `Logger.pipeline.info("Not splitting \(ref.formatted) — the verse was spoken explicitly")`. The interpolation is `ref.formatted`, so the log line names the reference rather than merely recording that something was refused.
+- **ISC-100** — static, reinforced by unit. `DetectionPipeline.swift:343-349` constructs the candidate with `book: ref.book`; no branch substitutes another book. `testSplitRecoversConcatenatedChapterAndVerse` (`:103`) asserts the repaired book is still James.
+- **ISC-103** — data. `sqlite3 Bible.db "SELECT b.name, MAX(v.chapter) FROM verses v JOIN books b ON b.id=v.book_id WHERE b.name IN ('Psalms','Amos') GROUP BY b.name;"` returned `Amos|9` and `Psalms|150`.
+- **ISC-104** — unit. `BibleServiceLookupTests.testValidReferencesAreAcceptedAndImpossibleOnesRefused` (`:110`) asserts `referenceExists(Amos 91:1)` is false, against the real loaded database. Source: `BibleService.swift:656` bounds the chapter by `bookChapterCounts[bookId]`.
+- **ISC-105** — unit. The same test asserts `referenceExists(Psalms 91:8-12)` is true, and separately that Judges 5:1 is accepted — the case that was failing when Jude's single chapter was consulted for Judges.
+- **ISC-106** — static. `BibleService.swift:658`: `if let end = reference.verseEnd, end < reference.verseStart { return false }`. No test drives an inverted range; the guard is one line and unconditional.
+- **ISC-107** — static. `BibleService.swift:657`: `guard reference.verseStart >= 1 else { return false }`.
+- **ISC-129** — unit. `ConfidencePenaltyTests.testConfidenceGridIsPinned` (`:61`) asserts, for all ten patterns, that the distance-0 score exceeds the distance-1 score — `standard` 0.967 against 0.939, `chapterOnly` 0.780 against 0.752, and so on down the table. An exact alias is scored at distance 0 by construction in `parseMatch`.
+- **ISC-130** — unit. The same grid asserts distance 2 below distance 1 for every pattern, each step costing 0.028 overall.
+- **ISC-130.1** — unit. `ConfidencePenaltyTests.testPenaltyAndGateRemainCompatible` (`:137`) reads `ScriptureDetectorService.bookGuessPenaltyPerEdit` and `minimumConfidence` directly and asserts `0.4 × penalty < 0.780 − minimumConfidence`, printing both sides in the failure message. At the shipped values that is 0.028 < 0.030. Reinforced by `testDistanceOneSurvivesForEveryGatedPattern` (`:91`), which asserts every gated pattern clears `minimumConfidence` at one edit, and by `testClarityFloorIsNotReachedAtTheShippedPenalty` (`:157`), which shows the 0.4 clarity floor is inert at two edits and therefore not silently doing the work.
+- **ISC-199.1** — unit. `BibleServiceLookupTests.testPrefixCollidingBooksResolveDistinctly` (`:52`) asserts distinct ids for all twelve prefix-colliding pairs in the canon — Judges/Jude, Philippians/Philemon, the three Johannine boundaries, and the numbered Timothy, Kings, Samuel, Chronicles, Corinthians, Thessalonians and Peter pairs — rather than only the pair that was noticed; `testJudgesAndJudeAreDistinct` (`:42`) keeps the reported case explicit; `testLookupsAreStableAcrossRepeatedCalls` (`:82`) repeats eight probes 50 times each. Source: `BibleService.swift:673-696`, exact match at 677, sorted longest-match fallback at 686-693, with the locale-independence of `sorted()` stated at lines 681-683. `testChapterCountsFollowTheCorrectBook` (`:101`) pins the consequence that made this critical — Judges 21 and Jude 1 rather than one truncating the other.
+- **ISC-118** — data. `sqlite3 Bible.db "SELECT translation_id, COUNT(*) FROM verses GROUP BY translation_id;"` returned ASV 31086, BSB 31086, KJV 31102, LSV 31104, WEB 31095.
+- **ISC-151** — unit. `DivineViewController.swift:34` sets `isShowingVerse` from a whitespace-trimmed emptiness check; asserted by `DivineViewTests.testBlankTextDoesNotShowVerse`.
+- **ISC-153** — unit. `DivineViewController.swift:50`: `guard let current = verse.currentVerse else { return }`; asserted by `DivineViewTests.testPresentOneWithNoVersesLeavesCurrentVerseOnScreen`.
+- **ISC-155** — unit. `DivineViewController.swift:59-64` clears all four fields; asserted by `DivineViewTests.testClearEmptiesDivineView` and, through the panic path, by `testPanicClearsDivineView`.
+- **ISC-157** — unit. `DivineViewSettings.swift:42-44` writes `divineView.background` on set; asserted by `DivineViewTests.testBackgroundSettingPersists`.
+- **ISC-159** — unit. `DivineViewSettings.swift:47-49` and `59-63`: `divineView.openOnPush` persists on set and defaults to true when the key is absent; the false path is asserted by `DivineViewTests.testOpenOnPushDisabledDoesNotRequestWindow`.
+- **ISC-198** — static, reinforced by unit. `ScriptureDetectorService.swift:1629-1634`: `fuzzyMatch` builds the candidate book set and returns nil, with a log line, whenever it holds more than one book; the `first` bound at line 1627 is only returned after that guard has established a single book. `BookMishearingTests.testTiedCandidatesAcrossBooksAreRejected` (`:147`) asserts both `fuzzyMatch("aim")` and `normalise("aim")` are nil.
+- **ISC-200** — static, reinforced by unit. The guard at `DetectionPipeline.swift:332-335` refuses the rewrite whenever `verseEnd` is set, so the only rewrite path in the detection stack cannot discard a spoken range. `testSplitIsRefusedWhenARangeWasSpoken` (`DetectionPipelineTests.swift:112`) asserts the guard directly on the incident reference; `testMisheardPsalmsKeepsTheWholeVerseRange` (`BookMishearingTests.swift:278`) asserts the range reaches the operator intact end to end, and `testSpokenPsalmsRangeParsesCleanly` (`:293`) asserts the same for the unambiguous utterance.
+- **ISC-201** — static, reinforced by unit. `ScriptureDetectorService.swift:1241-1251` returns before writing when `referenceValidator` rejects the reference, and line 1253 is the sole `updateContext` call site in the codebase (ISC-70), so no write can bypass the gate. Behaviourally asserted by `testImplausibleReferenceIsNotCachedAsContext` (`:308`), with the same stub-validator limit noted under ISC-85, and by `testSuccessfulRepairLeavesUsableContext` (`DetectionPipelineTests.swift:158`) from the other side — a *plausible* repaired reference does reach the buffer.
+- **ISC-202** — static, reinforced by unit. `ScriptureDetectorService.swift:1569` declares the floor and line 1599 enforces it inside the only candidate-generating loop, so no alias under three characters is reachable as a fuzzy target. `testShortAliasesAreExactMatchOnly` (`:159`) asserts this over four probes chosen to sit near the two-letter aliases.
+
+Explicitly unverified and worth naming, because several of these look settled and are not:
+
+- **ISC-60** — the incident utterance itself, "the book of Psalms chapter 9, verse 8 to 12", still has no assertion. `DetectionPipelineWiringTests.testReportedIncidentThroughProductionWiring` (`DetectionPipelineTests.swift:59`) is close and is a real improvement — it drives "Sam 91 verse 8 to 12" through the shipped pipeline with the real database rather than a stub, and asserts Psalms 91:8-12 with no Amos anywhere in the results — but the utterance it runs is the concatenated reading, which is what the chapter hint rescues. The spoken chapter 9 is the case the hint provably does not settle, so the criterion that names the original failure stays open.
+- **ISC-74** — `testFuzzyMatchingIsDeterministic` (`:124`) repeats each probe within a single process, and `BibleServiceLookupTests.testLookupsAreStableAcrossRepeatedCalls` (`:82`) does the same for the lookup. The defect was per-process dictionary seeding, which is invariant inside one launch, so neither test can fail for the reason ISC-74 exists. The criterion specifies 100 cold launches and needs a shell harness over a test binary that does not exist. This is the single most load-bearing gap in the determinism work: every determinism criterion is currently discharged by reading a `sorted()` call rather than by observing repeated launches.
+- **ISC-91** — `suggestCorrection` delegates to `fuzzyMatch` and so inherits its rejection of cross-book ties, but the criterion as drafted also admits inputs that resolve by exact alias, where no ambiguity check runs. It needs rewording before it can be honestly probed, and is left pending rather than reworded to fit the code.
+- **ISC-130.2** — `ConfidencePenaltyTests` reproduces the scoring formula in its own `overall(_:editDistance:)` helper (`:42-52`) and drives `DetectionConfidence` directly, rather than calling `parseMatch` and reading the confidence off a real `DetectionResult`. It reads the two shipped constants, so a change to either fails the grid, but the ten base triples at lines 27-38 are a hand-copy of the switch in `parseMatch`. If a base weight moves, the grid will agree with itself and disagree with the app. Worth naming because the test file is otherwise the strongest artefact in the commit.
+- **ISC-199** — split rather than closed; see ISC-199.2 below and the Decisions entry.
+- **ISC-199.2** — `ImplicitReferenceDetector.detect(in:)` (`ImplicitReferenceDetector.swift:24-47`) iterates `famousVerses`, a `[String: String]` declared at `BibleVocabularyData.swift:369`, sorts by confidence at line 46, and `bestMatch(in:)` (`:56-58`) returns `.first` of that. `calculateConfidence` (`:62-70`) gives `min(min(Float(phrase.count) / 30.0, 0.8) + 0.2, 1.0)`, and the boundary bonus at line 67 repeats the `contains` test that already gated entry at line 33, so it is unconditional and every phrase of 24 characters or more scores exactly 1.0 — 14 of the 15 phrases long enough to pass `minimumPhraseWords` (`:12`, five words). `sorted(by:)` is not a stable sort in Swift, so a transcript containing two such phrases resolves by dictionary seed. Not fixed in `adaea2e`; recorded in Decisions with the tie-break question that has to be answered first.
+- **ISC-203** — asserts a property of what reaches the screen, not of the normaliser. The confidence penalty is now 0.07 rather than the 0.15 recorded here previously, but the substance is unchanged: a penalty lowers a fuzzy match's score without suppressing it, and no test drives the display layer.
+- **ISC-217 and the operator rejection row** — `ScriptureDetectorService` now publishes a `DetectionRejection` (declared at `:13`) on `lastRejection` (`:104`) and `rejectionPublisher` (`:114`), auto-clearing after six seconds via the cancellable task at `:1265-1276`, and `MainView` renders it. The plumbing was read and the auto-clear logic is sound, but **the row has never been observed rendered**. Neither the six-second clear, the non-interactivity, nor the absence of focus theft has been seen in a running app; all three are conclusions from reading the view, and focus theft in particular was a real defect earlier in this feature's development, so reading is a weak probe for it.
+- **ISC-190 to ISC-197** — no measurement harness, unchanged. Two performance changes shipped in `adaea2e` that specifically bear on ISC-197's budget of under 15% CPU in a silent room: `sortedAliases` caches the sorted key list rather than rebuilding it on every call, and `fuzzyCandidates` pre-filters by length difference before allocating a Levenshtein matrix (`ScriptureDetectorService.swift:1605`). Both are plainly directionally right and **neither was benchmarked**, before or after. The criterion is no closer to verified than it was; it merely has more untested work behind it.
+
+Beyond those: every audio-capture criterion (ISC-9 to ISC-19) still has no test file, and the wider detection parse surface (ISC-37 to ISC-72) remains covered only by the numbered-book ordinals in `NumberedBookDetectionTests.swift`, the regressions in `BookMishearingTests.swift`, and the two wiring assertions in `DetectionPipelineTests.swift`.

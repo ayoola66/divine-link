@@ -37,11 +37,24 @@ struct DivineLinkApp: App {
                 
                 Divider()
             }
+
+            CommandGroup(after: .windowList) {
+                Button("DivineView") {
+                    DivineViewController.shared.requestOpenWindow()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+            }
         }
         
         // Settings window
         Settings {
             SettingsView()
         }
+
+        Window("DivineView", id: DivineViewController.windowID) {
+            DivineViewScreen()
+        }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1280, height: 720)
     }
 }

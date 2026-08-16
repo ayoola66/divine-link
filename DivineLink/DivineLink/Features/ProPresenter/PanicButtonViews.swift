@@ -29,7 +29,7 @@ struct PanicButton: View {
         .buttonStyle(.plain)
         .scaleEffect(isPressed ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: isPressed)
-        .help("Clear ProPresenter display (F12 or ⌘+Esc) - verse history stays in Divine Link")
+        .help("Clear the ProPresenter display and DivineView (F12 or ⌘+Esc) — verse history stays in Divine Link")
         .onLongPressGesture(minimumDuration: 0, pressing: { pressing in
             isPressed = pressing
         }, perform: {})
