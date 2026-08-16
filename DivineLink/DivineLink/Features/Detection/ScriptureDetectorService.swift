@@ -68,6 +68,13 @@ class ScriptureDetectorService: ObservableObject {
     /// Publishes detected scripture references
     let detectionPublisher = PassthroughSubject<DetectionResult, Never>()
     
+    // MARK: - Dependencies
+    
+    /// Returns true when a reference actually exists in the loaded Bible.
+    /// Injected by `DetectionPipeline`; when unset every reference is accepted, so
+    /// unit tests and previews keep working without a database.
+    var referenceValidator: ((ScriptureReference) -> Bool)?
+    
     // MARK: - Private Properties
     
     let bookNormaliser = BookNameNormaliser()
@@ -384,8 +391,15 @@ class ScriptureDetectorService: ObservableObject {
             return nil
         }
         
+        // The chapter is parsed properly further down, but an approximate value is
+        // needed now: when the book name is an ambiguous mishearing, the chapter
+        // number is often the only thing that can settle which book was meant.
+        let chapterHint = parseNumber(
+            String(text[chapterRange]).trimmingCharacters(in: .whitespaces).lowercased()
+        )
+        
         // Normalise book name
-        guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
+        guard let canonicalBook = bookNormaliser.normalise(rawBook, chapterHint: chapterHint) else {
             print("⚠️ Book not recognized: '\(rawBook)' (pattern: \(type))")
             return nil // Not a valid book name
         }
@@ -617,16 +631,17 @@ class ScriptureDetectorService: ObservableObject {
             patternTypeName = "partialVerse"
         }
         
-        // Adjust confidence based on book name recognition quality
-        // If the book required fuzzy matching, reduce confidence
+        // Adjust confidence based on book name recognition quality.
+        // A book we had to guess at is far less trustworthy than one heard verbatim,
+        // so the penalty has to be big enough to actually move the badge. At 0.05 an
+        // edit a wrong guess still cleared the threshold and displayed as "Medium".
         var adjustedReferenceClarity = referenceClarity
-        if bookNormaliser.fuzzyMatch(rawBook, maxDistance: 0) == nil {
-            // Fuzzy match was used
-            if let fuzzyResult = bookNormaliser.fuzzyMatch(rawBook, maxDistance: 2) {
-                // Reduce clarity based on edit distance
-                let penalty = Double(fuzzyResult.distance) * 0.05
-                adjustedReferenceClarity = max(0.5, referenceClarity - penalty)
-            }
+        if !bookNormaliser.isExactAlias(rawBook) {
+            // Distance from the nearest alias, defaulting to the worst case when the
+            // book was settled by the chapter number rather than by spelling — that
+            // is still a guess and must not present itself as a certainty.
+            let distance = bookNormaliser.fuzzyCandidates(rawBook, maxDistance: 2).first?.distance ?? 2
+            adjustedReferenceClarity = max(0.4, referenceClarity - Double(distance) * 0.15)
         }
         
         // Adjust context match based on raw match quality
@@ -658,12 +673,7 @@ class ScriptureDetectorService: ObservableObject {
         // Update reference buffer context for future partial reference resolution
         // This enables "verse 18" to resolve to "John 3:18" after detecting "John 3:16"
         // Also enables "next verse" to resolve correctly
-        referenceBuffer.updateContext(
-            book: reference.book,
-            chapter: reference.chapter,
-            verseStart: reference.verseStart,
-            verseEnd: reference.verseEnd
-        )
+        cacheContext(for: reference)
         
         return DetectionResult(
             reference: reference,
@@ -734,7 +744,7 @@ class ScriptureDetectorService: ObservableObject {
         }
         
         // Normalize the book name using the book normaliser
-        guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
+        guard let canonicalBook = bookNormaliser.normalise(rawBook, chapterHint: chapter) else {
             print("⚠️ [invertedVerbal] Could not normalize book: \(rawBook)")
             return nil
         }
@@ -768,12 +778,7 @@ class ScriptureDetectorService: ObservableObject {
         )
         
         // Update reference buffer context
-        referenceBuffer.updateContext(
-            book: canonicalBook,
-            chapter: chapter,
-            verseStart: verseStart,
-            verseEnd: verseEnd
-        )
+        cacheContext(for: reference)
         
         print("✅ Detection: \(reference.formatted) [invertedVerbal] - Confidence: \(confidence.percentage)%")
         print("   Raw: '\(rawMatch)' → Book: \(canonicalBook), Chapter: \(chapter), Verse: \(verseStart)\(verseEnd.map { "-\($0)" } ?? "")")
@@ -836,7 +841,7 @@ class ScriptureDetectorService: ObservableObject {
         }
 
         // Normalise the book name
-        guard let canonicalBook = bookNormaliser.normalise(rawBook) else {
+        guard let canonicalBook = bookNormaliser.normalise(rawBook, chapterHint: chapter) else {
             print("⚠️ [bookVerseChapter] Could not normalize book: '\(rawBook)'")
             return nil
         }
@@ -865,12 +870,7 @@ class ScriptureDetectorService: ObservableObject {
             verseExistence: 1.0
         )
 
-        referenceBuffer.updateContext(
-            book: canonicalBook,
-            chapter: chapter,
-            verseStart: verseStart,
-            verseEnd: verseEnd
-        )
+        cacheContext(for: reference)
 
         print("✅ Detection: \(reference.formatted) [bookVerseChapter] - Confidence: \(confidence.percentage)%")
         print("   Raw: '\(rawMatch)' → Book: \(canonicalBook), Chapter: \(chapter), Verse: \(verseStart)\(verseEnd.map { "-\($0)" } ?? "")")
@@ -915,12 +915,7 @@ class ScriptureDetectorService: ObservableObject {
             }
             
             // Also update the context to the new verse for potential chained references
-            referenceBuffer.updateContext(
-                book: reference.book,
-                chapter: reference.chapter,
-                verseStart: reference.verseStart,
-                verseEnd: reference.verseEnd
-            )
+            cacheContext(for: reference)
             
             // Return the detection result
             let confidence = DetectionConfidence(
@@ -949,12 +944,7 @@ class ScriptureDetectorService: ObservableObject {
             }
             
             // Also update the context to the new verse for potential chained references
-            referenceBuffer.updateContext(
-                book: reference.book,
-                chapter: reference.chapter,
-                verseStart: reference.verseStart,
-                verseEnd: reference.verseEnd
-            )
+            cacheContext(for: reference)
             
             // Return the detection result
             let confidence = DetectionConfidence(
@@ -1086,6 +1076,26 @@ class ScriptureDetectorService: ObservableObject {
     func clearCache() {
         recentDetections.removeAll()
     }
+    
+    // MARK: - Reference Context
+    
+    /// Commit a reference to the context buffer, but only when it actually exists.
+    /// A detection such as "Amos 91" (Amos has nine chapters) must never become the
+    /// context that later partial references like "verse 8 to 12" resolve against,
+    /// or one misheard book name poisons every reference for the next five minutes.
+    private func cacheContext(for reference: ScriptureReference) {
+        if let validate = referenceValidator, !validate(reference) {
+            print("📚 [ReferenceBuffer] Not caching implausible reference: \(reference.formatted)")
+            return
+        }
+        
+        referenceBuffer.updateContext(
+            book: reference.book,
+            chapter: reference.chapter,
+            verseStart: reference.verseStart,
+            verseEnd: reference.verseEnd
+        )
+    }
 }
 
 // MARK: - Book Name Normaliser
@@ -1140,6 +1150,12 @@ class BookNameNormaliser {
         "job": "Job", "jb": "Job", "jobe": "Job",
         "psalms": "Psalms", "psalm": "Psalms", "ps": "Psalms", "psa": "Psalms",
         "some": "Psalms", "sum": "Psalms", "salm": "Psalms", "sums": "Psalms", "palms": "Psalms",  // Common speech-to-text misheard
+        // Apple's recogniser routinely collapses "Psalms" to a single syllable. These are
+        // mappings for what it actually produced in the field, not guesses: bare "sam"
+        // cannot be Samuel because Samuel is always spoken with its number ("1 Sam"),
+        // and those numbered forms are matched exactly above.
+        "sam": "Psalms", "sams": "Psalms", "salms": "Psalms", "psams": "Psalms",
+        "size": "Psalms", "sarms": "Psalms", "sames": "Psalms", "psalmes": "Psalms",
         "proverbs": "Proverbs", "prov": "Proverbs", "pr": "Proverbs", "pro": "Proverbs",
         "ecclesiastes": "Ecclesiastes", "eccles": "Ecclesiastes", "eccl": "Ecclesiastes", "ec": "Ecclesiastes",
         "song of solomon": "Song of Solomon", "song of songs": "Song of Solomon", "songs of solomon": "Song of Solomon", "songs": "Song of Solomon", "sos": "Song of Solomon", "ss": "Song of Solomon", "canticles": "Song of Solomon", "song": "Song of Solomon",
@@ -1196,8 +1212,16 @@ class BookNameNormaliser {
         "revelations of john": "Revelation", "the revelations": "Revelation", "book of revelation": "Revelation",
     ]
     
-    /// Normalise a book name to its canonical form
-    func normalise(_ input: String) -> String? {
+    /// Supplies the highest chapter number a book actually has, used to settle
+    /// ambiguous mishearings. Injected by `DetectionPipeline` from `BibleService`.
+    var chapterCountProvider: ((String) -> Int?)?
+    
+    /// Normalise a book name to its canonical form.
+    /// - Parameters:
+    ///   - input: The raw book name as heard.
+    ///   - chapterHint: The chapter number spoken alongside it, if known. Used only
+    ///     to break ties between equally-close mishearings.
+    func normalise(_ input: String, chapterHint: Int? = nil) -> String? {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
         
         // FIRST: Check if this is a common word that should NEVER be a book name
@@ -1244,33 +1268,92 @@ class BookNameNormaliser {
         }
         
         // Try fuzzy match if no exact match (only for words 3+ chars to avoid false matches)
-        if lowercased.count >= 3 {
-            if let fuzzyMatch = fuzzyMatch(lowercased, maxDistance: 2) {
-                return fuzzyMatch.canonical
+        guard lowercased.count >= 3 else { return nil }
+        
+        let candidates = fuzzyCandidates(lowercased, maxDistance: 2)
+        let books = Set(candidates.map(\.canonical))
+        
+        if books.count == 1, let only = books.first {
+            return only
+        }
+        
+        guard books.count > 1 else { return nil }
+        
+        // Ambiguous. If we know which chapter was spoken, discard the books that
+        // cannot possibly contain it — "sam 91" is impossible for Amos (9 chapters)
+        // or either Samuel (31 and 24) but unremarkable for Psalms (150).
+        if let chapterHint, let chapterCount = chapterCountProvider {
+            let viable = books.filter { book in
+                guard let maxChapter = chapterCount(book) else { return true }
+                return chapterHint <= maxChapter
+            }
+            if viable.count == 1, let only = viable.first {
+                print("   📖 Ambiguous '\(lowercased)' resolved to \(only) — only book with a chapter \(chapterHint)")
+                return only
             }
         }
         
+        print("   ⚠️ Ambiguous book '\(lowercased)': \(books.sorted().joined(separator: ", ")) — rejecting rather than guessing")
         return nil
     }
     
-    /// Fuzzy match a book name using Levenshtein distance
-    /// Returns the closest match if within maxDistance, along with the matched alias
-    func fuzzyMatch(_ input: String, maxDistance: Int = 2) -> (canonical: String, matchedAlias: String, distance: Int)? {
+    /// Aliases shorter than this are exact-match only. A two-letter alias such as
+    /// "am" (Amos) or "ho" (Hosea) sits one edit away from dozens of ordinary words,
+    /// so allowing them as fuzzy targets turns almost any short mishearing into a
+    /// confident but wrong book.
+    private static let minimumFuzzyAliasLength = 3
+    
+    /// All aliases tied at the smallest edit distance within `maxDistance`.
+    /// Iteration is over a sorted key list because Swift randomises `Dictionary`
+    /// order per process launch — without this, the same misheard word resolves to
+    /// a different book on every app start.
+    func fuzzyCandidates(_ input: String, maxDistance: Int = 2) -> [(canonical: String, alias: String, distance: Int)] {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
         
-        var bestMatch: (canonical: String, matchedAlias: String, distance: Int)?
-        var minDistance = Int.max
+        var bestDistance = Int.max
+        var tied: [(canonical: String, alias: String, distance: Int)] = []
         
-        for (alias, canonical) in bookMappings {
-            let distance = levenshteinDistance(lowercased, alias)
+        for alias in bookMappings.keys.sorted() {
+            guard alias.count >= Self.minimumFuzzyAliasLength,
+                  let canonical = bookMappings[alias] else { continue }
             
-            if distance < minDistance && distance <= maxDistance {
-                minDistance = distance
-                bestMatch = (canonical, alias, distance)
+            let distance = levenshteinDistance(lowercased, alias)
+            guard distance <= maxDistance else { continue }
+            
+            if distance < bestDistance {
+                bestDistance = distance
+                tied = [(canonical, alias, distance)]
+            } else if distance == bestDistance {
+                tied.append((canonical, alias, distance))
             }
         }
         
-        return bestMatch
+        return tied
+    }
+    
+    /// Fuzzy match a book name using Levenshtein distance.
+    /// Returns nil when the closest aliases disagree on which book they mean —
+    /// "sam" is one edit from Amos, James, Lamentations, Psalms and both Samuels,
+    /// and guessing one at random is worse than admitting we do not know.
+    func fuzzyMatch(_ input: String, maxDistance: Int = 2) -> (canonical: String, matchedAlias: String, distance: Int)? {
+        let candidates = fuzzyCandidates(input, maxDistance: maxDistance)
+        guard let first = candidates.first else { return nil }
+        
+        let books = Set(candidates.map(\.canonical))
+        guard books.count == 1 else {
+            print("   ⚠️ Ambiguous fuzzy match for '\(input.lowercased())' at distance \(first.distance): \(books.sorted().joined(separator: ", ")) — rejecting")
+            return nil
+        }
+        
+        return (first.canonical, first.alias, first.distance)
+    }
+    
+    /// True when the input is a known alias verbatim, so no fuzzy guessing was needed.
+    func isExactAlias(_ input: String) -> Bool {
+        let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
+        return bookMappings[lowercased] != nil
+            || BibleVocabularyData.sttMishearings[lowercased] != nil
+            || BibleVocabularyData.abbreviations[lowercased] != nil
     }
     
     /// Suggest a correction for a misheard book name

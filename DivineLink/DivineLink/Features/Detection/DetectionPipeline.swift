@@ -53,8 +53,22 @@ class DetectionPipeline: ObservableObject {
         self.correctionService = SpeechCorrectionService.shared
         self.audioDeviceManager = AudioDeviceManager.shared
         
+        wireDetectorToBible()
         setupPipeline()
         setupDeviceObserver()
+    }
+    
+    /// Give the detector read-only access to the Bible so it can reject impossible
+    /// references before they reach the operator or poison the reference context.
+    private func wireDetectorToBible() {
+        detector.referenceValidator = { [weak self] reference in
+            guard let self else { return true }
+            return self.bible.referenceExists(reference)
+        }
+        
+        detector.bookNormaliser.chapterCountProvider = { [weak self] bookName in
+            self?.bible.maxChapter(forBookNamed: bookName)
+        }
     }
     
     /// Observe device selection changes and apply to audio capture.
@@ -303,6 +317,16 @@ class DetectionPipeline: ObservableObject {
     /// This recovers from STT collapsing "James 1 23" into "James 123".
     /// Returns the first valid split, or nil if none found.
     private func reinterpretConcatenatedRef(_ ref: ScriptureReference) -> ScriptureReference? {
+        // Only safe when no verse was actually spoken. When the operator said
+        // "verse 8 to 12", the trailing digits of the chapter are not the verse, and
+        // splitting them threw the requested passage away: "Amos 91:8-12" silently
+        // became "Amos 9:1". A wrong passage on screen is worse than none, so leave
+        // these alone and let the detection be rejected with an honest log line.
+        guard ref.verseStart == 1, ref.verseEnd == nil else {
+            Logger.pipeline.info("Not splitting \(ref.formatted) — the verse was spoken explicitly")
+            return nil
+        }
+        
         let chapterStr = String(ref.chapter)
         guard chapterStr.count >= 2 else { return nil }
         for splitAt in 1..<chapterStr.count {

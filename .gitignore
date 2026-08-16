@@ -120,3 +120,6 @@ _.divinelinkapp.com_private_key.key
 
 # Local Netlify folder
 .netlify
+
+# Local timestamped safety copies taken before risky edits
+Backups/

@@ -605,6 +605,26 @@ class BibleService: ObservableObject {
         return verses.map { $0.text }.joined(separator: " ")
     }
     
+    // MARK: - Reference Validation
+    
+    /// Highest chapter number a book contains, by name. Used by the detector to settle
+    /// ambiguous mishearings — "sam 91" is impossible for Amos but ordinary for Psalms.
+    func maxChapter(forBookNamed name: String) -> Int? {
+        guard let bookId = findBookId(name: name) else { return nil }
+        return bookChapterCounts[bookId]
+    }
+    
+    /// Whether a reference plausibly exists: known book, chapter within range,
+    /// and a sane verse number. Deliberately cheap — no verse-level query — because
+    /// this runs on every detection before the reference is cached as context.
+    func referenceExists(_ reference: ScriptureReference) -> Bool {
+        guard let bookId = findBookId(name: reference.book) else { return false }
+        guard isValidChapter(bookId: bookId, chapter: reference.chapter) else { return false }
+        guard reference.verseStart >= 1 else { return false }
+        if let end = reference.verseEnd, end < reference.verseStart { return false }
+        return true
+    }
+    
     // MARK: - Book Lookup
     
     private func findBookId(name: String) -> Int? {
