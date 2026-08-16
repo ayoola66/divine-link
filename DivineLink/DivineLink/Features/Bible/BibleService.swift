@@ -88,6 +88,21 @@ struct ScriptureReference: Equatable {
     let chapter: Int
     let verseStart: Int
     let verseEnd: Int?
+    /// Whether a verse number was actually heard, as opposed to `verseStart` defaulting to 1.
+    ///
+    /// The concatenation-repair path needs this distinction. "Amos 91" is a chapter-only
+    /// utterance that defaults to verse 1 and may legitimately be re-read as Amos 9:1;
+    /// "Amos 91 verse 1" states verse 1 outright, so splitting the chapter digits would
+    /// silently substitute a different passage. Without the flag both look identical.
+    let verseWasSpoken: Bool
+    
+    init(book: String, chapter: Int, verseStart: Int, verseEnd: Int?, verseWasSpoken: Bool = false) {
+        self.book = book
+        self.chapter = chapter
+        self.verseStart = verseStart
+        self.verseEnd = verseEnd
+        self.verseWasSpoken = verseWasSpoken
+    }
     
     /// Formatted reference string
     var formatted: String {
@@ -100,6 +115,17 @@ struct ScriptureReference: Equatable {
     /// Check if this is a verse range
     var isRange: Bool {
         verseEnd != nil && verseEnd != verseStart
+    }
+    
+    /// Equality is about the passage, not about how it was heard. `verseWasSpoken` is
+    /// provenance rather than identity, so it is deliberately excluded — otherwise the
+    /// same passage would compare unequal depending on the utterance that produced it,
+    /// breaking duplicate suppression and every existing comparison.
+    static func == (lhs: ScriptureReference, rhs: ScriptureReference) -> Bool {
+        lhs.book == rhs.book
+            && lhs.chapter == rhs.chapter
+            && lhs.verseStart == rhs.verseStart
+            && lhs.verseEnd == rhs.verseEnd
     }
 }
 
@@ -617,9 +643,17 @@ class BibleService: ObservableObject {
     /// Whether a reference plausibly exists: known book, chapter within range,
     /// and a sane verse number. Deliberately cheap — no verse-level query — because
     /// this runs on every detection before the reference is cached as context.
+    ///
+    /// Fails **closed**: if the chapter counts have not loaded yet we answer `false` rather
+    /// than waving the reference through. `isValidChapter(bookId:chapter:)` is deliberately
+    /// permissive for its own callers, so this guard does not build on it — the database
+    /// loads asynchronously, and during the window where `bookCache` is populated but
+    /// `bookChapterCounts` is not, a permissive answer would accept an impossible chapter
+    /// and cache it as context.
     func referenceExists(_ reference: ScriptureReference) -> Bool {
         guard let bookId = findBookId(name: reference.book) else { return false }
-        guard isValidChapter(bookId: bookId, chapter: reference.chapter) else { return false }
+        guard let maxChapter = bookChapterCounts[bookId] else { return false }
+        guard reference.chapter >= 1, reference.chapter <= maxChapter else { return false }
         guard reference.verseStart >= 1 else { return false }
         if let end = reference.verseEnd, end < reference.verseStart { return false }
         return true
@@ -627,21 +661,38 @@ class BibleService: ObservableObject {
     
     // MARK: - Book Lookup
     
-    private func findBookId(name: String) -> Int? {
-        // Check cache first
-        if let id = bookCache[name.lowercased()] {
+    /// Resolve a book name (canonical, abbreviation or alias) to its database id.
+    ///
+    /// Deterministic by construction. An earlier version iterated `bookCache` directly and
+    /// returned the first prefix match; Swift randomises `Dictionary` iteration order per
+    /// process, so `findBookId("Judges")` could return Jude's id on one launch and Judges'
+    /// on the next. That made `maxChapter(forBookNamed:)` and `referenceExists(_:)` — both
+    /// load-bearing for disambiguation — nondeterministic. The prefix fallback now walks a
+    /// sorted key list and keeps the **longest** match, so "judges" resolves to Judges and
+    /// "jude" to Jude, identically on every launch.
+    func findBookId(name: String) -> Int? {
+        let lowerName = name.lowercased()
+        
+        // Exact match always wins — this covers every canonical name, abbreviation and alias.
+        if let id = bookCache[lowerName] {
             return id
         }
         
-        // Try partial match
-        let lowerName = name.lowercased()
-        for (key, id) in bookCache {
-            if key.hasPrefix(lowerName) || lowerName.hasPrefix(key) {
-                return id
+        // Deterministic prefix fallback. `sorted()` on `[String]` uses Swift's
+        // locale-independent Unicode ordering, not `localizedStandardCompare`, so the order
+        // is identical on every machine regardless of locale settings.
+        var bestKey: String?
+        var bestId: Int?
+        for key in bookCache.keys.sorted() {
+            guard key.hasPrefix(lowerName) || lowerName.hasPrefix(key) else { continue }
+            // Longest match wins; ties broken by sort order, which is stable.
+            if bestKey == nil || key.count > bestKey!.count {
+                bestKey = key
+                bestId = bookCache[key]
             }
         }
         
-        return nil
+        return bestId
     }
     
     /// Get all book names for speech recognition vocabulary

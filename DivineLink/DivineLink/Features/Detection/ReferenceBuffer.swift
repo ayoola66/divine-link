@@ -65,7 +65,10 @@ class ReferenceBuffer: ObservableObject {
     
     static let shared = ReferenceBuffer()
     
-    private init() {
+    /// Internal rather than private so tests can hold their own buffer and inject it into
+    /// `ScriptureDetectorService`, instead of mutating the process-wide singleton and
+    /// leaking state between test cases. Production code should use `.shared`.
+    init() {
         // Start cleanup timer
         startCleanupTimer()
     }
@@ -96,15 +99,11 @@ class ReferenceBuffer: ObservableObject {
         print("📚 [ReferenceBuffer] Context updated: \(book) \(chapter)\(verseInfo)")
     }
     
-    /// Update context from a detection result
-    func updateContext(from result: DetectionResult) {
-        updateContext(
-            book: result.reference.book,
-            chapter: result.reference.chapter,
-            verseStart: result.reference.verseStart,
-            verseEnd: result.reference.verseEnd
-        )
-    }
+    // Note: an `updateContext(from: DetectionResult)` overload was removed. It had no
+    // callers and offered an unvalidated back door around
+    // `ScriptureDetectorService.cacheContext(for:)`, which is the single entry point that
+    // checks the reference actually exists before it becomes the context that later
+    // partial references resolve against.
     
     /// Clear the current context
     func clearContext() {
@@ -137,7 +136,8 @@ class ReferenceBuffer: ObservableObject {
             book: context.book,
             chapter: context.chapter,
             verseStart: verseStart,
-            verseEnd: verseEnd
+            verseEnd: verseEnd,
+            verseWasSpoken: true  // The verse is the only thing the speaker did say.
         )
         
         print("📚 [ReferenceBuffer] Resolved partial reference: verse \(verseStart)\(verseEnd.map { "-\($0)" } ?? "") → \(reference.formatted)")
@@ -162,7 +162,8 @@ class ReferenceBuffer: ObservableObject {
             book: context.book,
             chapter: context.chapter,
             verseStart: nextVerse,
-            verseEnd: nil
+            verseEnd: nil,
+            verseWasSpoken: true  // Derived from a stated verse, so equally explicit.
         )
         
         print("📚 [ReferenceBuffer] Resolved next verse: \(context.lastVerse ?? 0) → \(nextVerse) = \(reference.formatted)")
@@ -189,7 +190,8 @@ class ReferenceBuffer: ObservableObject {
             book: context.book,
             chapter: context.chapter,
             verseStart: previousVerse,
-            verseEnd: nil
+            verseEnd: nil,
+            verseWasSpoken: true  // Derived from a stated verse, so equally explicit.
         )
         
         print("📚 [ReferenceBuffer] Resolved previous verse: \(currentVerse) → \(previousVerse) = \(reference.formatted)")

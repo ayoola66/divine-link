@@ -316,13 +316,20 @@ class DetectionPipeline: ObservableObject {
     /// concatenated chapter+verse digits (e.g. chapter=123 → ch=1, v=23).
     /// This recovers from STT collapsing "James 1 23" into "James 123".
     /// Returns the first valid split, or nil if none found.
-    private func reinterpretConcatenatedRef(_ ref: ScriptureReference) -> ScriptureReference? {
+    ///
+    /// Internal rather than private so its behaviour can be pinned by tests — the split
+    /// is easy to make either too eager or too timid, and both failures are silent.
+    func reinterpretConcatenatedRef(_ ref: ScriptureReference) -> ScriptureReference? {
         // Only safe when no verse was actually spoken. When the operator said
         // "verse 8 to 12", the trailing digits of the chapter are not the verse, and
         // splitting them threw the requested passage away: "Amos 91:8-12" silently
         // became "Amos 9:1". A wrong passage on screen is worse than none, so leave
         // these alone and let the detection be rejected with an honest log line.
-        guard ref.verseStart == 1, ref.verseEnd == nil else {
+        //
+        // `verseWasSpoken` is what makes this exact rather than a proxy. `verseStart`
+        // defaults to 1, so testing it alone could not tell "Amos 91" (chapter only,
+        // splittable) from "Amos 91 verse 1" (a stated verse, not splittable).
+        guard !ref.verseWasSpoken, ref.verseEnd == nil else {
             Logger.pipeline.info("Not splitting \(ref.formatted) — the verse was spoken explicitly")
             return nil
         }
@@ -333,7 +340,13 @@ class DetectionPipeline: ObservableObject {
             let chPart = String(chapterStr.prefix(splitAt))
             let vPart = String(chapterStr.suffix(chapterStr.count - splitAt))
             guard let ch = Int(chPart), let v = Int(vPart), ch >= 1, v >= 1 else { continue }
-            let candidate = ScriptureReference(book: ref.book, chapter: ch, verseStart: v, verseEnd: nil)
+            let candidate = ScriptureReference(
+                book: ref.book,
+                chapter: ch,
+                verseStart: v,
+                verseEnd: nil,
+                verseWasSpoken: true  // The split makes the verse explicit; never re-split.
+            )
             if !bible.getVerses(from: candidate).isEmpty {
                 return candidate
             }
@@ -359,6 +372,10 @@ class DetectionPipeline: ObservableObject {
             // Try splitting the digits and retry lookup.
             if let correctedRef = reinterpretConcatenatedRef(detection.reference) {
                 Logger.pipeline.info("♻️ Re-interpreted \(detection.displayReference) → \(correctedRef.formatted) (split concatenated chapter+verse)")
+                // The detector refused to cache the pre-split reference, quite rightly —
+                // its chapter does not exist. Cache the corrected one here, or a follow-up
+                // "verse 25" has nothing to resolve against and the repair is only half done.
+                detector.cacheContext(for: correctedRef)
                 let corrected = DetectionResult(
                     reference: correctedRef,
                     rawMatch: detection.rawMatch,

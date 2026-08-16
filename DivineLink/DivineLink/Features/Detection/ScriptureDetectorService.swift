@@ -1,5 +1,41 @@
 import Foundation
 import Combine
+import os
+
+// MARK: - Detection Rejection
+
+/// A detection the detector refused to surface, and why.
+///
+/// "Reject rather than guess" is the right policy, but on its own it trades a visible
+/// wrong verse for an invisible missing one: the operator cannot tell silence-because-
+/// rejected from silence-because-nothing-was-said. Publishing the refusal restores that
+/// distinction without ever putting a wrong reference on screen.
+struct DetectionRejection: Identifiable, Equatable {
+    let id = UUID()
+    /// The reference as heard, before normalisation — e.g. "sames 3 verse 5".
+    let heard: String
+    /// Operator-facing explanation, in British English.
+    let reason: String
+    /// Books that were in contention, where the rejection was an ambiguity.
+    let candidateBooks: [String]
+    let timestamp: Date
+    
+    init(heard: String, reason: String, candidateBooks: [String] = [], timestamp: Date = Date()) {
+        self.heard = heard
+        self.reason = reason
+        self.candidateBooks = candidateBooks
+        self.timestamp = timestamp
+    }
+    
+    /// Single-line summary for the operator console.
+    var summary: String {
+        "Heard \u{201C}\(heard)\u{201D} — \(reason)"
+    }
+    
+    static func == (lhs: DetectionRejection, rhs: DetectionRejection) -> Bool {
+        lhs.id == rhs.id
+    }
+}
 
 // MARK: - Detection Result
 
@@ -63,10 +99,49 @@ class ScriptureDetectorService: ObservableObject {
     @Published var lastDetection: DetectionResult?
     @Published var isProcessing = false
     
+    /// The most recent refusal, for the transient row in the operator console.
+    /// Cleared automatically after `rejectionDisplayDuration` so it never accumulates.
+    @Published var lastRejection: DetectionRejection?
+    
     // MARK: - Publishers
     
     /// Publishes detected scripture references
     let detectionPublisher = PassthroughSubject<DetectionResult, Never>()
+    
+    /// Publishes references the detector refused, so a rejection is visible rather
+    /// than merely silent. Subscribers must treat these as informational only —
+    /// nothing here is safe to present to a congregation.
+    let rejectionPublisher = PassthroughSubject<DetectionRejection, Never>()
+    
+    /// How long a refusal stays on screen before clearing itself.
+    private let rejectionDisplayDuration: TimeInterval = 6.0
+    private var rejectionClearTask: Task<Void, Never>?
+    
+    // MARK: - Confidence Tuning
+    
+    /// Confidence deducted from `referenceClarity` for each edit between the book name as
+    /// heard and the nearest known alias.
+    ///
+    /// **Coupled to `minimumConfidence`.** The penalty applies to `referenceClarity`,
+    /// weighted 0.4 in `DetectionConfidence`, so each edit costs `0.4 × penalty` overall.
+    /// The tightest pattern is `chapterOnly`, whose base overall is 0.780 — only 0.030
+    /// above the 0.75 gate. A one-edit guess therefore survives only while
+    /// `penalty < 0.030 / 0.4 = 0.075`.
+    ///
+    /// At 0.15 it did not survive: 0.780 − 0.4 × 0.15 = 0.720, so ordinary utterances such
+    /// as "Romans 8" with a slightly misheard book were silently dropped, and the same flip
+    /// hit `spoken`, `spokenRange` and `spokenWords` at distance 2. 0.07 is the largest
+    /// round value below that 0.075 ceiling: distance 1 clears the gate for every pattern
+    /// (`chapterOnly` = 0.752, the tightest), while distance 2 still costs enough to refuse
+    /// a two-edit guess carrying no verse number (`chapterOnly` = 0.724, refused).
+    /// `ConfidencePenaltyTests` pins the whole grid, so any future change is measured.
+    static let bookGuessPenaltyPerEdit = 0.07
+    
+    /// Detections below this overall confidence are refused rather than shown.
+    /// **Coupled to `bookGuessPenaltyPerEdit`** — raising either can silently start
+    /// dropping detections that previously displayed. Change them together, against the
+    /// grid in `ConfidencePenaltyTests`.
+    static let minimumConfidence: Double = 0.75
     
     // MARK: - Dependencies
     
@@ -101,8 +176,10 @@ class ScriptureDetectorService: ObservableObject {
     
     // MARK: - Reference Buffer
     
-    /// Reference buffer for stateful context tracking
-    private let referenceBuffer = ReferenceBuffer.shared
+    /// Reference buffer for stateful context tracking. Injectable so tests can supply a
+    /// fresh instance rather than mutating the process-wide singleton and depending on
+    /// whatever `UserDefaults` happens to say on the machine running them.
+    private let referenceBuffer: ReferenceBuffer
     
     // MARK: - Number Word Conversion
     
@@ -123,7 +200,8 @@ class ScriptureDetectorService: ObservableObject {
     
     // MARK: - Initialisation
     
-    init() {
+    init(referenceBuffer: ReferenceBuffer = .shared) {
+        self.referenceBuffer = referenceBuffer
         compilePatterns()
     }
     
@@ -138,8 +216,11 @@ class ScriptureDetectorService: ObservableObject {
         // "Second Timothy chapter…" matched bare "Timothy" → wrongly normalised to 1 Timothy.
         // Accepts both digits and number words for chapter and verse
         // Also accepts "versus" as speech recognition often mishears "verse"
+        // The end of a range may repeat the keyword — "verse 8 to verse 12" is as common
+        // from the pulpit as "verse 8 to 12", and without the optional keyword the range
+        // was dropped and only verse 8 shown.
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+(?:verse?s?|versus)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z-]+))?"#,
+            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+(?:verse?s?|versus)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(?:(?:verse?s?|versus)\s+)?(\d{1,3}|[a-z-]+))?"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbal))
@@ -152,7 +233,7 @@ class ScriptureDetectorService: ObservableObject {
         // produce false positives. High priority (right after the standard verbal).
         // Groups: (1)book (2)verse_start (3)verse_end optional (4)chapter
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(?:verse?s?|versus)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(?:verse?s?|versus)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s+(?:to|through|-)\s+(?:(?:verse?s?|versus)\s+)?(\d{1,3}|[a-z]+(?:-[a-z]+)?))?\s+chapter\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .bookVerseChapter))
@@ -163,7 +244,7 @@ class ScriptureDetectorService: ObservableObject {
         // Limit chapter to 1-2 digits (max 99) to avoid matching "316" as chapter
         // Also accept "versus" as speech recognition often mishears "verse"
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(\d{1,2})\s+(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(\d{1,2})\s+(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(?:(?:verse?s?|versus)\s+)?(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbalShort))
@@ -172,7 +253,7 @@ class ScriptureDetectorService: ObservableObject {
         
         // 2b. VERBAL SHORT with word chapter: "John three verse 16" or "Genesis one verse 1"
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)\s+(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(?:(?:verse?s?|versus)\s+)?(\d{1,3}|[a-z]+(?:-[a-z]+)?))?(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .verbalShort))
@@ -252,7 +333,7 @@ class ScriptureDetectorService: ObservableObject {
         // 9. INVERTED VERBAL: "verse 31 of Romans 8" or "verse 31 of Romans eight"
         // Captures: (verse_start) (verse_end optional) (book) (chapter as number or word)
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?\s+(?:of|in|from)\s+((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s|$|[,.])"#,
+            pattern: #"(?:^|\s)(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(?:(?:verse?s?|versus)\s+)?(\d{1,3}|[a-z]+(?:-[a-z]+)?))?\s+(?:of|in|from)\s+((?:(?:first|second|third|1st|2nd|3rd|i|ii|iii)\s+)?(?:\d\s?)?[A-Za-z]+)\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-?\w*|thirty|thirty-?\w*|forty|forty-?\w*|fifty)(?:\s|$|[,.])"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .invertedVerbal))
@@ -263,7 +344,7 @@ class ScriptureDetectorService: ObservableObject {
         // This is lowest priority - only works if we have context from a previous detection
         // Pattern captures: (verse_start) and optionally (verse_end)
         if let regex = try? NSRegularExpression(
-            pattern: #"(?:^|\s)(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?))?"#,
+            pattern: #"(?:^|\s)(?:verse?s?|versus)\s+(\d{1,3}|[a-z]+(?:-[a-z]+)?)(?:\s+(?:to|through|-)\s+(?:(?:verse?s?|versus)\s+)?(\d{1,3}|[a-z]+(?:-[a-z]+)?))?"#,
             options: .caseInsensitive
         ) {
             patterns.append((regex, .partialVerse))
@@ -360,7 +441,7 @@ class ScriptureDetectorService: ObservableObject {
         
         // Reject if the entire "book name" is a common word
         if commonWordsToReject.contains(rawBookLower) {
-            print("⚠️ Rejected common word as book name: '\(rawBook)' (pattern: \(type))")
+            Logger.detection.debug("Rejected common word as book name: '\(rawBook, privacy: .public)' (pattern: \(String(describing: type), privacy: .public))")
             return nil
         }
         
@@ -387,7 +468,7 @@ class ScriptureDetectorService: ObservableObject {
         // After stripping, check again if it's a common word
         let strippedLower = rawBook.lowercased().trimmingCharacters(in: .whitespaces)
         if strippedLower.isEmpty || commonWordsToReject.contains(strippedLower) {
-            print("⚠️ Rejected stripped result as common word: '\(rawBook)' (pattern: \(type))")
+            Logger.detection.debug("Rejected stripped result as common word: '\(rawBook, privacy: .public)' (pattern: \(String(describing: type), privacy: .public))")
             return nil
         }
         
@@ -398,17 +479,40 @@ class ScriptureDetectorService: ObservableObject {
             String(text[chapterRange]).trimmingCharacters(in: .whitespaces).lowercased()
         )
         
-        // Normalise book name
-        guard let canonicalBook = bookNormaliser.normalise(rawBook, chapterHint: chapterHint) else {
-            print("⚠️ Book not recognized: '\(rawBook)' (pattern: \(type))")
+        // Normalise book name. `match` rather than `normalise` because the edit distance
+        // it resolved is needed below to score the detection, and recomputing it would
+        // mean sweeping every alias a second time for the same input.
+        let bookOutcome = bookNormaliser.match(rawBook, chapterHint: chapterHint)
+        guard case .matched(let canonicalBook, let matchQuality) = bookOutcome else {
+            if case .rejected(let failure) = bookOutcome {
+                let heard = Range(match.range, in: text).map {
+                    String(text[$0]).trimmingCharacters(in: .whitespaces)
+                } ?? rawBook
+                Logger.detection.warning("Book not recognised: '\(rawBook, privacy: .public)' (pattern: \(String(describing: type), privacy: .public)) — \(failure.reason, privacy: .public)")
+                // Only surface genuine ambiguities to the operator. Excluded words and
+                // short fragments fire constantly on ordinary speech, so reporting them
+                // would bury the refusals that actually matter.
+                if case .ambiguous = failure {
+                    publishRejection(
+                        DetectionRejection(
+                            heard: heard,
+                            reason: failure.reason,
+                            candidateBooks: failure.candidateBooks
+                        )
+                    )
+                }
+            }
             return nil // Not a valid book name
         }
         
-        print("📖 Parsing match: book='\(rawBook)'→'\(canonicalBook)' (pattern: \(type))")
+        Logger.detection.debug("Parsing match: book='\(rawBook, privacy: .public)'→'\(canonicalBook, privacy: .public)' (pattern: \(String(describing: type), privacy: .public))")
         
         var chapter: Int
         var verseStart = 1
         var verseEnd: Int? = nil
+        // Distinguishes a verse the speaker actually said from `verseStart`'s default of 1.
+        // The concatenation-repair path in `DetectionPipeline` depends on the difference.
+        var verseWasSpoken = false
         
         // Special handling for spokenWords pattern: "twenty one one" → 21:1
         if type == .spokenWords {
@@ -430,6 +534,7 @@ class ScriptureDetectorService: ObservableObject {
                         let verseStr = String(text[verseRange]).trimmingCharacters(in: .whitespaces).lowercased()
                         if let verse = parseNumber(verseStr) {
                             verseStart = verse
+                            verseWasSpoken = true
                         }
                     }
                 } else {
@@ -438,6 +543,7 @@ class ScriptureDetectorService: ObservableObject {
                     chapter = ch
                     if let verse = parseNumber(chapterPart2) {
                         verseStart = verse
+                        verseWasSpoken = true
                     }
                 }
             } else {
@@ -454,7 +560,14 @@ class ScriptureDetectorService: ObservableObject {
             // Validate chapter is reasonable (Psalms has max 150 chapters)
             // This prevents "316" being parsed as chapter 316
             if ch > 150 {
-                print("⚠️ Rejected invalid chapter number: \(ch) (max allowed: 150)")
+                Logger.detection.warning("Rejected invalid chapter number: \(ch, privacy: .public) (max allowed: 150)")
+                publishRejection(
+                    DetectionRejection(
+                        heard: "\(rawBook) \(ch)",
+                        reason: "chapter \(ch) is beyond the 150 chapters of the longest book",
+                        candidateBooks: [canonicalBook]
+                    )
+                )
                 return nil
             }
             
@@ -463,7 +576,7 @@ class ScriptureDetectorService: ObservableObject {
             // Reject obviously wrong chapter numbers for non-Psalms books
             if ch > 50 && type != .chapterOnly {
                 // This is suspicious - log it for review
-                print("⚠️ Suspicious high chapter number: \(ch) for pattern \(type)")
+                Logger.detection.info("Suspicious high chapter number: \(ch, privacy: .public) for pattern \(String(describing: type), privacy: .public)")
             }
             
             chapter = ch
@@ -475,6 +588,7 @@ class ScriptureDetectorService: ObservableObject {
                     let verseStr = String(text[verseRange]).trimmingCharacters(in: .whitespaces).lowercased()
                     if let verse = parseNumber(verseStr) {
                         verseStart = verse
+                        verseWasSpoken = true
                     }
                 }
                 
@@ -492,24 +606,31 @@ class ScriptureDetectorService: ObservableObject {
         // Most chapters have fewer than 50 verses, very few have more than 100
         // Psalm 119 has 176 verses (the longest)
         if verseStart > 176 {
-            print("⚠️ Rejected invalid verse number: \(verseStart) (max allowed: 176)")
+            Logger.detection.warning("Rejected invalid verse number: \(verseStart, privacy: .public) (max allowed: 176)")
+            publishRejection(
+                DetectionRejection(
+                    heard: "\(canonicalBook) \(chapter):\(verseStart)",
+                    reason: "verse \(verseStart) is beyond the 176 verses of the longest chapter",
+                    candidateBooks: [canonicalBook]
+                )
+            )
             return nil
         }
         
         if let endVerse = verseEnd, endVerse > 176 {
-            print("⚠️ Rejected invalid end verse: \(endVerse) (max allowed: 176)")
+            Logger.detection.warning("Rejected invalid end verse: \(endVerse, privacy: .public) (max allowed: 176)")
             return nil
         }
         
         // Reject if verse start is higher than verse end (invalid range)
         if let endVerse = verseEnd, verseStart > endVerse {
-            print("⚠️ Rejected invalid verse range: \(verseStart)-\(endVerse) (start > end)")
+            Logger.detection.warning("Rejected invalid verse range: \(verseStart, privacy: .public)-\(endVerse, privacy: .public) (start > end)")
             return nil
         }
         
         // Reject suspiciously large verse ranges (more than 30 verses at once is unusual)
         if let endVerse = verseEnd, (endVerse - verseStart) > 30 {
-            print("⚠️ Suspicious large verse range: \(verseStart)-\(endVerse) (\(endVerse - verseStart) verses)")
+            Logger.detection.info("Suspicious large verse range: \(verseStart, privacy: .public)-\(endVerse, privacy: .public) (\(endVerse - verseStart, privacy: .public) verses)")
             // Still allow but log it
         }
         
@@ -526,7 +647,8 @@ class ScriptureDetectorService: ObservableObject {
             book: canonicalBook,
             chapter: chapter,
             verseStart: verseStart,
-            verseEnd: verseEnd
+            verseEnd: verseEnd,
+            verseWasSpoken: verseWasSpoken
         )
         
         // Calculate multi-factor confidence using DetectionConfidence model
@@ -535,7 +657,18 @@ class ScriptureDetectorService: ObservableObject {
         // 1. Reference Clarity - How clear and unambiguous was the reference pattern?
         // 2. Speech Confidence - Pattern-based estimation (true speech confidence comes from Whisper)
         // 3. Context Match - How well does the match fit expected patterns?
-        // 4. Verse Existence - Assumed valid if book is recognised (full validation done downstream)
+        // 4. Verse Existence - held at 1.0 here, deliberately. See the note below.
+        //
+        // On `verseExistence`: `referenceValidator` is available by this point, and it is
+        // tempting to score the factor from it. It is wrong to do so. An unresolvable
+        // chapter is very often a concatenated chapter+verse that
+        // `DetectionPipeline.reinterpretConcatenatedRef` repairs — "James 123" → James 1:23.
+        // Downgrading the factor would take `chapterOnly` from 0.780 to 0.730, below the
+        // 0.75 gate, so the detection would be refused here and the repair would never run.
+        // The validator is therefore applied where invalidity actually matters and costs
+        // nothing: `cacheContext(for:)` refuses to remember an impossible reference, and the
+        // pipeline refuses to display one. The factor stays structural, describing the
+        // pattern rather than the database.
         
         let referenceClarity: Double
         let speechConfidence: Double
@@ -549,7 +682,7 @@ class ScriptureDetectorService: ObservableObject {
             referenceClarity = 0.98
             speechConfidence = 0.95
             contextMatch = 0.95
-            verseExistence = 1.0  // Validated book + reasonable chapter/verse
+            verseExistence = 1.0  // Structural, not a database check — see the note above.
             patternTypeName = "standard"
             
         case .spoken:
@@ -632,16 +765,15 @@ class ScriptureDetectorService: ObservableObject {
         }
         
         // Adjust confidence based on book name recognition quality.
-        // A book we had to guess at is far less trustworthy than one heard verbatim,
-        // so the penalty has to be big enough to actually move the badge. At 0.05 an
-        // edit a wrong guess still cleared the threshold and displayed as "Medium".
+        // A book we had to guess at is far less trustworthy than one heard verbatim.
+        // `bookGuessPenaltyPerEdit` is COUPLED TO `minimumConfidence` below — see the
+        // arithmetic at its declaration before changing either.
         var adjustedReferenceClarity = referenceClarity
-        if !bookNormaliser.isExactAlias(rawBook) {
-            // Distance from the nearest alias, defaulting to the worst case when the
-            // book was settled by the chapter number rather than by spelling — that
-            // is still a guess and must not present itself as a certainty.
-            let distance = bookNormaliser.fuzzyCandidates(rawBook, maxDistance: 2).first?.distance ?? 2
-            adjustedReferenceClarity = max(0.4, referenceClarity - Double(distance) * 0.15)
+        if !matchQuality.isExact {
+            // The distance resolved during normalisation. A book settled by its chapter
+            // number is still a guess, so it is scored by its spelling distance too.
+            let distance = matchQuality.editDistance
+            adjustedReferenceClarity = max(0.4, referenceClarity - Double(distance) * Self.bookGuessPenaltyPerEdit)
         }
         
         // Adjust context match based on raw match quality
@@ -661,14 +793,21 @@ class ScriptureDetectorService: ObservableObject {
             verseExistence: verseExistence
         )
         
-        // CRITICAL: Apply minimum confidence threshold to prevent false detections
-        let minimumConfidence: Double = 0.75
-        if detectionConfidence.overall < minimumConfidence {
-            print("⚠️ Rejected detection below minimum confidence: \(detectionConfidence.percentage)% < \(Int(minimumConfidence * 100))% for \(reference.formatted)")
+        // CRITICAL: Apply minimum confidence threshold to prevent false detections.
+        // Coupled to `bookGuessPenaltyPerEdit` — see the note at its declaration.
+        if detectionConfidence.overall < Self.minimumConfidence {
+            Logger.detection.warning("Rejected detection below minimum confidence: \(detectionConfidence.percentage, privacy: .public)% < \(Int(Self.minimumConfidence * 100), privacy: .public)% for \(reference.formatted, privacy: .public)")
+            publishRejection(
+                DetectionRejection(
+                    heard: rawMatch,
+                    reason: "confidence \(detectionConfidence.percentage)% is below the \(Int(Self.minimumConfidence * 100))% threshold",
+                    candidateBooks: [canonicalBook]
+                )
+            )
             return nil
         }
         
-        print("✅ Detection: \(reference.formatted) [\(patternTypeName)] - Confidence: \(detectionConfidence.percentage)% (\(detectionConfidence.level.rawValue))")
+        Logger.detection.info("Detection: \(reference.formatted, privacy: .public) [\(patternTypeName, privacy: .public)] — confidence \(detectionConfidence.percentage, privacy: .public)% (\(detectionConfidence.level.rawValue, privacy: .public))")
         
         // Update reference buffer context for future partial reference resolution
         // This enables "verse 18" to resolve to "John 3:18" after detecting "John 3:16"
@@ -745,19 +884,19 @@ class ScriptureDetectorService: ObservableObject {
         
         // Normalize the book name using the book normaliser
         guard let canonicalBook = bookNormaliser.normalise(rawBook, chapterHint: chapter) else {
-            print("⚠️ [invertedVerbal] Could not normalize book: \(rawBook)")
+            Logger.detection.warning("[invertedVerbal] Could not normalise book: \(rawBook, privacy: .public)")
             return nil
         }
         
         // Validate chapter is reasonable (max 150 like Psalms)
         if chapter > 150 {
-            print("⚠️ [invertedVerbal] Rejected invalid chapter: \(chapter)")
+            Logger.detection.warning("[invertedVerbal] Rejected invalid chapter: \(chapter, privacy: .public)")
             return nil
         }
         
         // Validate verse is reasonable (max 176 like Psalm 119)
         if verseStart > 176 {
-            print("⚠️ [invertedVerbal] Rejected invalid verse: \(verseStart)")
+            Logger.detection.warning("[invertedVerbal] Rejected invalid verse: \(verseStart, privacy: .public)")
             return nil
         }
         
@@ -766,7 +905,8 @@ class ScriptureDetectorService: ObservableObject {
             book: canonicalBook,
             chapter: chapter,
             verseStart: verseStart,
-            verseEnd: verseEnd
+            verseEnd: verseEnd,
+            verseWasSpoken: true  // "verse 31 of Romans 8" states the verse outright.
         )
         
         // Calculate confidence
@@ -842,17 +982,17 @@ class ScriptureDetectorService: ObservableObject {
 
         // Normalise the book name
         guard let canonicalBook = bookNormaliser.normalise(rawBook, chapterHint: chapter) else {
-            print("⚠️ [bookVerseChapter] Could not normalize book: '\(rawBook)'")
+            Logger.detection.warning("[bookVerseChapter] Could not normalise book: '\(rawBook, privacy: .public)'")
             return nil
         }
 
         // Validate ranges (Psalms has 150 chapters; Psalm 119 has 176 verses)
         if chapter > 150 {
-            print("⚠️ [bookVerseChapter] Rejected invalid chapter: \(chapter)")
+            Logger.detection.warning("[bookVerseChapter] Rejected invalid chapter: \(chapter, privacy: .public)")
             return nil
         }
         if verseStart > 176 {
-            print("⚠️ [bookVerseChapter] Rejected invalid verse: \(verseStart)")
+            Logger.detection.warning("[bookVerseChapter] Rejected invalid verse: \(verseStart, privacy: .public)")
             return nil
         }
 
@@ -860,7 +1000,8 @@ class ScriptureDetectorService: ObservableObject {
             book: canonicalBook,
             chapter: chapter,
             verseStart: verseStart,
-            verseEnd: verseEnd
+            verseEnd: verseEnd,
+            verseWasSpoken: true  // "John verse 16 chapter 5" states the verse outright.
         )
 
         let confidence = DetectionConfidence(
@@ -1011,7 +1152,8 @@ class ScriptureDetectorService: ObservableObject {
             book: context.book,
             chapter: context.chapter,
             verseStart: startVerse,
-            verseEnd: verseEnd
+            verseEnd: verseEnd,
+            verseWasSpoken: true  // A partial reference is nothing but a spoken verse.
         )
         
         // Calculate confidence - lower because we're relying on context
@@ -1023,12 +1165,19 @@ class ScriptureDetectorService: ObservableObject {
         )
         
         // Apply minimum confidence threshold
-        if detectionConfidence.overall < 0.75 {
-            print("⚠️ [partialVerse] Below minimum confidence threshold")
+        if detectionConfidence.overall < Self.minimumConfidence {
+            Logger.detection.warning("Rejected partial verse below minimum confidence: \(detectionConfidence.percentage, privacy: .public)%")
+            publishRejection(
+                DetectionRejection(
+                    heard: rawMatch,
+                    reason: "confidence \(detectionConfidence.percentage)% is below the \(Int(Self.minimumConfidence * 100))% threshold",
+                    candidateBooks: [context.book]
+                )
+            )
             return nil
         }
         
-        print("✅ [partialVerse] Resolved: '\(rawMatch)' → \(reference.formatted) using context [\(context.book) \(context.chapter)]")
+        Logger.detection.info("Partial verse resolved: '\(rawMatch, privacy: .public)' → \(reference.formatted, privacy: .public) using context [\(context.book, privacy: .public) \(context.chapter, privacy: .public)]")
         
         return DetectionResult(
             reference: reference,
@@ -1083,9 +1232,21 @@ class ScriptureDetectorService: ObservableObject {
     /// A detection such as "Amos 91" (Amos has nine chapters) must never become the
     /// context that later partial references like "verse 8 to 12" resolve against,
     /// or one misheard book name poisons every reference for the next five minutes.
-    private func cacheContext(for reference: ScriptureReference) {
+    ///
+    /// Internal rather than private so `DetectionPipeline` can cache the *corrected*
+    /// reference after the concatenation-repair path has run. Caching here alone left the
+    /// buffer empty after a successful split, because the pre-split reference was
+    /// (correctly) refused and the post-split one never reached the detector again.
+    func cacheContext(for reference: ScriptureReference) {
         if let validate = referenceValidator, !validate(reference) {
-            print("📚 [ReferenceBuffer] Not caching implausible reference: \(reference.formatted)")
+            Logger.detection.warning("Not caching implausible reference: \(reference.formatted, privacy: .public)")
+            publishRejection(
+                DetectionRejection(
+                    heard: reference.formatted,
+                    reason: "no such chapter in \(reference.book), so it was not kept as context",
+                    candidateBooks: [reference.book]
+                )
+            )
             return
         }
         
@@ -1095,6 +1256,23 @@ class ScriptureDetectorService: ObservableObject {
             verseStart: reference.verseStart,
             verseEnd: reference.verseEnd
         )
+    }
+    
+    // MARK: - Rejection Reporting
+    
+    /// Surface a refusal to the operator, then clear it so the console does not
+    /// accumulate stale rows. Purely informational — nothing here reaches the projector.
+    private func publishRejection(_ rejection: DetectionRejection) {
+        lastRejection = rejection
+        rejectionPublisher.send(rejection)
+        
+        rejectionClearTask?.cancel()
+        let duration = rejectionDisplayDuration
+        rejectionClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.lastRejection = nil
+        }
     }
 }
 
@@ -1125,6 +1303,10 @@ class BookNameNormaliser {
         "bar", "so", "if", "as", "up", "no", "yes", "ok", "oh", "ah", "um", "uh",
         // Additional words found in logs causing false detections
         "drop", "instead", "instead of", "insteadof",
+        // Ordinary English words that sit close enough to a Psalms mishearing to be
+        // reached by the fuzzy path. "size" was briefly a direct alias for Psalms,
+        // which turned "…a size 10." into Psalms 10 with no warning at all.
+        "size", "sizes",
     ]
     
     // Canonical book names mapped from various inputs (mutable for learned corrections)
@@ -1138,8 +1320,13 @@ class BookNameNormaliser {
         "joshua": "Joshua", "josh": "Joshua", "jos": "Joshua",
         "judges": "Judges", "judg": "Judges", "jdg": "Judges",
         "ruth": "Ruth", "ru": "Ruth", "roof": "Ruth", "rooth": "Ruth", "route": "Ruth",  // Common STT misheard
-        "1 samuel": "1 Samuel", "1samuel": "1 Samuel", "first samuel": "1 Samuel", "i samuel": "1 Samuel", "1 sam": "1 Samuel", "1sam": "1 Samuel",
-        "2 samuel": "2 Samuel", "2samuel": "2 Samuel", "second samuel": "2 Samuel", "ii samuel": "2 Samuel", "2 sam": "2 Samuel", "2sam": "2 Samuel",
+        // The short "sam" forms carry the ordinal in words as well as in digits. Bare
+        // "sam" maps to Psalms below, so without "first sam" and "second sam" a speaker
+        // saying the ordinal aloud would have their numbered Samuel silently rejected.
+        // Deliberately no "i sam" or "ii sam": "i am" sits one edit from "i sam", so those
+        // two aliases turned "I am 40." into 1 Samuel 40. The long roman forms are safe.
+        "1 samuel": "1 Samuel", "1samuel": "1 Samuel", "first samuel": "1 Samuel", "i samuel": "1 Samuel", "1 sam": "1 Samuel", "1sam": "1 Samuel", "first sam": "1 Samuel",
+        "2 samuel": "2 Samuel", "2samuel": "2 Samuel", "second samuel": "2 Samuel", "ii samuel": "2 Samuel", "2 sam": "2 Samuel", "2sam": "2 Samuel", "second sam": "2 Samuel",
         "1 kings": "1 Kings", "1kings": "1 Kings", "first kings": "1 Kings", "i kings": "1 Kings", "1 kgs": "1 Kings",
         "2 kings": "2 Kings", "2kings": "2 Kings", "second kings": "2 Kings", "ii kings": "2 Kings", "2 kgs": "2 Kings",
         "1 chronicles": "1 Chronicles", "1chronicles": "1 Chronicles", "first chronicles": "1 Chronicles", "i chronicles": "1 Chronicles", "1 chr": "1 Chronicles",
@@ -1154,8 +1341,15 @@ class BookNameNormaliser {
         // mappings for what it actually produced in the field, not guesses: bare "sam"
         // cannot be Samuel because Samuel is always spoken with its number ("1 Sam"),
         // and those numbered forms are matched exactly above.
+        //
+        // Deliberately absent: "size", an ordinary English word that made "…a size 10."
+        // resolve to Psalms 10, and is now an excluded word; and "sames", which sits one
+        // edit from "james" and so turned a misheard James into Psalms by exact match,
+        // bypassing the tie logic that exists precisely to catch that. "sames" is left to
+        // the fuzzy path, where it ties Psalms against James and is rejected — or settled
+        // honestly by the chapter number when one was spoken.
         "sam": "Psalms", "sams": "Psalms", "salms": "Psalms", "psams": "Psalms",
-        "size": "Psalms", "sarms": "Psalms", "sames": "Psalms", "psalmes": "Psalms",
+        "sarms": "Psalms", "psalmes": "Psalms",
         "proverbs": "Proverbs", "prov": "Proverbs", "pr": "Proverbs", "pro": "Proverbs",
         "ecclesiastes": "Ecclesiastes", "eccles": "Ecclesiastes", "eccl": "Ecclesiastes", "ec": "Ecclesiastes",
         "song of solomon": "Song of Solomon", "song of songs": "Song of Solomon", "songs of solomon": "Song of Solomon", "songs": "Song of Solomon", "sos": "Song of Solomon", "ss": "Song of Solomon", "canticles": "Song of Solomon", "song": "Song of Solomon",
@@ -1216,18 +1410,86 @@ class BookNameNormaliser {
     /// ambiguous mishearings. Injected by `DetectionPipeline` from `BibleService`.
     var chapterCountProvider: ((String) -> Int?)?
     
+    // MARK: - Match Outcome
+    
+    /// How a book name was arrived at. The caller needs this to score the detection:
+    /// a book heard verbatim is a certainty, a book reached by two edits is a guess,
+    /// and a book settled by its chapter number is a guess that happened to be checkable.
+    enum MatchQuality: Equatable {
+        case exact
+        case fuzzy(distance: Int)
+        case chapterDisambiguated(distance: Int)
+        
+        /// Edit distance from the nearest alias. Zero for a verbatim match.
+        var editDistance: Int {
+            switch self {
+            case .exact: return 0
+            case .fuzzy(let distance), .chapterDisambiguated(let distance): return distance
+            }
+        }
+        
+        var isExact: Bool { self == .exact }
+    }
+    
+    /// Why a book name could not be resolved. Carried to the operator console so a
+    /// rejection is visible rather than merely silent.
+    enum MatchFailure: Equatable {
+        case excludedWord
+        case tooShort
+        case ambiguous(books: [String])
+        case unrecognised
+        
+        /// Operator-facing explanation, in British English.
+        var reason: String {
+            switch self {
+            case .excludedWord: return "ordinary word, not a book name"
+            case .tooShort: return "too short to identify a book"
+            case .ambiguous(let books): return "ambiguous between \(books.joined(separator: ", "))"
+            case .unrecognised: return "book not recognised"
+            }
+        }
+        
+        /// Books that were in contention, for display alongside the reason.
+        var candidateBooks: [String] {
+            if case .ambiguous(let books) = self { return books }
+            return []
+        }
+    }
+    
+    /// Result of resolving a raw book name.
+    enum MatchOutcome {
+        case matched(canonical: String, quality: MatchQuality)
+        case rejected(MatchFailure)
+    }
+    
     /// Normalise a book name to its canonical form.
     /// - Parameters:
     ///   - input: The raw book name as heard.
     ///   - chapterHint: The chapter number spoken alongside it, if known. Used only
     ///     to break ties between equally-close mishearings.
     func normalise(_ input: String, chapterHint: Int? = nil) -> String? {
+        guard case .matched(let canonical, _) = match(input, chapterHint: chapterHint) else {
+            return nil
+        }
+        return canonical
+    }
+    
+    /// Resolve a book name and report how it was resolved, or why it was not.
+    ///
+    /// Prefer this over `normalise(_:chapterHint:)` when the caller needs the edit
+    /// distance: it is computed here already, so asking for it again means running the
+    /// whole alias sweep twice for the same input.
+    /// - Parameters:
+    ///   - input: The raw book name as heard.
+    ///   - chapterHint: The chapter number spoken alongside it, if known. Used only
+    ///     to break ties between equally-close mishearings.
+    func match(_ input: String, chapterHint: Int? = nil) -> MatchOutcome {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
         
         // FIRST: Check if this is a common word that should NEVER be a book name
         // This prevents "to" from being fuzzy-matched to "ho" → Hosea
         if excludedWords.contains(lowercased) {
-            return nil
+            return .rejected(.excludedWord)
         }
         
         // Check for numbered prefixes with excluded words: "1 to" → check if "to" is excluded
@@ -1235,49 +1497,51 @@ class BookNameNormaliser {
         if let match = lowercased.firstMatch(of: /^(\d+)\s+(.+)$/) {
             let baseWord = String(match.output.2)
             if excludedWords.contains(baseWord) {
-                print("   ⚠️ Rejecting '\(lowercased)' - base word '\(baseWord)' is excluded")
-                return nil
+                Logger.detection.warning("Rejecting '\(lowercased, privacy: .public)' — base word '\(baseWord, privacy: .public)' is excluded")
+                return .rejected(.excludedWord)
             }
         }
         
         // Also exclude very short words (1-2 chars) unless they're exact matches
         // This prevents random short words from fuzzy-matching
         if lowercased.count <= 2 && bookMappings[lowercased] == nil {
-            return nil
+            return .rejected(.tooShort)
         }
         
         // Direct lookup in primary mappings
         if let canonical = bookMappings[lowercased] {
-            return canonical
+            return .matched(canonical: canonical, quality: .exact)
         }
         
         // Try BibleVocabularyData STT mishearings
         if let canonical = BibleVocabularyData.sttMishearings[lowercased] {
-            return canonical
+            return .matched(canonical: canonical, quality: .exact)
         }
         
         // Try abbreviations
         if let canonical = BibleVocabularyData.abbreviations[lowercased] {
-            return canonical
+            return .matched(canonical: canonical, quality: .exact)
         }
         
         // Try without spaces for numbered books
         let noSpaces = lowercased.replacingOccurrences(of: " ", with: "")
         if let canonical = bookMappings[noSpaces] {
-            return canonical
+            return .matched(canonical: canonical, quality: .exact)
         }
         
         // Try fuzzy match if no exact match (only for words 3+ chars to avoid false matches)
-        guard lowercased.count >= 3 else { return nil }
+        guard lowercased.count >= 3 else { return .rejected(.tooShort) }
         
         let candidates = fuzzyCandidates(lowercased, maxDistance: 2)
         let books = Set(candidates.map(\.canonical))
         
-        if books.count == 1, let only = books.first {
-            return only
+        if books.count == 1, let only = books.first, let distance = candidates.first?.distance {
+            return .matched(canonical: only, quality: .fuzzy(distance: distance))
         }
         
-        guard books.count > 1 else { return nil }
+        guard books.count > 1, let distance = candidates.first?.distance else {
+            return .rejected(.unrecognised)
+        }
         
         // Ambiguous. If we know which chapter was spoken, discard the books that
         // cannot possibly contain it — "sam 91" is impossible for Amos (9 chapters)
@@ -1288,13 +1552,14 @@ class BookNameNormaliser {
                 return chapterHint <= maxChapter
             }
             if viable.count == 1, let only = viable.first {
-                print("   📖 Ambiguous '\(lowercased)' resolved to \(only) — only book with a chapter \(chapterHint)")
-                return only
+                Logger.detection.info("Ambiguous '\(lowercased, privacy: .public)' resolved to \(only, privacy: .public) — only book with a chapter \(chapterHint)")
+                return .matched(canonical: only, quality: .chapterDisambiguated(distance: distance))
             }
         }
         
-        print("   ⚠️ Ambiguous book '\(lowercased)': \(books.sorted().joined(separator: ", ")) — rejecting rather than guessing")
-        return nil
+        let sortedBooks = books.sorted()
+        Logger.detection.warning("Ambiguous book '\(lowercased, privacy: .public)': \(sortedBooks.joined(separator: ", "), privacy: .public) — rejecting rather than guessing")
+        return .rejected(.ambiguous(books: sortedBooks))
     }
     
     /// Aliases shorter than this are exact-match only. A two-letter alias such as
@@ -1303,19 +1568,41 @@ class BookNameNormaliser {
     /// confident but wrong book.
     private static let minimumFuzzyAliasLength = 3
     
+    /// Aliases in sorted order, cached because this runs several times a second while
+    /// listening and there are roughly five hundred of them. Invalidated by `addMapping`.
+    ///
+    /// `sorted()` on `[String]` uses Swift's locale-independent Unicode ordering — not
+    /// `localizedStandardCompare` — so the order is byte-stable across machines and
+    /// locales. That matters: the determinism guarantee would otherwise hold here and
+    /// break on a differently-configured Mac.
+    private var sortedAliasesCache: [String]?
+    
+    private var sortedAliases: [String] {
+        if let cached = sortedAliasesCache { return cached }
+        let sorted = bookMappings.keys.sorted()
+        sortedAliasesCache = sorted
+        return sorted
+    }
+    
     /// All aliases tied at the smallest edit distance within `maxDistance`.
     /// Iteration is over a sorted key list because Swift randomises `Dictionary`
     /// order per process launch — without this, the same misheard word resolves to
     /// a different book on every app start.
     func fuzzyCandidates(_ input: String, maxDistance: Int = 2) -> [(canonical: String, alias: String, distance: Int)] {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
+        let inputLength = lowercased.count
         
         var bestDistance = Int.max
         var tied: [(canonical: String, alias: String, distance: Int)] = []
         
-        for alias in bookMappings.keys.sorted() {
+        for alias in sortedAliases {
             guard alias.count >= Self.minimumFuzzyAliasLength,
                   let canonical = bookMappings[alias] else { continue }
+            
+            // Cheap pre-filter: two strings differing in length by more than the budget
+            // cannot be within it, since each insertion or deletion costs one edit.
+            // Skipping these avoids allocating a Levenshtein matrix for most aliases.
+            guard abs(alias.count - inputLength) <= min(maxDistance, bestDistance) else { continue }
             
             let distance = levenshteinDistance(lowercased, alias)
             guard distance <= maxDistance else { continue }
@@ -1341,7 +1628,8 @@ class BookNameNormaliser {
         
         let books = Set(candidates.map(\.canonical))
         guard books.count == 1 else {
-            print("   ⚠️ Ambiguous fuzzy match for '\(input.lowercased())' at distance \(first.distance): \(books.sorted().joined(separator: ", ")) — rejecting")
+            let sortedBooks = books.sorted()
+            Logger.detection.warning("Ambiguous fuzzy match for '\(input.lowercased(), privacy: .public)' at distance \(first.distance): \(sortedBooks.joined(separator: ", "), privacy: .public) — rejecting")
             return nil
         }
         
@@ -1349,37 +1637,59 @@ class BookNameNormaliser {
     }
     
     /// True when the input is a known alias verbatim, so no fuzzy guessing was needed.
+    /// Mirrors every exact-match branch in `match(_:chapterHint:)`, including the
+    /// space-stripped lookup for numbered books, so the two functions cannot disagree
+    /// about whether a resolution was a certainty or a guess.
     func isExactAlias(_ input: String) -> Bool {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
-        return bookMappings[lowercased] != nil
+        if bookMappings[lowercased] != nil
             || BibleVocabularyData.sttMishearings[lowercased] != nil
-            || BibleVocabularyData.abbreviations[lowercased] != nil
+            || BibleVocabularyData.abbreviations[lowercased] != nil {
+            return true
+        }
+        let noSpaces = lowercased.replacingOccurrences(of: " ", with: "")
+        return bookMappings[noSpaces] != nil
     }
     
     /// Suggest a correction for a misheard book name
     /// Returns (suggestedBook, confidence) where confidence is 0.0-1.0
     func suggestCorrection(for input: String) -> (book: String, confidence: Float)? {
+        suggestCorrections(for: input).first
+    }
+    
+    /// Ranked correction candidates for a misheard book name, best first.
+    ///
+    /// Deliberately more lenient than `fuzzyMatch(_:maxDistance:)`, which returns nil
+    /// whenever the closest aliases disagree. That is right for detection, where guessing
+    /// shows the congregation the wrong verse — but wrong here, because a suggestion goes
+    /// to a person for confirmation. Offering "did you mean Psalms, James or Amos?" is
+    /// strictly more useful than offering nothing.
+    func suggestCorrections(for input: String) -> [(book: String, confidence: Float)] {
         let lowercased = input.lowercased().trimmingCharacters(in: .whitespaces)
         
         // Try exact match first
         if let canonical = bookMappings[lowercased] {
-            return (canonical, 1.0)
+            return [(canonical, 1.0)]
         }
         
-        // Try fuzzy match with different thresholds
-        if let match = fuzzyMatch(lowercased, maxDistance: 1) {
-            return (match.canonical, 0.9)
+        // Widen the search until something turns up. Confidence reflects the distance,
+        // so a two-edit suggestion presents itself as the guess it is.
+        let confidenceForDistance: [Int: Float] = [0: 1.0, 1: 0.9, 2: 0.7, 3: 0.5]
+        for maxDistance in 1...3 {
+            let candidates = fuzzyCandidates(lowercased, maxDistance: maxDistance)
+            guard !candidates.isEmpty else { continue }
+            
+            // Several aliases can point at the same book ("sams" and "salms" are both
+            // Psalms); collapse to one entry per book, preserving the sorted alias order.
+            var seen = Set<String>()
+            var ranked: [(book: String, confidence: Float)] = []
+            for candidate in candidates where seen.insert(candidate.canonical).inserted {
+                ranked.append((candidate.canonical, confidenceForDistance[candidate.distance] ?? 0.4))
+            }
+            return ranked
         }
         
-        if let match = fuzzyMatch(lowercased, maxDistance: 2) {
-            return (match.canonical, 0.7)
-        }
-        
-        if let match = fuzzyMatch(lowercased, maxDistance: 3) {
-            return (match.canonical, 0.5)
-        }
-        
-        return nil
+        return []
     }
     
     /// Calculate Levenshtein distance between two strings
@@ -1414,7 +1724,8 @@ class BookNameNormaliser {
     /// Add a custom mapping (for learned corrections)
     func addMapping(_ alias: String, to canonical: String) {
         bookMappings[alias.lowercased()] = canonical
-        print("📚 Added book mapping: '\(alias)' → '\(canonical)'")
+        sortedAliasesCache = nil  // The alias set changed; the sorted view is now stale.
+        Logger.detection.info("Added book mapping: '\(alias, privacy: .public)' → '\(canonical, privacy: .public)'")
     }
     
     /// Get all canonical book names
