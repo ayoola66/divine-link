@@ -842,11 +842,9 @@ struct MainView: View {
             }
             
             // A refusal to detect is otherwise indistinguishable from silence, which leaves
-            // the operator guessing. This row says what was heard and why it was not shown,
+            // the operator guessing. This band says what was heard and why it was not shown,
             // then clears itself. Deliberately not tappable: nothing here is safe to push.
-            if let rejection = detector.lastRejection {
-                rejectionRow(rejection)
-            }
+            statusBand
             
             // Scrollable list
             if pipeline.buffer.pendingVerses.isEmpty {
@@ -857,15 +855,12 @@ struct MainView: View {
                         .font(.largeTitle)
                         .foregroundStyle(.tertiary)
                     
-                    if pipeline.isActive {
-                        Text("Listening for scripture references...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Press Start to begin listening")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
+                    // The listening state is no longer repeated here: `statusBand` carries
+                    // it permanently, so saying it twice would be duplication rather than
+                    // reassurance. This line states only what the empty list itself means.
+                    Text("No scriptures detected yet")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -917,33 +912,105 @@ struct MainView: View {
         .frame(minHeight: 150)
     }
     
-    /// Transient, non-interactive notice that a detection was refused.
-    /// Never steals focus and carries no push affordance, so it cannot interfere with the
-    /// operator's workflow — it is purely an explanation for the silence.
-    private func rejectionRow(_ rejection: DetectionRejection) -> some View {
+    /// Constant-height band above the verse list. Always present, so a refusal appears
+    /// by swapping this band's contents rather than by being inserted into the stack —
+    /// nothing below it moves, and there is no transition to animate (ISC-222).
+    ///
+    /// Reserving space unconditionally would normally leave an empty gap. It does not
+    /// here because the band has a second job: with no refusal to show it carries the
+    /// listening state, which previously lived only in the empty-list view and so
+    /// disappeared the moment the first verse arrived, leaving the operator with no
+    /// standing indication that the detector was still running.
+    ///
+    /// The height is reserved by a hidden two-line string rather than a hard-coded point
+    /// value, so it still tracks the app's text-size setting. Both refusal layouts are
+    /// bounded to two lines, so the band cannot outgrow the reservation.
+    private var statusBand: some View {
+        ZStack(alignment: .topLeading) {
+            Text(verbatim: "\u{200B}\n\u{200B}")
+                .scaledCaptionFont()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .hidden()
+                .accessibilityHidden(true)
+            
+            if let rejection = detector.lastRejection {
+                rejectionRow(rejection)
+            } else {
+                ambientStatusRow
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+    
+    /// Shown whenever nothing has been refused, so the band is never blank.
+    private var ambientStatusRow: some View {
         HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+            Image(systemName: pipeline.isActive ? "waveform" : "pause.circle")
+                .foregroundStyle(.tertiary)
                 .scaledCaptionFont()
                 .accessibilityHidden(true)
             
-            Text(rejection.summary)
+            Text(pipeline.isActive
+                 ? "Listening for scripture references\u{2026}"
+                 : "Press Start to begin listening")
                 .scaledCaptionFont()
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
             
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
+        .allowsHitTesting(false)
+    }
+    
+    /// Transient, non-interactive notice that a detection was refused.
+    /// Never steals focus and carries no push affordance, so it cannot interfere with the
+    /// operator's workflow — it is purely an explanation for the silence.
+    ///
+    /// The books in contention are rendered from `candidateBooks` rather than read out of
+    /// the reason string, so rewording the reason cannot silently remove them.
+    private func rejectionRow(_ rejection: DetectionRejection) -> some View {
+        let candidates = rejection.candidateSummary
+        // Two lines total in both layouts, so the band height never changes: either a
+        // two-line reason, or a one-line reason above the one-line candidate list.
+        let candidateLine = candidates.map { "Could be \($0)" }
+        
+        return HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+                .scaledCaptionFont()
+                .accessibilityHidden(true)
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(rejection.summary)
+                    .scaledCaptionFont()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(candidateLine == nil ? 2 : 1)
+                
+                if let candidateLine {
+                    Text(candidateLine)
+                        .scaledCaptionFont()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.orange.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Detection refused. \(rejection.summary)")
-        .transition(.opacity)
-        .animation(.easeInOut(duration: 0.2), value: rejection.id)
+        .accessibilityLabel(
+            candidateLine.map { "Detection refused. \(rejection.summary). \($0)" }
+                ?? "Detection refused. \(rejection.summary)"
+        )
     }
     
     // MARK: - Verse Actions

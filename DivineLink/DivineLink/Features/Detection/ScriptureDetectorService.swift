@@ -15,8 +15,16 @@ struct DetectionRejection: Identifiable, Equatable {
     /// The reference as heard, before normalisation — e.g. "sames 3 verse 5".
     let heard: String
     /// Operator-facing explanation, in British English.
+    ///
+    /// States the *kind* of failure only. It deliberately does not name the books in
+    /// contention: those live in `candidateBooks` and are rendered from there, so
+    /// rewording this string cannot silently remove them from the operator's view.
     let reason: String
-    /// Books that were in contention, where the rejection was an ambiguity.
+    /// Books that were genuinely in contention, and only then.
+    ///
+    /// Invariant: either empty, or two or more entries. A single already-resolved book
+    /// is not "in contention" and must not be passed here — five call sites used to do
+    /// exactly that, which made the field unreadable as evidence of ambiguity.
     let candidateBooks: [String]
     let timestamp: Date
     
@@ -30,6 +38,15 @@ struct DetectionRejection: Identifiable, Equatable {
     /// Single-line summary for the operator console.
     var summary: String {
         "Heard \u{201C}\(heard)\u{201D} — \(reason)"
+    }
+    
+    /// The books in contention, phrased for the operator — "1 Samuel or James".
+    /// `nil` unless this was a genuine ambiguity, so the console renders the line only
+    /// when there really was a choice to be made.
+    var candidateSummary: String? {
+        guard candidateBooks.count >= 2, let last = candidateBooks.last else { return nil }
+        let leading = candidateBooks.dropLast().joined(separator: ", ")
+        return "\(leading) or \(last)"
     }
     
     static func == (lhs: DetectionRejection, rhs: DetectionRejection) -> Bool {
@@ -488,7 +505,12 @@ class ScriptureDetectorService: ObservableObject {
                 let heard = Range(match.range, in: text).map {
                     String(text[$0]).trimmingCharacters(in: .whitespaces)
                 } ?? rawBook
-                Logger.detection.warning("Book not recognised: '\(rawBook, privacy: .public)' (pattern: \(String(describing: type), privacy: .public)) — \(failure.reason, privacy: .public)")
+                // Candidates are logged explicitly rather than relied upon to appear
+                // inside `failure.reason`, which no longer interpolates them.
+                let candidateLog = failure.candidateBooks.isEmpty
+                    ? "none"
+                    : failure.candidateBooks.joined(separator: ", ")
+                Logger.detection.warning("Book not recognised: '\(rawBook, privacy: .public)' (pattern: \(String(describing: type), privacy: .public)) — \(failure.reason, privacy: .public) [candidates: \(candidateLog, privacy: .public)]")
                 // Only surface genuine ambiguities to the operator. Excluded words and
                 // short fragments fire constantly on ordinary speech, so reporting them
                 // would bury the refusals that actually matter.
@@ -564,8 +586,7 @@ class ScriptureDetectorService: ObservableObject {
                 publishRejection(
                     DetectionRejection(
                         heard: "\(rawBook) \(ch)",
-                        reason: "chapter \(ch) is beyond the 150 chapters of the longest book",
-                        candidateBooks: [canonicalBook]
+                        reason: "chapter \(ch) is beyond the 150 chapters of the longest book"
                     )
                 )
                 return nil
@@ -610,8 +631,7 @@ class ScriptureDetectorService: ObservableObject {
             publishRejection(
                 DetectionRejection(
                     heard: "\(canonicalBook) \(chapter):\(verseStart)",
-                    reason: "verse \(verseStart) is beyond the 176 verses of the longest chapter",
-                    candidateBooks: [canonicalBook]
+                    reason: "verse \(verseStart) is beyond the 176 verses of the longest chapter"
                 )
             )
             return nil
@@ -800,8 +820,7 @@ class ScriptureDetectorService: ObservableObject {
             publishRejection(
                 DetectionRejection(
                     heard: rawMatch,
-                    reason: "confidence \(detectionConfidence.percentage)% is below the \(Int(Self.minimumConfidence * 100))% threshold",
-                    candidateBooks: [canonicalBook]
+                    reason: "confidence \(detectionConfidence.percentage)% is below the \(Int(Self.minimumConfidence * 100))% threshold"
                 )
             )
             return nil
@@ -1170,8 +1189,7 @@ class ScriptureDetectorService: ObservableObject {
             publishRejection(
                 DetectionRejection(
                     heard: rawMatch,
-                    reason: "confidence \(detectionConfidence.percentage)% is below the \(Int(Self.minimumConfidence * 100))% threshold",
-                    candidateBooks: [context.book]
+                    reason: "confidence \(detectionConfidence.percentage)% is below the \(Int(Self.minimumConfidence * 100))% threshold"
                 )
             )
             return nil
@@ -1243,8 +1261,7 @@ class ScriptureDetectorService: ObservableObject {
             publishRejection(
                 DetectionRejection(
                     heard: reference.formatted,
-                    reason: "no such chapter in \(reference.book), so it was not kept as context",
-                    candidateBooks: [reference.book]
+                    reason: "no such chapter in \(reference.book), so it was not kept as context"
                 )
             )
             return
@@ -1440,16 +1457,21 @@ class BookNameNormaliser {
         case unrecognised
         
         /// Operator-facing explanation, in British English.
+        ///
+        /// `.ambiguous` names the failure but not the books. The books are carried
+        /// structurally in `candidateBooks` and rendered from there, so this string can
+        /// be reworded without the operator silently losing sight of what was in
+        /// contention — which is exactly what the previous interpolation risked.
         var reason: String {
             switch self {
             case .excludedWord: return "ordinary word, not a book name"
             case .tooShort: return "too short to identify a book"
-            case .ambiguous(let books): return "ambiguous between \(books.joined(separator: ", "))"
+            case .ambiguous: return "the book name was ambiguous"
             case .unrecognised: return "book not recognised"
             }
         }
         
-        /// Books that were in contention, for display alongside the reason.
+        /// Books that were in contention. Empty unless this is an ambiguity.
         var candidateBooks: [String] {
             if case .ambiguous(let books) = self { return books }
             return []
