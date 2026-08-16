@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-08-16
+
+### Added
+
+- **DivineView**: a native presentation window Divine Link owns directly, for churches without ProPresenter or running a second display straight from this Mac. The operator confirms every push, same as the ProPresenter paths; the window does not take key focus when a verse is pushed (only when the operator explicitly opens it), so it can sit on a second display without stealing keyboard focus from ProPresenter automation mid-service.
+- **Operator-visible detection refusals**: when the detector rejects a spoken reference (ambiguous book, implausible chapter/verse) it now surfaces that refusal in the main window's status band instead of failing silently. The row auto-clears after six seconds and never resizes the window. Where more than one book was in contention, the candidates are shown by name.
+
+### Fixed
+
+- **Live scripture detection could resolve to the wrong book.** A spoken "the book of Psalms, chapter 9, verse 8 to 12" was previously able to render as Amos 9:1 with no signal that anything had failed. Root cause was a chain of five compounding defects in the detection pipeline, all fixed:
+  - Ambiguous fuzzy matches (a mishearing equidistant from several books) are now refused rather than resolved to whichever book happened to be tried first.
+  - Aliases shorter than three characters ("am", "ho") are exact-match only and can no longer be reached by fuzzy matching.
+  - The spoken chapter number is now threaded through book normalisation to rule out candidates it can settle.
+  - Context caching (used to resolve follow-up references like "verse 18") now only stores references that pass validation, so one bad parse can no longer corrupt every reference for the following five minutes.
+  - The concatenated-reference repair heuristic ("Book123" → "Book 1:23") no longer fires when the speaker explicitly gave a verse or a range — it never again silently drops a spoken range.
+- **Remaining process-order nondeterminism removed.** A separate lookup (`findBookId`) and the "famous verse" implicit-reference detector both depended on Swift dictionary iteration order in ways the first pass missed; both now resolve deterministically — `findBookId` via a sorted, longest-match rule, and the famous-verse ranking via a total order (confidence, then match length, then transcript position, then phrase) so two verses quoted in the same breath ("in the beginning God created" / "in the beginning was the Word") resolve to a stable, correct answer instead of an arbitrary one.
+- **Fuzzy-match confidence penalty retuned** from an untested 0.15 back down to 0.07 per edit distance, after the higher value was found to silently drop legitimate one-mishearing matches below the acceptance gate. The relationship between the penalty and the gate is now pinned by a test, so retuning either value again fails loudly instead of narrowing detection silently.
+- **Ambiguity messaging no longer leaks structure through prose.** The candidate book list was previously interpolated into the rejection's reason string; it's now carried as structured data and rendered directly, so wording changes can't accidentally add or drop information the operator sees.
+
+### Known issues (not fixed in this release)
+
+- An ad-tier visibility change can still animate a resize of the entire main window mid-service; root cause identified (`MainView.swift`, window sizing conditioned on ad visibility), fix deferred pending a product decision on the ad tier's behaviour during a live service.
+- Determinism fixes above are verified by source inspection and in-process tests; an automated cross-launch (cold start) determinism harness does not yet exist.
+
 ## [1.6.2] - 2026-08-05
 
 ### Added
